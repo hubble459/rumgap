@@ -1,0 +1,32 @@
+[package]
+authors = ["hubble459 <geraldd459@gmail.com>"]
+edition = "2021"
+name = "rumgap"
+publish = false
+version = "0.1.0"
+
+[workspace]
+members = [".", "entity", "migration", "parser"]
+
+[dependencies]
+async-stream = {version = "^0.3"}
+async-trait = {version = "0.1"}
+entity = {path = "entity"}
+parser = {path = "parser"}
+futures = {version = "^0.3"}
+futures-util = {version = "^0.3"}
+migration = {path = "migration"}
+rocket = {version = "0.5.0-rc.1", features = [
+  "json",
+]}
+serde_json = {version = "^1"}
+
+[dependencies.sea-orm-rocket]
+git = "https://github.com/SeaQL/sea-orm"
+
+[dependencies.sea-orm]
+features = [
+  "runtime-tokio-native-tls",
+  "sqlx-mysql",
+]
+version = "^0.8.0"
