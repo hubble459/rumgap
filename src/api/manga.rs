@@ -1,8 +1,10 @@
-use rocket::form::Form;
+use parser::parser::{MangaParser, Parser};
+use parser::Url;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
-use rocket::Route;
+use rocket::serde::{Deserialize, Serialize};
+use rocket::{Route, State};
 use sea_orm::{entity::*, query::*};
 use sea_orm_rocket::Connection;
 use serde_json::json;
@@ -14,62 +16,41 @@ use crate::pool::Db;
 
 const DEFAULT_LIMIT: usize = 5;
 
-#[post("/", data = "<manga_form>")]
-async fn create(conn: Connection<'_, Db>, manga_form: Json<manga::Model>) -> Json<manga::Model> {
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct MangaUrl {
+    url: String,
+}
+
+#[post("/", data = "<manga_url>")]
+async fn create(
+    conn: Connection<'_, Db>,
+    manga_url: Json<MangaUrl>,
+    parser: &State<MangaParser>,
+) -> Result<Json<manga::Model>, Status> {
     let db = conn.into_inner();
 
-    let form = manga_form.into_inner();
+    let url = manga_url.into_inner().url;
+
+    let manga = parser
+        .manga(Url::parse(&url).map_err(|_| Status::BadRequest)?)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
 
     let stored = manga::ActiveModel {
-        title: Set(form.title.to_owned()),
-        description: Set(form.description.to_owned()),
+        title: Set(manga.title),
+        description: Set(manga.description),
         ..Default::default()
     }
     .save(db)
     .await
-    .expect("could not insert manga");
+    .map_err(|_| Status::InternalServerError)?;
 
-    Json(manga::Model {
+    Ok(Json(manga::Model {
         id: stored.id.unwrap(),
         title: stored.title.unwrap(),
         description: stored.description.unwrap(),
-    })
-}
-
-#[post("/<id>", data = "<manga_form>")]
-async fn update(
-    conn: Connection<'_, Db>,
-    id: i32,
-    manga_form: Form<manga::Model>,
-) -> Json<manga::Model> {
-    let db = conn.into_inner();
-
-    let manga: manga::ActiveModel = Manga::find_by_id(id).one(db).await.unwrap().unwrap().into();
-
-    let form = manga_form.into_inner();
-
-    Json(
-        db.transaction::<_, manga::Model, sea_orm::DbErr>(|txn| {
-            Box::pin(async move {
-                let manga = manga::ActiveModel {
-                    id: manga.id,
-                    title: Set(form.title.to_owned()),
-                    description: Set(form.description.to_owned()),
-                }
-                .save(txn)
-                .await
-                .expect("could not edit manga");
-
-                Ok(manga::Model {
-                    id: manga.id.unwrap(),
-                    title: manga.title.unwrap(),
-                    description: manga.description.unwrap(),
-                })
-            })
-        })
-        .await
-        .unwrap(),
-    )
+    }))
 }
 
 #[get("/?<page>&<limit>")]
@@ -83,7 +64,7 @@ async fn list(
     // Set page number and items per page
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(DEFAULT_LIMIT);
-    if page == 0 || limit == 0  {
+    if page == 0 || limit == 0 {
         return Err(Status::BadRequest);
     }
 
@@ -135,5 +116,5 @@ async fn delete(conn: Connection<'_, Db>, id: i32) -> &'static str {
 }
 
 pub fn routes() -> Vec<Route> {
-    routes![create, delete, list, get, update]
+    routes![create, delete, list, get]
 }

@@ -1,13 +1,17 @@
 use crate::{model::*, plugin::plugins};
 use async_trait::async_trait;
 use anyhow::anyhow;
+use futures::future::join_all;
 
 #[async_trait]
 pub trait Parser {
     async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga>;
-    async fn chapters(&self, url: reqwest::Url) -> anyhow::Result<Vec<Chapter>>;
     async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>>;
-    async fn search(&self, keyword: reqwest::Url) -> anyhow::Result<Vec<Manga>>;
+    async fn search(
+        &self,
+        keyword: &'static str,
+        hostnames: Vec<&'static str>,
+    ) -> anyhow::Result<Vec<SearchManga>>;
     fn hostnames(&self) -> Vec<&'static str>;
     fn can_search(&self) -> bool;
     fn rate_limit(&self) -> u32;
@@ -26,9 +30,7 @@ impl MangaParser {
 #[async_trait]
 impl Parser for MangaParser {
     async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga> {
-        let hostname = url
-            .host_str()
-            .ok_or(anyhow!("No hostname in url"))?;
+        let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
 
         let parser = self
             .parsers
@@ -38,14 +40,43 @@ impl Parser for MangaParser {
 
         parser.manga(url).await
     }
-    async fn chapters(&self, url: reqwest::Url) -> anyhow::Result<Vec<Chapter>> {
-        todo!()
-    }
     async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>> {
-        todo!()
+        let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
+
+        let parser = self
+            .parsers
+            .iter()
+            .find(|parser| parser.hostnames().contains(&hostname))
+            .ok_or(anyhow!("No parser found for {}", hostname))?;
+
+        parser.images(url).await
     }
-    async fn search(&self, keyword: reqwest::Url) -> anyhow::Result<Vec<Manga>> {
-        todo!()
+    async fn search(
+        &self,
+        keyword: &'static str,
+        hostnames: Vec<&'static str>,
+    ) -> anyhow::Result<Vec<SearchManga>> {
+        let parsers = self.parsers.iter().filter(|parser| {
+            parser.can_search() && parser.hostnames().iter().any(|hn| hostnames.contains(hn))
+        });
+
+        let mut processes = vec![];
+        for parser in parsers {
+            let supported_hostnames: Vec<&'static str> = parser
+                .hostnames()
+                .into_iter()
+                .filter(|hn| hostnames.contains(hn))
+                .collect();
+            processes.push(parser.clone().search(keyword, supported_hostnames));
+        }
+        let results: Vec<SearchManga> = join_all(processes)
+            .await
+            .into_iter()
+            .filter(|res| res.is_ok())
+            .flat_map(|results| results.unwrap())
+            .collect();
+
+        Ok(results)
     }
     fn hostnames(&self) -> Vec<&'static str> {
         self.parsers
@@ -53,11 +84,9 @@ impl Parser for MangaParser {
             .flat_map(|parser| parser.hostnames())
             .collect()
     }
-
     fn can_search(&self) -> bool {
         true
     }
-
     fn rate_limit(&self) -> u32 {
         0
     }

@@ -11,6 +11,8 @@ members = [".", "entity", "migration", "parser"]
 [dependencies]
 async-stream = {version = "^0.3"}
 async-trait = {version = "0.1"}
+rocket_anyhow = "0.1.1"
+anyhow = "1"
 entity = {path = "entity"}
 parser = {path = "parser"}
 futures = {version = "^0.3"}

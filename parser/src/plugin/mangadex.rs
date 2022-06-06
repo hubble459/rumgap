@@ -1,8 +1,11 @@
+use std::vec;
+
 use anyhow::anyhow;
 use async_trait::async_trait;
+use itertools::Itertools;
 use mangadex_api::{
-    types::{Language, RelationshipType},
-    v5::MangaDexClient,
+    types::{Language, MangaStatus, RelationshipType},
+    v5::{schema::RelatedAttributes, MangaDexClient},
 };
 use reqwest::Url;
 
@@ -25,12 +28,12 @@ impl Parser for MangaDex {
     async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga> {
         let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
 
-        let id = segments
+        segments
             .next()
             .filter(|s| s == &"title" || s == &"manga")
             .ok_or(anyhow!("Can't parse this url"))?;
 
-        let uuid = &uuid::Uuid::parse_str(id)?;
+        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(anyhow!("No ID found in url"))?)?;
 
         let manga = self
             .client
@@ -38,7 +41,6 @@ impl Parser for MangaDex {
             .get()
             .manga_id(uuid)
             .include(&mangadex_api::types::ReferenceExpansionResource::Author)
-            .include(&mangadex_api::types::ReferenceExpansionResource::CoverArt)
             .build()?
             .send()
             .await?;
@@ -72,24 +74,35 @@ impl Parser for MangaDex {
         let chapters = self
             .client
             .manga()
-            .aggregate()
+            .feed()
+            .limit(100 as u32)
             .translated_language(vec![Language::English])
             .manga_id(uuid)
             .build()?
             .send()
-            .await?;
+            .await??;
 
         let chapters: Vec<Chapter> = chapters
-            .volumes
-            .values()
-            .flat_map(|volume| {
-                volume.chapters.values().map(|chapter| Chapter {
-                    number: chapter.chapter.parse().unwrap(),
-                    posted: None,
-                    title: chapter.id.to_string(),
-                    url: Url::parse(&format!("https://{}/{}", mangadex_api::API_URL, chapter.id)).unwrap(),
-                })
+            .data
+            .iter()
+            .map(|chapter| Chapter {
+                number: chapter
+                    .attributes
+                    .chapter
+                    .as_ref()
+                    .unwrap_or(&"-1".to_owned())
+                    .parse()
+                    .unwrap(),
+                posted: Some(*chapter.attributes.created_at.as_ref()),
+                title: chapter.attributes.title.to_owned(),
+                url: Url::parse(&format!(
+                    "https://{}/chapter/{}",
+                    mangadex_api::API_URL,
+                    chapter.id
+                ))
+                .unwrap(),
             })
+            .sorted_by(|c1, c2| c1.posted.unwrap().cmp(&c2.posted.unwrap()))
             .collect();
 
         Ok(Manga {
@@ -116,7 +129,21 @@ impl Parser for MangaDex {
                 .iter()
                 .flat_map(|a| a.values().map(|a| a.to_owned()).collect::<Vec<String>>())
                 .collect(),
-            authors: vec![],
+            authors: manga
+                .data
+                .relationships
+                .iter()
+                .filter(|a| a.type_ == RelationshipType::Author)
+                .map(|a| {
+                    if let Some(RelatedAttributes::Author(author)) = &a.attributes {
+                        Some(author.name.to_owned())
+                    } else {
+                        None
+                    }
+                })
+                .filter(|a| a.is_some())
+                .map(|a| a.unwrap().to_owned())
+                .collect(),
             genres: manga
                 .data
                 .attributes
@@ -128,17 +155,79 @@ impl Parser for MangaDex {
                 .map(|a| a.unwrap().to_owned())
                 .collect(),
             chapters,
-            ongoing: true,
+            ongoing: manga.data.attributes.status == MangaStatus::Ongoing,
         })
     }
-    async fn chapters(&self, url: reqwest::Url) -> anyhow::Result<Vec<Chapter>> {
-        todo!()
-    }
     async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>> {
-        todo!()
+        let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
+
+        segments
+            .next()
+            .filter(|s| s == &"title" || s == &"manga")
+            .ok_or(anyhow!("Can't parse this url"))?;
+
+        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(anyhow!("No ID found in url"))?)?;
+
+        let at_home = self
+            .client
+            .at_home()
+            .server()
+            .chapter_id(uuid)
+            .build()?
+            .send()
+            .await?;
+
+        let images: Vec<Url> = at_home
+            .chapter
+            .data
+            .iter()
+            .map(|filename| {
+                at_home
+                    .base_url
+                    .join(&format!(
+                        "/{quality_mode}/{chapter_hash}/{page_filename}",
+                        quality_mode = "data",
+                        chapter_hash = at_home.chapter.hash,
+                        page_filename = filename
+                    ))
+                    .unwrap()
+            })
+            .collect();
+
+        Ok(images)
     }
-    async fn search(&self, keyword: reqwest::Url) -> anyhow::Result<Vec<Manga>> {
-        todo!()
+    async fn search(
+        &self,
+        keyword: &'static str,
+        _hostnames: Vec<&'static str>,
+    ) -> anyhow::Result<Vec<SearchManga>> {
+        let results = self
+            .client
+            .search()
+            .manga()
+            .add_available_translated_language(Language::English)
+            .title(keyword)
+            .build()?
+            .send()
+            .await?;
+
+        let search_results = results
+            .data
+            .iter()
+            .map(|m| SearchManga {
+                title: m
+                    .attributes
+                    .title
+                    .get(&mangadex_api::types::Language::English)
+                    .unwrap_or(&"No title".to_owned())
+                    .to_owned(),
+                updated: m.attributes.updated_at.as_ref().map(|date| *date.as_ref()),
+                cover: None,
+                url: Url::parse(&format!("{}/manga/{}", mangadex_api::API_URL, m.id)).unwrap(),
+            })
+            .collect();
+
+        Ok(search_results)
     }
     fn hostnames(&self) -> Vec<&'static str> {
         vec!["api.mangadex.org", "mangadex.org"]

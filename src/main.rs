@@ -26,6 +26,7 @@ async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
 fn rocket() -> _ {
     rocket::build()
         .attach(Db::init())
+        .manage(parser::parser::MangaParser::new())
         .attach(AdHoc::try_on_ignite("Migrations", run_migrations))
         .mount("/api/manga", manga::routes())
 }

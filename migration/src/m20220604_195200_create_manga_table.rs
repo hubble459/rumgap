@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Column::Title).string().not_null())
-                    .col(ColumnDef::new(Column::Description).string().not_null())
+                    .col(ColumnDef::new(Column::Description).text().not_null())
                     .to_owned(),
             )
             .await
