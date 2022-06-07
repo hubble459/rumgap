@@ -30,5 +30,6 @@ git = "https://github.com/SeaQL/sea-orm"
 features = [
   "runtime-tokio-native-tls",
   "sqlx-mysql",
+  "with-chrono"
 ]
 version = "^0.8.0"

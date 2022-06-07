@@ -9,9 +9,11 @@ name = "entity"
 path = "src/lib.rs"
 
 [dependencies]
+chrono = "0.4.19"
 rocket = { version = "0.5.0-rc.1", features = [
   "json",
 ] }
 
 [dependencies.sea-orm]
+features = ["with-chrono"]
 version = "^0.8.0"

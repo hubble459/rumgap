@@ -1,12 +1,12 @@
-use crate::sea_orm::Schema;
-use entity::manga::*;
 use sea_orm_migration::prelude::*;
+use entity::chapter::*;
+use crate::sea_orm::Schema;
 
 pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20220604_195200_create_manga_table"
+        "m20220607_015227_create_chapter_table"
     }
 }
 
