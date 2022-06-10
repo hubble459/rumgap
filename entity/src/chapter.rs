@@ -6,8 +6,8 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "chapter")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-    pub manga_id: i32,
+    pub id: u32,
+    pub manga_id: u32,
     #[sea_orm(unique)]
     pub url: String,
     pub title: String,

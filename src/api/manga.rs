@@ -1,20 +1,22 @@
 use parser::parser::{MangaParser, Parser};
 use parser::Url;
 use rocket::http::Status;
-use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{Route, State};
 use sea_orm::{entity::*, query::*};
 use sea_orm_rocket::Connection;
-use serde_json::json;
 
+use entity::chapter;
+use entity::chapter::Entity as Chapter;
 use entity::manga;
 use entity::manga::Entity as Manga;
+use serde_json::Value;
 
+use crate::pagination::Pagination;
 use crate::pool::Db;
 
-const DEFAULT_LIMIT: usize = 5;
+pub const DEFAULT_LIMIT: usize = 10;
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -37,20 +39,29 @@ async fn create(
         .await
         .map_err(|_| Status::InternalServerError)?;
 
-    let stored = manga::ActiveModel {
-        title: Set(manga.title),
-        description: Set(manga.description),
+    let stored = manga
+        .clone()
+        .into_active_model()
+        .save(db)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    // Store Chapters
+    Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
+        manga_id: stored.id.clone(),
+        url: ActiveValue::Set(chapter.url.to_string()),
+        title: ActiveValue::Set(chapter.title.to_owned()),
+        number: ActiveValue::Set(chapter.number),
+        posted: ActiveValue::Set(chapter.posted),
         ..Default::default()
-    }
-    .save(db)
+    }))
+    .exec(db)
     .await
     .map_err(|_| Status::InternalServerError)?;
 
-    Ok(Json(manga::Model {
-        id: stored.id.unwrap(),
-        title: stored.title.unwrap(),
-        description: stored.description.unwrap(),
-    }))
+    Ok(Json(
+        stored.try_into().map_err(|_| Status::InternalServerError)?,
+    ))
 }
 
 #[get("/?<page>&<limit>")]
@@ -58,7 +69,7 @@ async fn list(
     conn: Connection<'_, Db>,
     page: Option<usize>,
     limit: Option<usize>,
-) -> Result<RawJson<String>, Status> {
+) -> Result<Json<Pagination<Vec<Value>>>, Status> {
     let db = conn.into_inner();
 
     // Set page number and items per page
@@ -71,6 +82,7 @@ async fn list(
     // Setup paginator
     let paginator = Manga::find()
         .order_by_asc(manga::Column::Id)
+        .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.ok().unwrap();
 
@@ -80,19 +92,16 @@ async fn list(
         .await
         .expect("could not retrieve manga");
 
-    Ok(RawJson(
-        json! ({
-            "page": page,
-            "limit": limit,
-            "num_pages": num_pages,
-            "manga": manga,
-        })
-        .to_string(),
-    ))
+    Ok(Json(Pagination {
+        page,
+        limit,
+        num_pages,
+        data: manga,
+    }))
 }
 
 #[get("/<id>")]
-async fn get(conn: Connection<'_, Db>, id: i32) -> Option<Json<manga::Model>> {
+async fn get(conn: Connection<'_, Db>, id: u32) -> Option<Json<manga::Model>> {
     let db = conn.into_inner();
 
     let manga = Manga::find_by_id(id).one(db).await.unwrap();
@@ -105,7 +114,7 @@ async fn get(conn: Connection<'_, Db>, id: i32) -> Option<Json<manga::Model>> {
 }
 
 #[delete("/<id>")]
-async fn delete(conn: Connection<'_, Db>, id: i32) -> &'static str {
+async fn delete(conn: Connection<'_, Db>, id: u32) -> &'static str {
     let db = conn.into_inner();
 
     let manga: manga::ActiveModel = Manga::find_by_id(id).one(db).await.unwrap().unwrap().into();
@@ -117,4 +126,8 @@ async fn delete(conn: Connection<'_, Db>, id: i32) -> &'static str {
 
 pub fn routes() -> Vec<Route> {
     routes![create, delete, list, get]
+}
+
+pub fn base() -> &'static str {
+    "manga"
 }

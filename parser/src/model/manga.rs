@@ -1,6 +1,6 @@
 use super::chapter::Chapter;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Manga {
     pub url: reqwest::Url,
     pub title: String,

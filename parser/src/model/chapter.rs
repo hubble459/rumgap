@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chapter {
     pub url: reqwest::Url,
     pub title: String,
