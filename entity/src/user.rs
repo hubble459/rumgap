@@ -26,7 +26,8 @@ pub enum Relation {
 impl ActiveModelBehavior for ActiveModel {
     fn new() -> Self {
         Self {
-            created_at: sea_orm::ActiveValue::Set(Utc::now()),
+            created_at: ActiveValue::Set(Utc::now()),
+            updated_at: ActiveValue::Set(Utc::now()),
             ..ActiveModelTrait::default()
         }
     }

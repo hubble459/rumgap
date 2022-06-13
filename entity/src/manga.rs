@@ -41,6 +41,7 @@ impl ActiveModelBehavior for ActiveModel {
     fn new() -> Self {
         Self {
             created_at: ActiveValue::Set(Utc::now()),
+            updated_at: ActiveValue::Set(Utc::now()),
             ..ActiveModelTrait::default()
         }
     }

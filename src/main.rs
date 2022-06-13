@@ -17,8 +17,9 @@ pub mod pagination;
 
 use api::chapter;
 use api::login;
-use api::register;
 use api::manga;
+use api::reading;
+use api::register;
 use cors::CORS;
 
 async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
@@ -38,4 +39,5 @@ fn rocket() -> _ {
         .mount(format!("/api/{}", chapter::base()), chapter::routes())
         .mount("/api", login::routes())
         .mount("/api", register::routes())
+        .mount(format!("/api/{}", reading::base()), reading::routes())
 }

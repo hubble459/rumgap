@@ -22,6 +22,7 @@ impl sea_orm_rocket::Pool for SeaOrmPool {
         let config = figment.extract::<Config>().unwrap();
         let mut options: ConnectOptions = config.url.into();
         options
+            .sqlx_logging(false)
             .max_connections(config.max_connections as u32)
             .min_connections(config.min_connections.unwrap_or_default())
             .connect_timeout(Duration::from_secs(config.connect_timeout));

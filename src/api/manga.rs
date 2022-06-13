@@ -11,7 +11,6 @@ use entity::chapter;
 use entity::chapter::Entity as Chapter;
 use entity::manga;
 use entity::manga::Entity as Manga;
-use serde_json::Value;
 
 use crate::pagination::Pagination;
 use crate::pool::Db;
@@ -69,7 +68,7 @@ async fn list(
     conn: Connection<'_, Db>,
     page: Option<usize>,
     limit: Option<usize>,
-) -> Result<Json<Pagination<Vec<Value>>>, Status> {
+) -> Result<Json<Pagination<Vec<manga::Model>>>, Status> {
     let db = conn.into_inner();
 
     // Set page number and items per page
@@ -82,7 +81,6 @@ async fn list(
     // Setup paginator
     let paginator = Manga::find()
         .order_by_asc(manga::Column::Id)
-        .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.ok().unwrap();
 
