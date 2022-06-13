@@ -48,7 +48,7 @@ async fn index(
     let new_user = ActiveUser {
         username: sea_orm::ActiveValue::Set(register_data.username),
         password: sea_orm::ActiveValue::Set(password_hash),
-        created: sea_orm::ActiveValue::Set(Utc::now()),
+        created_at: sea_orm::ActiveValue::Set(Utc::now()),
         ..Default::default()
     };
 
@@ -65,16 +65,13 @@ async fn index(
     let key: Hmac<Sha256> = Hmac::new_from_slice(KEY_BYTES).unwrap();
 
     Ok(Json(Token {
-        token: format!(
-            "Bearer {}",
-            User {
-                id: user.id,
-                username: user.username,
-                created: user.created
-            }
-            .sign_with_key(&key)
-            .map_err(|e| (Status::InternalServerError, e.to_string()))?
-        ),
+        token: User {
+            id: user.id,
+            username: user.username,
+            created_at: user.created_at,
+        }
+        .sign_with_key(&key)
+        .map_err(|e| (Status::InternalServerError, e.to_string()))?,
     }))
 }
 

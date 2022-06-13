@@ -1,5 +1,7 @@
 use rocket::serde::{Deserialize, Serialize};
 use sea_orm::entity::prelude::*;
+use chrono::Utc;
+use sea_orm::ActiveValue;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -13,6 +15,8 @@ pub struct Model {
     pub title: String,
     pub number: f32,
     pub posted: Option<DateTimeUtc>,
+
+    pub created_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -33,4 +37,11 @@ impl Related<super::manga::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    fn new() -> Self {
+        Self {
+            created_at: ActiveValue::Set(Utc::now()),
+            ..ActiveModelTrait::default()
+        }
+    }
+}

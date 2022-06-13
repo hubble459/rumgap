@@ -1,5 +1,6 @@
 use rocket::serde::{Deserialize, Serialize, Serializer};
 use sea_orm::{entity::prelude::*, ActiveValue, IntoActiveModel};
+use chrono::Utc;
 
 const SPLITTER: &'static str = "{{||}}";
 
@@ -25,6 +26,9 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     #[serde(serialize_with = "serialize_str_vec")]
     pub alt_titles: String,
+
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -33,7 +37,19 @@ pub enum Relation {
     Chapters,
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    fn new() -> Self {
+        Self {
+            created_at: ActiveValue::Set(Utc::now()),
+            ..ActiveModelTrait::default()
+        }
+    }
+
+    fn before_save(mut self, _insert: bool) -> Result<Self, DbErr> {
+        self.updated_at = ActiveValue::Set(Utc::now());
+        Ok(self)
+    }
+}
 
 use parser::model::Manga;
 
@@ -49,6 +65,7 @@ impl IntoActiveModel<ActiveModel> for Manga {
             genres: ActiveValue::Set(self.genres.join(SPLITTER)),
             authors: ActiveValue::Set(self.authors.join(SPLITTER)),
             alt_titles: ActiveValue::Set(self.alt_titles.join(SPLITTER)),
+            ..Default::default()
         }
     }
 }
@@ -71,6 +88,8 @@ impl TryInto<Model> for ActiveModel {
             genres: self.genres.unwrap(),
             authors: self.authors.unwrap(),
             alt_titles: self.alt_titles.unwrap(),
+            created_at: self.created_at.unwrap(),
+            updated_at: self.updated_at.unwrap(),
         })
     }
 }

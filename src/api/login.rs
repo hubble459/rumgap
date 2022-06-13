@@ -68,16 +68,13 @@ async fn index(
     let key: Hmac<Sha256> = Hmac::new_from_slice(KEY_BYTES).unwrap();
 
     Ok(Json(Token {
-        token: format!(
-            "Bearer {}",
-            User {
-                id: user.id,
-                username: user.username,
-                created: user.created
-            }
-            .sign_with_key(&key)
-            .map_err(|e| (Status::InternalServerError, RawJson(e.to_string())))?
-        ),
+        token: User {
+            id: user.id,
+            username: user.username,
+            created_at: user.created_at,
+        }
+        .sign_with_key(&key)
+        .map_err(|e| (Status::InternalServerError, RawJson(e.to_string())))?,
     }))
 }
 

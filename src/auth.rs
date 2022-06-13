@@ -13,7 +13,7 @@ use sha2::Sha256;
 pub struct User {
     pub id: u32,
     pub username: String,
-    pub created: DateTimeUtc,
+    pub created_at: DateTimeUtc,
 }
 
 #[derive(Debug)]
