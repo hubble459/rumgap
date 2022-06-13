@@ -1,11 +1,11 @@
 use rocket::response::content::RawJson;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{http::Status, serde::json::Json, Route};
-use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{entity::*, query::*};
 use sea_orm_rocket::Connection;
 use serde_json::json;
 
+use entity::chapter;
 use entity::manga;
 use entity::reading;
 use entity::reading::ActiveModel as ActiveReading;
@@ -15,23 +15,13 @@ use crate::{auth::User, pagination::Pagination, pool::Db};
 
 use super::manga::DEFAULT_LIMIT;
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
-pub struct ReadingManga {
-    id: u32,
-    progress: f32,
-    created_at: DateTimeUtc,
-    updated_at: DateTimeUtc,
-    manga: manga::Model,
-}
-
 #[get("/?<page>&<limit>")]
 async fn index(
     conn: Connection<'_, Db>,
     page: Option<usize>,
     limit: Option<usize>,
     user: User,
-) -> Result<Json<Pagination<Vec<ReadingManga>>>, (Status, RawJson<JsonValue>)> {
+) -> Result<Json<Pagination<Vec<JsonValue>>>, (Status, RawJson<JsonValue>)> {
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(DEFAULT_LIMIT);
     if page == 0 {
@@ -49,9 +39,17 @@ async fn index(
     let db = conn.into_inner();
 
     let paginator = Reading::find()
-        .find_also_related(manga::Entity)
         .filter(reading::Column::UserId.eq(user.id))
+        .left_join(manga::Entity)
+        .column(manga::Column::Url)
+        .column_as(manga::Column::UpdatedAt, "manga_updated_at")
+        .column(manga::Column::Title)
+        .column(manga::Column::Ongoing)
+        .column(manga::Column::Cover)
+        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
+        .column_as(chapter::Column::MangaId.count(), "chapter_count")
         .order_by_asc(manga::Column::Title)
+        .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.map_err(|e| {
         (
@@ -71,16 +69,21 @@ async fn index(
         num_pages,
         page,
         limit,
-        data: reading
-            .iter()
-            .map(|(reading, manga)| ReadingManga {
-                id: reading.id,
-                progress: reading.progress,
-                manga: manga.clone().unwrap(),
-                created_at: reading.created_at,
-                updated_at: reading.updated_at,
+        data: reading.into_iter().map(|value| {
+            json!({
+                "id": value["id"],
+                "progress": value["progress"],
+                "manga": {
+                    "id": value["manga_id"],
+                    "updated_at": value["manga_updated_at"],
+                    "chapter_count": value["chapter_count"],
+                    "cover": value["cover"],
+                    "url": value["url"],
+                    "ongoing": value["ongoing"],
+                    "title": value["title"]
+                }
             })
-            .collect(),
+        }).collect(),
     }))
 }
 

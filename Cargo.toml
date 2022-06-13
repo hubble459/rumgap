@@ -38,3 +38,6 @@ features = [
   "with-chrono",
 ]
 version = "^0.8.0"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

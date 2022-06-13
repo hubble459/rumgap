@@ -2,7 +2,7 @@ use rocket::serde::{Deserialize, Serialize, Serializer};
 use sea_orm::{entity::prelude::*, ActiveValue, IntoActiveModel};
 use chrono::Utc;
 
-const SPLITTER: &'static str = "{{||}}";
+pub const SPLITTER: &'static str = "{{||}}";
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -35,6 +35,12 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::chapter::Entity")]
     Chapters,
+}
+
+impl Related<super::chapter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Chapters.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {

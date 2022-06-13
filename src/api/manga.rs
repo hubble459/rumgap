@@ -1,6 +1,7 @@
 use parser::parser::{MangaParser, Parser};
 use parser::Url;
 use rocket::http::Status;
+use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{Route, State};
@@ -9,13 +10,25 @@ use sea_orm_rocket::Connection;
 
 use entity::chapter;
 use entity::chapter::Entity as Chapter;
-use entity::manga;
 use entity::manga::Entity as Manga;
+use entity::manga::{self, SPLITTER};
+use serde_json::json;
 
 use crate::pagination::Pagination;
 use crate::pool::Db;
 
 pub const DEFAULT_LIMIT: usize = 10;
+
+pub fn map_manga_json(mut manga: JsonValue) -> JsonValue {
+    manga["alt_titles"] = manga["alt_titles"]
+        .as_str()
+        .unwrap()
+        .split(SPLITTER)
+        .collect();
+    manga["genres"] = manga["genres"].as_str().unwrap().split(SPLITTER).collect();
+    manga["authors"] = manga["authors"].as_str().unwrap().split(SPLITTER).collect();
+    manga
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -68,47 +81,67 @@ async fn list(
     conn: Connection<'_, Db>,
     page: Option<usize>,
     limit: Option<usize>,
-) -> Result<Json<Pagination<Vec<manga::Model>>>, Status> {
+) -> Result<Json<Pagination<Vec<JsonValue>>>, (Status, RawJson<JsonValue>)> {
     let db = conn.into_inner();
 
     // Set page number and items per page
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(DEFAULT_LIMIT);
-    if page == 0 || limit == 0 {
-        return Err(Status::BadRequest);
+    if page == 0 {
+        return Err((
+            Status::BadRequest,
+            RawJson(json!({"message": "page should be bigger than 0"})),
+        ));
+    } else if limit == 0 {
+        return Err((
+            Status::BadRequest,
+            RawJson(json!({"message": "limit should be bigger than 0"})),
+        ));
     }
 
     // Setup paginator
     let paginator = Manga::find()
         .order_by_asc(manga::Column::Id)
+        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
+        .column_as(chapter::Column::MangaId.count(), "chapter_count")
+        .into_json()
         .paginate(db, limit);
-    let num_pages = paginator.num_pages().await.ok().unwrap();
+    let num_pages = paginator.num_pages().await.map_err(|e| {
+        (
+            Status::BadRequest,
+            RawJson(json!({"message": e.to_string()})),
+        )
+    })?;
 
     // Fetch paginated manga
-    let manga = paginator
-        .fetch_page(page - 1)
-        .await
-        .expect("could not retrieve manga");
+    let manga = paginator.fetch_page(page - 1).await.map_err(|e| {
+        (
+            Status::BadRequest,
+            RawJson(json!({"message": e.to_string()})),
+        )
+    })?;
 
     Ok(Json(Pagination {
         page,
         limit,
         num_pages,
-        data: manga,
+        data: manga.into_iter().map(map_manga_json).collect(),
     }))
 }
 
 #[get("/<id>")]
-async fn get(conn: Connection<'_, Db>, id: u32) -> Option<Json<manga::Model>> {
+async fn get(conn: Connection<'_, Db>, id: u32) -> Option<Json<JsonValue>> {
     let db = conn.into_inner();
 
-    let manga = Manga::find_by_id(id).one(db).await.unwrap();
+    let manga = Manga::find_by_id(id)
+        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
+        .column_as(chapter::Column::MangaId.count(), "chapter_count")
+        .into_json()
+        .one(db)
+        .await
+        .unwrap();
 
-    if manga.is_some() {
-        Some(Json(manga.unwrap()))
-    } else {
-        None
-    }
+    manga.map(|manga| Json(map_manga_json(manga)))
 }
 
 #[delete("/<id>")]
