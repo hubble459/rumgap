@@ -7,15 +7,18 @@ use rocket::{Build, Rocket};
 use migration::MigratorTrait;
 use sea_orm_rocket::Database;
 
+mod api;
+mod auth;
+mod cors;
 mod pool;
 use pool::Db;
 
-pub mod api;
-pub mod cors;
 pub mod pagination;
 
-use api::manga;
 use api::chapter;
+use api::login;
+use api::register;
+use api::manga;
 use cors::CORS;
 
 async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
@@ -33,4 +36,6 @@ fn rocket() -> _ {
         .attach(AdHoc::try_on_ignite("Migrations", run_migrations))
         .mount(format!("/api/{}", manga::base()), manga::routes())
         .mount(format!("/api/{}", chapter::base()), chapter::routes())
+        .mount("/api", login::routes())
+        .mount("/api", register::routes())
 }

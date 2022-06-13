@@ -9,18 +9,24 @@ version = "0.1.0"
 members = [".", "entity", "migration", "parser"]
 
 [dependencies]
+anyhow = "1"
+argon2 = "0.4.0"
 async-stream = {version = "^0.3"}
 async-trait = {version = "0.1"}
-anyhow = "1"
 entity = {path = "entity"}
-parser = {path = "parser"}
 futures = {version = "^0.3"}
 futures-util = {version = "^0.3"}
+hmac = "0.12.1"
+jwt = "0.16.0"
 migration = {path = "migration"}
+parser = {path = "parser"}
+rand_core = {version = "0.6", features = ["std"]}
 rocket = {version = "0.5.0-rc.1", features = [
   "json",
 ]}
 serde_json = {version = "^1"}
+sha2 = "0.10.2"
+chrono = "0.4"
 
 [dependencies.sea-orm-rocket]
 git = "https://github.com/SeaQL/sea-orm"
@@ -29,6 +35,6 @@ git = "https://github.com/SeaQL/sea-orm"
 features = [
   "runtime-tokio-native-tls",
   "sqlx-mysql",
-  "with-chrono"
+  "with-chrono",
 ]
 version = "^0.8.0"
