@@ -20,6 +20,7 @@ use api::login;
 use api::manga;
 use api::reading;
 use api::register;
+use api::search;
 use cors::CORS;
 
 async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
@@ -39,5 +40,6 @@ fn rocket() -> _ {
         .mount(format!("/api/{}", chapter::base()), chapter::routes())
         .mount("/api", login::routes())
         .mount("/api", register::routes())
+        .mount("/api", search::routes())
         .mount(format!("/api/{}", reading::base()), reading::routes())
 }

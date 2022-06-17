@@ -1,6 +1,6 @@
 use crate::{model::*, plugin::plugins};
-use async_trait::async_trait;
 use anyhow::anyhow;
+use async_trait::async_trait;
 use futures::future::join_all;
 
 #[async_trait]
@@ -9,8 +9,8 @@ pub trait Parser {
     async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>>;
     async fn search(
         &self,
-        keyword: &'static str,
-        hostnames: Vec<&'static str>,
+        keyword: String,
+        hostnames: Vec<String>,
     ) -> anyhow::Result<Vec<SearchManga>>;
     fn hostnames(&self) -> Vec<&'static str>;
     fn can_search(&self) -> bool;
@@ -53,21 +53,22 @@ impl Parser for MangaParser {
     }
     async fn search(
         &self,
-        keyword: &'static str,
-        hostnames: Vec<&'static str>,
+        keyword: String,
+        hostnames: Vec<String>,
     ) -> anyhow::Result<Vec<SearchManga>> {
         let parsers = self.parsers.iter().filter(|parser| {
-            parser.can_search() && parser.hostnames().iter().any(|hn| hostnames.contains(hn))
+            parser.can_search() && parser.hostnames().iter().any(|hn| hostnames.contains(&hn.to_string()))
         });
 
         let mut processes = vec![];
         for parser in parsers {
-            let supported_hostnames: Vec<&'static str> = parser
+            let supported_hostnames: Vec<String> = parser
                 .hostnames()
                 .into_iter()
-                .filter(|hn| hostnames.contains(hn))
+                .filter(|hn| hostnames.contains(&hn.to_string()))
+                .map(|hn| hn.to_string())
                 .collect();
-            processes.push(parser.clone().search(keyword, supported_hostnames));
+            processes.push(parser.clone().search(keyword.clone(), supported_hostnames));
         }
         let results: Vec<SearchManga> = join_all(processes)
             .await

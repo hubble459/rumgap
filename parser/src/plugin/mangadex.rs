@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use itertools::Itertools;
 use mangadex_api::{
-    types::{Language, MangaStatus, RelationshipType},
+    types::{Language, MangaStatus, ReferenceExpansionResource, RelationshipType},
     v5::{schema::RelatedAttributes, MangaDexClient},
 };
 use reqwest::Url;
@@ -96,7 +96,7 @@ impl Parser for MangaDex {
                 posted: Some(*chapter.attributes.created_at.as_ref()),
                 title: chapter.attributes.title.to_owned(),
                 url: Url::parse(&format!(
-                    "https://{}/chapter/{}",
+                    "{}/chapter/{}",
                     mangadex_api::API_URL,
                     chapter.id
                 ))
@@ -163,7 +163,7 @@ impl Parser for MangaDex {
 
         segments
             .next()
-            .filter(|s| s == &"title" || s == &"manga")
+            .filter(|s| s == &"chapter")
             .ok_or(anyhow!("Can't parse this url"))?;
 
         let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(anyhow!("No ID found in url"))?)?;
@@ -198,15 +198,16 @@ impl Parser for MangaDex {
     }
     async fn search(
         &self,
-        keyword: &'static str,
-        _hostnames: Vec<&'static str>,
+        keyword: String,
+        _hostnames: Vec<String>,
     ) -> anyhow::Result<Vec<SearchManga>> {
         let results = self
             .client
             .search()
             .manga()
             .add_available_translated_language(Language::English)
-            .title(keyword)
+            .title(keyword.as_str())
+            .include(ReferenceExpansionResource::CoverArt)
             .build()?
             .send()
             .await?;
@@ -222,7 +223,24 @@ impl Parser for MangaDex {
                     .unwrap_or(&"No title".to_owned())
                     .to_owned(),
                 updated: m.attributes.updated_at.as_ref().map(|date| *date.as_ref()),
-                cover: None,
+                cover: m
+                    .relationships
+                    .clone()
+                    .into_iter()
+                    .find(|rel| rel.type_ == RelationshipType::CoverArt)
+                    .map(|cover_rel| {
+                        if let Some(RelatedAttributes::CoverArt(cover)) = cover_rel.attributes {
+                            Url::parse(&format!(
+                                "{}/covers/{}/{}",
+                                mangadex_api::constants::CDN_URL,
+                                m.id,
+                                cover.file_name
+                            ))
+                            .unwrap()
+                        } else {
+                            panic!();
+                        }
+                    }),
                 url: Url::parse(&format!("{}/manga/{}", mangadex_api::API_URL, m.id)).unwrap(),
             })
             .collect();

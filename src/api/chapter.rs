@@ -1,9 +1,13 @@
+use parser::parser::{MangaParser, Parser};
+use parser::Url;
+use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
+use rocket::State;
 use rocket::{http::Status, Route};
 use sea_orm::PaginatorTrait;
 use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
 use sea_orm_rocket::Connection;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use entity::chapter;
 use entity::chapter::Entity as Chapter;
@@ -55,17 +59,35 @@ async fn get(
     conn: Connection<'_, Db>,
     _manga_id: u32,
     chapter_id: u32,
-) -> Result<Json<serde_json::Value>, Status> {
+    parser: &State<MangaParser>,
+) -> Result<Json<Vec<Url>>, (Status, RawJson<serde_json::Value>)> {
     let db = conn.into_inner();
 
     let chapter = Chapter::find_by_id(chapter_id)
-        .into_json()
         .one(db)
         .await
-        .map_err(|_| Status::InternalServerError)?
-        .ok_or(Status::NotFound)?;
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?
+        .ok_or((
+            Status::NotFound,
+            RawJson(json!({"message": "Chapter not found"})),
+        ))?;
 
-    Ok(Json(chapter))
+    let images = parser
+        .images(Url::parse(&chapter.url).unwrap())
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?;
+
+    Ok(Json(images))
 }
 
 pub fn routes() -> Vec<Route> {
