@@ -2,6 +2,7 @@
 extern crate rocket;
 
 use rocket::fairing::{self, AdHoc};
+use rocket::http::Status;
 use rocket::{Build, Rocket};
 
 use migration::MigratorTrait;
@@ -12,6 +13,8 @@ mod auth;
 mod cors;
 mod pool;
 use pool::Db;
+
+use crate::auth::User;
 
 pub mod pagination;
 
@@ -29,6 +32,11 @@ async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
     Ok(rocket)
 }
 
+#[get("/auth")]
+async fn test_auth(_user: User) -> Status {
+    Status::Ok
+}
+
 #[launch]
 fn rocket() -> _ {
     rocket::build()
@@ -42,4 +50,5 @@ fn rocket() -> _ {
         .mount("/api", register::routes())
         .mount("/api", search::routes())
         .mount(format!("/api/{}", reading::base()), reading::routes())
+        .mount("/api", routes![test_auth])
 }

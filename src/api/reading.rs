@@ -42,11 +42,12 @@ async fn index(
         .filter(reading::Column::UserId.eq(user.id))
         .left_join(manga::Entity)
         .column(manga::Column::Url)
+        .column_as(manga::Column::CreatedAt, "manga_created_at")
         .column_as(manga::Column::UpdatedAt, "manga_updated_at")
         .column(manga::Column::Title)
         .column(manga::Column::Ongoing)
         .column(manga::Column::Cover)
-        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
+        .join_rev(JoinType::LeftJoin, chapter::Relation::Manga.def())
         .column_as(chapter::Column::MangaId.count(), "chapter_count")
         .order_by_asc(manga::Column::Title)
         .into_json()
@@ -69,21 +70,26 @@ async fn index(
         num_pages,
         page,
         limit,
-        data: reading.into_iter().map(|value| {
-            json!({
-                "id": value["id"],
-                "progress": value["progress"],
-                "manga": {
-                    "id": value["manga_id"],
-                    "updated_at": value["manga_updated_at"],
-                    "chapter_count": value["chapter_count"],
-                    "cover": value["cover"],
-                    "url": value["url"],
-                    "ongoing": value["ongoing"],
-                    "title": value["title"]
-                }
+        data: reading
+            .into_iter()
+            .map(|value| {
+                json!({
+                    "id": value["id"],
+                    "progress": value["progress"],
+                    "manga": {
+                        "id": value["manga_id"],
+                        "updated_at": value["manga_updated_at"],
+                        "created_at": value["manga_created_at"],
+                        "chapter_count": value["chapter_count"],
+                        "cover": value["cover"],
+                        "url": value["url"],
+                        "ongoing": value["ongoing"],
+                        "title": value["title"]
+                    }
+                })
             })
-        }).collect(),
+            .filter(|v| v["id"] != json!(null))
+            .collect(),
     }))
 }
 
@@ -106,7 +112,7 @@ async fn post(
     let reading = ActiveReading {
         manga_id: ActiveValue::Set(manga_id),
         user_id: ActiveValue::Set(user.id),
-        progress: ActiveValue::Set(0.0),
+        progress: ActiveValue::Set(0),
         ..Default::default()
     };
 
@@ -148,7 +154,7 @@ async fn delete(
 #[derive(Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct ProgressData {
-    progress: f32,
+    progress: u32,
 }
 
 #[patch("/<id>", data = "<progress_data>")]

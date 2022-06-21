@@ -10,7 +10,7 @@ pub struct Model {
     pub id: u32,
     pub manga_id: u32,
     pub user_id: u32,
-    pub progress: f32,
+    pub progress: u32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
