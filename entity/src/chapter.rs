@@ -10,12 +10,10 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: u32,
     pub manga_id: u32,
-    #[sea_orm(unique)]
     pub url: String,
     pub title: String,
     pub number: f32,
     pub posted: Option<DateTimeUtc>,
-
     pub created_at: DateTimeUtc,
 }
 

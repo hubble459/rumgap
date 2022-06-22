@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use mangadex_api::{
     types::{Language, MangaStatus, ReferenceExpansionResource, RelationshipType},
-    v5::{schema::RelatedAttributes, MangaDexClient},
+    v5::{schema::{RelatedAttributes, ChapterObject}, MangaDexClient},
 };
 use reqwest::Url;
 
@@ -71,19 +71,28 @@ impl Parser for MangaDex {
             None
         };
 
-        let chapters = self
-            .client
-            .manga()
-            .feed()
-            .limit(100 as u32)
-            .translated_language(vec![Language::English])
-            .manga_id(uuid)
-            .build()?
-            .send()
-            .await??;
+        let mut chapters: Vec<ChapterObject> = vec![];
+        let mut offset: u32 = 0;
+        let mut total: u32 = 0;
+
+        while offset == 0 || offset < total {
+            let results = self
+                .client
+                .manga()
+                .feed()
+                .limit(500u32)
+                .offset(offset)
+                .translated_language(vec![Language::English])
+                .manga_id(uuid)
+                .build()?
+                .send()
+                .await??;
+            chapters.append(&mut results.data.clone());
+            total = results.total;
+            offset += 500;
+        }
 
         let chapters: Vec<Chapter> = chapters
-            .data
             .iter()
             .map(|chapter| Chapter {
                 number: chapter
@@ -94,7 +103,7 @@ impl Parser for MangaDex {
                     .parse()
                     .unwrap(),
                 posted: Some(*chapter.attributes.created_at.as_ref()),
-                title: chapter.attributes.title.to_owned(),
+                title:  chapter.attributes.title.to_owned(),
                 url: Url::parse(&format!(
                     "{}/chapter/{}",
                     mangadex_api::API_URL,

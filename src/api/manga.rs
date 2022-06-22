@@ -1,11 +1,13 @@
+use chrono::{Duration, Utc};
 use parser::parser::{MangaParser, Parser};
 use parser::Url;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
+use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{Route, State};
-use sea_orm::{entity::*, query::*};
+use sea_orm::{entity::*, query::*, DatabaseBackend};
 use sea_orm_rocket::Connection;
 
 use entity::chapter;
@@ -41,7 +43,7 @@ async fn create(
     conn: Connection<'_, Db>,
     manga_url: Json<MangaUrl>,
     parser: &State<MangaParser>,
-) -> Result<Json<manga::Model>, Status> {
+) -> Result<Redirect, Status> {
     let db = conn.into_inner();
 
     let url = manga_url.into_inner().url;
@@ -56,7 +58,7 @@ async fn create(
         .into_active_model()
         .save(db)
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|_| Status::Conflict)?;
 
     // Store Chapters
     Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
@@ -71,9 +73,8 @@ async fn create(
     .await
     .map_err(|_| Status::InternalServerError)?;
 
-    Ok(Json(
-        stored.try_into().map_err(|_| Status::InternalServerError)?,
-    ))
+    let id = stored.id.unwrap();
+    Ok(Redirect::to(format!("/api/manga/{}", id)))
 }
 
 #[get("/?<page>&<limit>")]
@@ -101,9 +102,20 @@ async fn list(
 
     // Setup paginator
     let paginator = Manga::find()
-        .order_by_asc(manga::Column::Id)
-        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
-        .column_as(chapter::Column::MangaId.count(), "chapter_count")
+        .from_raw_sql(Statement::from_sql_and_values(
+            DatabaseBackend::MySql,
+            r#"SELECT manga.*,
+                          COUNT(c.manga_id) OVER() as chapter_count,
+                          DATE_ADD(
+                            MAX(c.posted),
+                            INTERVAL CAST(TIMESTAMPDIFF(SECOND, MIN(c.posted), MAX(c.posted)) / (COUNT(DISTINCT(c.posted)) - 1) AS UNSIGNED) SECOND
+                          ) as next_chapter
+                    FROM manga
+                LEFT JOIN chapter AS c
+                ON c.manga_id = manga.id
+                GROUP BY c.manga_id"#,
+            vec![],
+        ))
         .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.map_err(|e| {
@@ -130,18 +142,104 @@ async fn list(
 }
 
 #[get("/<id>")]
-async fn get(conn: Connection<'_, Db>, id: u32) -> Option<Json<JsonValue>> {
+
+async fn get(
+    conn: Connection<'_, Db>,
+    id: u32,
+    parser: &State<MangaParser>,
+) -> Result<Option<Json<JsonValue>>, (Status, RawJson<JsonValue>)> {
     let db = conn.into_inner();
 
-    let manga = Manga::find_by_id(id)
-        .join_rev(JoinType::InnerJoin, chapter::Relation::Manga.def())
-        .column_as(chapter::Column::MangaId.count(), "chapter_count")
+    let old_manga = Manga::find_by_id(id).one(db).await.unwrap();
+
+    if old_manga.is_none() {
+        return Ok(None);
+    }
+    let old_manga = old_manga.unwrap();
+
+    let diff = Utc::now().timestamp_millis() - old_manga.updated_at.timestamp_millis();
+    if diff > Duration::minutes(10).num_milliseconds() {
+        // Update manga because it is 10 minutes old
+        println!("[UPDATING] {}", old_manga.title);
+
+        let url = old_manga.url;
+
+        let manga = parser
+            .manga(Url::parse(&url).map_err(|e| {
+                (
+                    Status::BadRequest,
+                    RawJson(json!({ "error": e.to_string() })),
+                )
+            })?)
+            .await
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    RawJson(json!({ "error": e.to_string() })),
+                )
+            })?;
+
+        let mut new_manga = manga.clone().into_active_model();
+        new_manga.id = ActiveValue::Set(id);
+        new_manga.created_at = ActiveValue::Set(old_manga.created_at);
+        new_manga.updated_at = ActiveValue::Set(Utc::now());
+
+        let stored = new_manga.save(db).await.map_err(|e| (
+            Status::InternalServerError,
+            RawJson(json!({ "error": e.to_string() })),
+        ))?;
+
+        // Clear old chapters
+        Chapter::delete_many()
+            .filter(chapter::Column::MangaId.eq(id))
+            .exec(db)
+            .await
+            .map_err(|e| (
+                Status::InternalServerError,
+                RawJson(json!({ "error": e.to_string() })),
+            ))?;
+
+        // Store Chapters
+        Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
+            manga_id: stored.id.clone(),
+            url: ActiveValue::Set(chapter.url.to_string()),
+            title: ActiveValue::Set(chapter.title.to_owned()),
+            number: ActiveValue::Set(chapter.number),
+            posted: ActiveValue::Set(chapter.posted),
+            ..Default::default()
+        }))
+        .exec(db)
+        .await
+        .map_err(|e| (
+            Status::InternalServerError,
+            RawJson(json!({ "error": e.to_string() })),
+        ))?;
+    }
+
+    let manga = Manga::find()
+    .from_raw_sql(Statement::from_sql_and_values(
+        DatabaseBackend::MySql,
+        format!(r#"SELECT manga.*,
+                      COUNT(c.manga_id) as chapter_count,
+                      DATE_ADD(
+                        MAX(c.posted),
+                        INTERVAL CAST(TIMESTAMPDIFF(SECOND, MIN(c.posted), MAX(c.posted)) / (COUNT(DISTINCT(c.posted)) - 1) AS UNSIGNED) SECOND
+                      ) as next_chapter
+                FROM manga
+            LEFT JOIN chapter AS c
+            ON c.manga_id = manga.id
+            WHERE manga.id = {}"#, id).as_str(),
+        vec![],
+    ))
         .into_json()
         .one(db)
         .await
-        .unwrap();
+        .map_err(|e| (
+            Status::InternalServerError,
+            RawJson(json!({ "error": e.to_string() })),
+        ))?;
 
-    manga.map(|manga| Json(map_manga_json(manga)))
+    Ok(manga.map(|manga| Json(map_manga_json(manga))))
 }
 
 #[delete("/<id>")]

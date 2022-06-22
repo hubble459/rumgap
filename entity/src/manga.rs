@@ -51,11 +51,6 @@ impl ActiveModelBehavior for ActiveModel {
             ..ActiveModelTrait::default()
         }
     }
-
-    fn before_save(mut self, _insert: bool) -> Result<Self, DbErr> {
-        self.updated_at = ActiveValue::Set(Utc::now());
-        Ok(self)
-    }
 }
 
 use parser::model::Manga;

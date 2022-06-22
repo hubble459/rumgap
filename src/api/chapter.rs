@@ -4,8 +4,8 @@ use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::State;
 use rocket::{http::Status, Route};
-use sea_orm::PaginatorTrait;
 use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+use sea_orm::{PaginatorTrait, QuerySelect};
 use sea_orm_rocket::Connection;
 use serde_json::{json, Value};
 
@@ -33,13 +33,15 @@ async fn index(
 
     let db = conn.into_inner();
 
+    // IFNULL(NULLIF(title, ''), CONCAT('Chapter ', chapter.number))
     let paginator = Chapter::find()
         .filter(chapter::Column::MangaId.eq(manga_id))
-        .order_by_asc(chapter::Column::Number)
-        .order_by_asc(chapter::Column::Posted)
+        .order_by_desc(chapter::Column::Number)
+        .order_by_desc(chapter::Column::Posted)
         .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.ok().unwrap();
+    let num_items = paginator.num_items().await.ok().unwrap();
 
     let chapters = paginator
         .fetch_page(page - 1)
@@ -50,12 +52,53 @@ async fn index(
         num_pages,
         page,
         limit,
-        data: chapters,
+        data: chapters
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut chapter)| {
+                chapter["index"] = json!(num_items - (index + (page - 1) * limit));
+                let title = chapter["title"].as_str().unwrap();
+                if title.is_empty() {
+                    let number = chapter["number"].as_f64().unwrap();
+                    chapter["title"] = json!("Chapter ".to_owned() + &number.to_string())
+                }
+                chapter
+            })
+            .collect(),
     }))
 }
 
-#[get("/<_manga_id>/chapter/<chapter_id>")]
+#[get("/<manga_id>/chapter/<index>")]
 async fn get(
+    conn: Connection<'_, Db>,
+    manga_id: u32,
+    index: u32,
+) -> Result<Json<Value>, (Status, RawJson<serde_json::Value>)> {
+    let db = conn.into_inner();
+
+    let chapter = Chapter::find()
+        .filter(chapter::Column::MangaId.eq(manga_id))
+        .offset(index.into())
+        .limit(1)
+        .into_json()
+        .one(db)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?
+        .ok_or((
+            Status::NotFound,
+            RawJson(json!({"message": "Chapter not found"})),
+        ))?;
+
+    Ok(Json(chapter))
+}
+
+#[get("/<_manga_id>/chapter/<chapter_id>/images")]
+async fn images(
     conn: Connection<'_, Db>,
     _manga_id: u32,
     chapter_id: u32,
@@ -91,7 +134,7 @@ async fn get(
 }
 
 pub fn routes() -> Vec<Route> {
-    routes![index, get]
+    routes![index, get, images]
 }
 
 pub fn base() -> &'static str {
