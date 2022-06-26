@@ -16,6 +16,7 @@ use entity::manga::Entity as Manga;
 use entity::manga::{self, SPLITTER};
 use serde_json::json;
 
+use crate::auth::User;
 use crate::pagination::Pagination;
 use crate::pool::Db;
 
@@ -43,22 +44,49 @@ async fn create(
     conn: Connection<'_, Db>,
     manga_url: Json<MangaUrl>,
     parser: &State<MangaParser>,
-) -> Result<Redirect, Status> {
+) -> Result<Redirect, (Status, RawJson<JsonValue>)> {
     let db = conn.into_inner();
 
     let url = manga_url.into_inner().url;
 
-    let manga = parser
-        .manga(Url::parse(&url).map_err(|_| Status::BadRequest)?)
+    let exists = manga::Entity::find()
+        .select_only()
+        .column(manga::Column::Id)
+        .filter(manga::Column::Url.eq(url.clone()))
+        .into_json()
+        .one(db)
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| (
+            Status::InternalServerError,
+            RawJson(json!({"message": e.to_string()})),
+        ))?;
+
+    if exists.is_some() {
+        let exists = exists.unwrap();
+        let id = exists["id"].as_u64().unwrap();
+        return Ok(Redirect::to(format!("/api/manga/{}", id)));
+    }
+
+    let manga = parser
+        .manga(Url::parse(&url).map_err(|e| (
+            Status::BadRequest,
+            RawJson(json!({"message": e.to_string()})),
+        ))?)
+        .await
+        .map_err(|e| (
+            Status::InternalServerError,
+            RawJson(json!({"message": e.to_string()})),
+        ))?;
 
     let stored = manga
         .clone()
         .into_active_model()
         .save(db)
         .await
-        .map_err(|_| Status::Conflict)?;
+        .map_err(|e| (
+            Status::Conflict,
+            RawJson(json!({"message": e.to_string()})),
+        ))?;
 
     // Store Chapters
     Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
@@ -71,17 +99,22 @@ async fn create(
     }))
     .exec(db)
     .await
-    .map_err(|_| Status::InternalServerError)?;
+    .map_err(|e| (
+        Status::InternalServerError,
+        RawJson(json!({"message": e.to_string()})),
+    ))?;
 
     let id = stored.id.unwrap();
     Ok(Redirect::to(format!("/api/manga/{}", id)))
 }
 
-#[get("/?<page>&<limit>")]
+#[get("/?<page>&<limit>&<hide_reading>")]
 async fn list(
     conn: Connection<'_, Db>,
     page: Option<usize>,
     limit: Option<usize>,
+    hide_reading: Option<bool>,
+    user: Option<User>,
 ) -> Result<Json<Pagination<Vec<JsonValue>>>, (Status, RawJson<JsonValue>)> {
     let db = conn.into_inner();
 
@@ -98,29 +131,57 @@ async fn list(
             Status::BadRequest,
             RawJson(json!({"message": "limit should be bigger than 0"})),
         ));
+    } else if hide_reading.is_some() && user.is_none() {
+        return Err((
+            Status::BadRequest,
+            RawJson(
+                json!({"message": "cannot hide reading if bearer token is missing in Authorization header"}),
+            ),
+        ));
     }
 
     // Setup paginator
     let paginator = Manga::find()
         .from_raw_sql(Statement::from_sql_and_values(
             DatabaseBackend::MySql,
-            r#"SELECT manga.*,
-                          COUNT(c.manga_id) OVER() as chapter_count,
+            format!(r#"SELECT manga.*,
+                          COUNT(c.manga_id) AS chapter_count,
                           DATE_ADD(
                             MAX(c.posted),
                             INTERVAL CAST(TIMESTAMPDIFF(SECOND, MIN(c.posted), MAX(c.posted)) / (COUNT(DISTINCT(c.posted)) - 1) AS UNSIGNED) SECOND
-                          ) as next_chapter
+                          ) AS next_chapter,
+                          MAX(c.posted) AS last_chapter
+                          {}
                     FROM manga
                 LEFT JOIN chapter AS c
                 ON c.manga_id = manga.id
-                GROUP BY c.manga_id"#,
-            vec![],
+                {}
+                GROUP BY IFNULL(c.manga_id, manga.id)
+                {}"#,
+                // If logged in, join reading and set boolean to true if user is reading the manga
+                user.as_ref().map_or_else(|| "", |_u| ", IFNULL(reading.manga_id, 0) != 0 AS reading"),
+                user.as_ref().map_or_else(|| "", |_u| "LEFT JOIN reading ON reading.user_id = ? AND reading.manga_id = manga.id"),
+                // Hide reading
+                hide_reading.map_or_else(|| "", |hide| if hide {
+                    "HAVING reading = 0"
+                } else {
+                    ""
+                }),
+            ).as_str(),
+            vec![user.map_or_else(|| 0, |u| u.id).into()],
         ))
         .into_json()
         .paginate(db, limit);
     let num_pages = paginator.num_pages().await.map_err(|e| {
         (
-            Status::BadRequest,
+            Status::InternalServerError,
+            RawJson(json!({"message": e.to_string()})),
+        )
+    })?;
+
+    let num_items = paginator.num_items().await.map_err(|e| {
+        (
+            Status::InternalServerError,
             RawJson(json!({"message": e.to_string()})),
         )
     })?;
@@ -136,16 +197,18 @@ async fn list(
     Ok(Json(Pagination {
         page,
         limit,
+        num_items,
         num_pages,
         data: manga.into_iter().map(map_manga_json).collect(),
     }))
 }
 
-#[get("/<id>")]
-
+#[get("/<id>?<force_refresh>")]
 async fn get(
     conn: Connection<'_, Db>,
     id: u32,
+    force_refresh: Option<bool>,
+    user: Option<User>,
     parser: &State<MangaParser>,
 ) -> Result<Option<Json<JsonValue>>, (Status, RawJson<JsonValue>)> {
     let db = conn.into_inner();
@@ -156,9 +219,10 @@ async fn get(
         return Ok(None);
     }
     let old_manga = old_manga.unwrap();
+    let force_refresh = force_refresh.unwrap_or(false);
 
     let diff = Utc::now().timestamp_millis() - old_manga.updated_at.timestamp_millis();
-    if diff > Duration::minutes(10).num_milliseconds() {
+    if force_refresh || diff > Duration::minutes(10).num_milliseconds() {
         // Update manga because it is 10 minutes old
         println!("[UPDATING] {}", old_manga.title);
 
@@ -184,20 +248,24 @@ async fn get(
         new_manga.created_at = ActiveValue::Set(old_manga.created_at);
         new_manga.updated_at = ActiveValue::Set(Utc::now());
 
-        let stored = new_manga.save(db).await.map_err(|e| (
-            Status::InternalServerError,
-            RawJson(json!({ "error": e.to_string() })),
-        ))?;
+        let stored = new_manga.save(db).await.map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({ "error": e.to_string() })),
+            )
+        })?;
 
         // Clear old chapters
         Chapter::delete_many()
             .filter(chapter::Column::MangaId.eq(id))
             .exec(db)
             .await
-            .map_err(|e| (
-                Status::InternalServerError,
-                RawJson(json!({ "error": e.to_string() })),
-            ))?;
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    RawJson(json!({ "error": e.to_string() })),
+                )
+            })?;
 
         // Store Chapters
         Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
@@ -210,10 +278,12 @@ async fn get(
         }))
         .exec(db)
         .await
-        .map_err(|e| (
-            Status::InternalServerError,
-            RawJson(json!({ "error": e.to_string() })),
-        ))?;
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({ "error": e.to_string() })),
+            )
+        })?;
     }
 
     let manga = Manga::find()
@@ -224,12 +294,18 @@ async fn get(
                       DATE_ADD(
                         MAX(c.posted),
                         INTERVAL CAST(TIMESTAMPDIFF(SECOND, MIN(c.posted), MAX(c.posted)) / (COUNT(DISTINCT(c.posted)) - 1) AS UNSIGNED) SECOND
-                      ) as next_chapter
+                      ) as next_chapter,
+                      MAX(c.posted) AS last_chapter
+                      {}
                 FROM manga
             LEFT JOIN chapter AS c
             ON c.manga_id = manga.id
-            WHERE manga.id = {}"#, id).as_str(),
-        vec![],
+            {}
+            WHERE manga.id = ?"#,
+            user.as_ref().map_or_else(|| "", |_u| ", IFNULL(reading.manga_id, 0) != 0 AS reading"),
+            user.as_ref().map_or_else(|| "".to_owned(), |u| format!("LEFT JOIN reading ON reading.user_id = {} AND reading.manga_id = manga.id", u.id)),
+        ).as_str(),
+        vec![id.into()],
     ))
         .into_json()
         .one(db)

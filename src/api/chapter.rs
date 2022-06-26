@@ -50,6 +50,7 @@ async fn index(
 
     Ok(Json(Pagination {
         num_pages,
+        num_items,
         page,
         limit,
         data: chapters
@@ -74,11 +75,20 @@ async fn get(
     manga_id: u32,
     index: u32,
 ) -> Result<Json<Value>, (Status, RawJson<serde_json::Value>)> {
+    if index < 1 {
+        return Err((
+            Status::BadRequest,
+            RawJson(json!({"message": "Progress should be bigger than 1"})),
+        ));
+    }
+
     let db = conn.into_inner();
 
-    let chapter = Chapter::find()
+    let mut chapter = Chapter::find()
         .filter(chapter::Column::MangaId.eq(manga_id))
-        .offset(index.into())
+        .offset((index - 1).into())
+        .order_by_asc(chapter::Column::Number)
+        .order_by_asc(chapter::Column::Posted)
         .limit(1)
         .into_json()
         .one(db)
@@ -93,6 +103,8 @@ async fn get(
             Status::NotFound,
             RawJson(json!({"message": "Chapter not found"})),
         ))?;
+
+    chapter["index"] = json!(index);
 
     Ok(Json(chapter))
 }

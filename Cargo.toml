@@ -27,6 +27,7 @@ rocket = {version = "0.5.0-rc.1", features = [
 serde_json = {version = "^1"}
 sha2 = "0.10.2"
 chrono = "0.4"
+regex = "1.5.6"
 
 [dependencies.sea-orm-rocket]
 git = "https://github.com/SeaQL/sea-orm"

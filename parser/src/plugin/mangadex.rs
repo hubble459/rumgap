@@ -2,6 +2,7 @@ use std::vec;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use tokio::time::{Duration, sleep};
 use itertools::Itertools;
 use mangadex_api::{
     types::{Language, MangaStatus, ReferenceExpansionResource, RelationshipType},
@@ -76,6 +77,11 @@ impl Parser for MangaDex {
         let mut total: u32 = 0;
 
         while offset == 0 || offset < total {
+            if offset != 0 && offset % 2000 == 0 {
+                // When 3 requests are made, wait one second before making the next
+                sleep(Duration::from_secs(1)).await;
+            }
+
             let results = self
                 .client
                 .manga()
@@ -188,14 +194,14 @@ impl Parser for MangaDex {
 
         let images: Vec<Url> = at_home
             .chapter
-            .data
+            .data_saver
             .iter()
             .map(|filename| {
                 at_home
                     .base_url
                     .join(&format!(
                         "/{quality_mode}/{chapter_hash}/{page_filename}",
-                        quality_mode = "data",
+                        quality_mode = "data-saver",
                         chapter_hash = at_home.chapter.hash,
                         page_filename = filename
                     ))

@@ -7,8 +7,8 @@ use sea_orm::{entity::prelude::*, ActiveValue};
 #[sea_orm(table_name = "reading")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: u32,
     pub manga_id: u32,
+    #[sea_orm(primary_key)]
     pub user_id: u32,
     pub progress: u32,
     pub created_at: DateTimeUtc,
