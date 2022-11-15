@@ -20,7 +20,7 @@ use crate::auth::User;
 use crate::pagination::Pagination;
 use crate::pool::Db;
 
-pub const DEFAULT_LIMIT: usize = 10;
+pub const DEFAULT_LIMIT: u64 = 10;
 
 pub fn map_manga_json(mut manga: JsonValue) -> JsonValue {
     manga["alt_titles"] = manga["alt_titles"]
@@ -53,40 +53,42 @@ async fn create(
         .select_only()
         .column(manga::Column::Id)
         .filter(manga::Column::Url.eq(url.clone()))
-        .into_json()
         .one(db)
         .await
-        .map_err(|e| (
-            Status::InternalServerError,
-            RawJson(json!({"message": e.to_string()})),
-        ))?;
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?;
 
     if exists.is_some() {
         let exists = exists.unwrap();
-        let id = exists["id"].as_u64().unwrap();
+        let id = exists.id;
         return Ok(Redirect::to(format!("/api/manga/{}", id)));
     }
 
     let manga = parser
-        .manga(Url::parse(&url).map_err(|e| (
-            Status::BadRequest,
-            RawJson(json!({"message": e.to_string()})),
-        ))?)
+        .manga(Url::parse(&url).map_err(|e| {
+            (
+                Status::BadRequest,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?)
         .await
-        .map_err(|e| (
-            Status::InternalServerError,
-            RawJson(json!({"message": e.to_string()})),
-        ))?;
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?;
 
     let stored = manga
         .clone()
         .into_active_model()
         .save(db)
         .await
-        .map_err(|e| (
-            Status::Conflict,
-            RawJson(json!({"message": e.to_string()})),
-        ))?;
+        .map_err(|e| (Status::Conflict, RawJson(json!({"message": e.to_string()}))))?;
 
     // Store Chapters
     Chapter::insert_many(manga.chapters.iter().map(|chapter| chapter::ActiveModel {
@@ -99,10 +101,12 @@ async fn create(
     }))
     .exec(db)
     .await
-    .map_err(|e| (
-        Status::InternalServerError,
-        RawJson(json!({"message": e.to_string()})),
-    ))?;
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            RawJson(json!({"message": e.to_string()})),
+        )
+    })?;
 
     let id = stored.id.unwrap();
     Ok(Redirect::to(format!("/api/manga/{}", id)))
@@ -111,8 +115,8 @@ async fn create(
 #[get("/?<page>&<limit>&<hide_reading>")]
 async fn list(
     conn: Connection<'_, Db>,
-    page: Option<usize>,
-    limit: Option<usize>,
+    page: Option<u64>,
+    limit: Option<u64>,
     hide_reading: Option<bool>,
     user: Option<User>,
 ) -> Result<Json<Pagination<Vec<JsonValue>>>, (Status, RawJson<JsonValue>)> {
@@ -187,19 +191,25 @@ async fn list(
     })?;
 
     // Fetch paginated manga
-    let manga = paginator.fetch_page(page - 1).await.map_err(|e| {
-        (
-            Status::BadRequest,
-            RawJson(json!({"message": e.to_string()})),
-        )
-    })?;
+    let manga: Vec<JsonValue> = paginator
+        .fetch_page(page - 1)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                RawJson(json!({"message": e.to_string()})),
+            )
+        })?
+        .into_iter()
+        .map(map_manga_json)
+        .collect();
 
     Ok(Json(Pagination {
         page,
         limit,
         num_items,
         num_pages,
-        data: manga.into_iter().map(map_manga_json).collect(),
+        items: manga,
     }))
 }
 

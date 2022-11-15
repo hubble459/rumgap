@@ -72,30 +72,6 @@ impl IntoActiveModel<ActiveModel> for Manga {
     }
 }
 
-impl TryInto<Model> for ActiveModel {
-    type Error = &'static str;
-
-    fn try_into(self) -> Result<Model, Self::Error> {
-        if self.id.is_not_set() {
-            return Err("Id is not set");
-        }
-
-        Ok(Model {
-            id: self.id.unwrap(),
-            url: self.url.unwrap(),
-            title: self.title.unwrap(),
-            description: self.description.unwrap(),
-            cover: self.cover.unwrap(),
-            ongoing: self.ongoing.unwrap(),
-            genres: self.genres.unwrap(),
-            authors: self.authors.unwrap(),
-            alt_titles: self.alt_titles.unwrap(),
-            created_at: self.created_at.unwrap(),
-            updated_at: self.updated_at.unwrap(),
-        })
-    }
-}
-
 fn serialize_str_vec<S>(str_list: &String, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -104,3 +80,28 @@ where
 
     vec.serialize(s)
 }
+
+
+// impl TryInto<Model> for ActiveModel {
+//     type Error = &'static str;
+
+//     fn try_into(self) -> Result<Model, Self::Error> {
+//         if self.id.is_not_set() {
+//             return Err("Id is not set");
+//         }
+
+//         Ok(Model {
+//             id: self.id.unwrap(),
+//             url: self.url.unwrap(),
+//             title: self.title.unwrap(),
+//             description: self.description.unwrap(),
+//             cover: self.cover.unwrap(),
+//             ongoing: self.ongoing.unwrap(),
+//             genres: self.genres.unwrap(),
+//             authors: self.authors.unwrap(),
+//             alt_titles: self.alt_titles.unwrap(),
+//             created_at: self.created_at.unwrap(),
+//             updated_at: self.updated_at.unwrap(),
+//         })
+//     }
+// }

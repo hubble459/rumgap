@@ -57,7 +57,11 @@ impl Parser for MangaParser {
         hostnames: Vec<String>,
     ) -> anyhow::Result<Vec<SearchManga>> {
         let parsers = self.parsers.iter().filter(|parser| {
-            parser.can_search() && parser.hostnames().iter().any(|hn| hostnames.contains(&hn.to_string()))
+            parser.can_search()
+                && parser
+                    .hostnames()
+                    .iter()
+                    .any(|hn| hostnames.contains(&hn.to_string()))
         });
 
         let mut processes = vec![];

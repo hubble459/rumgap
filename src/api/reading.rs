@@ -15,8 +15,8 @@ use super::manga::DEFAULT_LIMIT;
 #[get("/?<page>&<limit>&<keyword>")]
 async fn index(
     conn: Connection<'_, Db>,
-    page: Option<usize>,
-    limit: Option<usize>,
+    page: Option<u64>,
+    limit: Option<u64>,
     keyword: Option<String>,
     user: User,
 ) -> Result<Json<Pagination<Vec<JsonValue>>>, (Status, RawJson<JsonValue>)> {
@@ -113,7 +113,7 @@ async fn index(
         page,
         limit,
         num_items,
-        data: reading
+        items: reading
             .into_iter()
             .map(|value| {
                 json!({

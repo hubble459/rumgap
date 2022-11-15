@@ -22,8 +22,8 @@ use super::manga::DEFAULT_LIMIT;
 async fn index(
     conn: Connection<'_, Db>,
     manga_id: u32,
-    page: Option<usize>,
-    limit: Option<usize>,
+    page: Option<u64>,
+    limit: Option<u64>,
 ) -> Result<Json<Pagination<Vec<Value>>>, Status> {
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(DEFAULT_LIMIT);
@@ -53,11 +53,11 @@ async fn index(
         num_items,
         page,
         limit,
-        data: chapters
+        items: chapters
             .into_iter()
             .enumerate()
             .map(|(index, mut chapter)| {
-                chapter["index"] = json!(num_items - (index + (page - 1) * limit));
+                chapter["index"] = json!(num_items - (index as u64 + (page - 1) * limit));
                 let title = chapter["title"].as_str().unwrap();
                 if title.is_empty() {
                     let number = chapter["number"].as_f64().unwrap();

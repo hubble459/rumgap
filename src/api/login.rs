@@ -29,7 +29,7 @@ pub struct LoginData {
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
-pub struct Token {
+pub struct  Token {
     pub token: String,
 }
 
