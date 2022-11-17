@@ -1,17 +1,18 @@
 use crate::{model::*, plugin::plugins};
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::future::join_all;
+use reqwest::Url;
 
 #[async_trait]
 pub trait Parser {
-    async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga>;
-    async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>>;
+    async fn manga(&self, url: Url) -> Result<Manga>;
+    async fn images(&self, url: &Url) -> Result<Vec<Url>>;
     async fn search(
         &self,
         keyword: String,
         hostnames: Vec<String>,
-    ) -> anyhow::Result<Vec<SearchManga>>;
+    ) -> Result<Vec<SearchManga>>;
     fn hostnames(&self) -> Vec<&'static str>;
     fn can_search(&self) -> bool;
     fn rate_limit(&self) -> u32;
@@ -29,7 +30,7 @@ impl MangaParser {
 
 #[async_trait]
 impl Parser for MangaParser {
-    async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga> {
+    async fn manga(&self, url: Url) -> Result<Manga> {
         let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
 
         let parser = self
@@ -40,7 +41,7 @@ impl Parser for MangaParser {
 
         parser.manga(url).await
     }
-    async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>> {
+    async fn images(&self, url: &Url) -> Result<Vec<Url>> {
         let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
 
         let parser = self
@@ -55,7 +56,7 @@ impl Parser for MangaParser {
         &self,
         keyword: String,
         hostnames: Vec<String>,
-    ) -> anyhow::Result<Vec<SearchManga>> {
+    ) -> Result<Vec<SearchManga>> {
         let parsers = self.parsers.iter().filter(|parser| {
             parser.can_search()
                 && parser
