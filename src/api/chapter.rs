@@ -133,7 +133,7 @@ async fn images(
         ))?;
 
     let images = parser
-        .images(Url::parse(&chapter.url).unwrap())
+        .images(&Url::parse(&chapter.url).unwrap())
         .await
         .map_err(|e| {
             (

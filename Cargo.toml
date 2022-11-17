@@ -9,6 +9,8 @@ version = "0.1.0"
 members = [".", "entity", "migration", "parser"]
 
 [dependencies]
+log = "*"
+env_logger = "*"
 anyhow = "1"
 argon2 = "0.4.1"
 async-stream = {version = "^0.3"}

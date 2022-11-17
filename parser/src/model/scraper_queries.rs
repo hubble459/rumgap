@@ -59,7 +59,7 @@ impl Default for GenericQueryMangaChapter {
 impl Default for GenericQueryImages {
     fn default() -> Self {
         Self {
-            image: "//img",
+            image: "img",
             image_attrs: Default::default(),
         }
     }
@@ -101,10 +101,14 @@ pub struct GenericQueryImages {
 }
 
 pub struct GenericQuerySearch {
-    pub url: &'static str,
+    /// Like `/search?q=[query]` or `/search/[query]`
+    ///
+    /// Will be translated to https://<hostname><path>
+    pub path: &'static str,
+    pub base: &'static str,
     pub href: &'static str,
     pub href_attr: Option<&'static str>,
-    pub title: &'static str,
+    pub title: Option<&'static str>,
     pub title_attr: Option<&'static str>,
     pub image: Option<&'static str>,
     pub image_attrs: Option<Vec<&'static str>>,

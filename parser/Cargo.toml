@@ -10,9 +10,12 @@ path = "src/lib.rs"
 
 [dependencies]
 crabquery = { path = "crabquery" }
+log = "*"
+env_logger = "*"
 once_cell = "1"
 regex = "^1"
 reqwest = "0.11.12"
+urlencoding = "2.1.2"
 chrono = "0.4.23"
 async-trait = "0.1"
 anyhow = "1"
@@ -24,3 +27,4 @@ tokio = {version = "^1.21", features = ["macros", "rt-multi-thread"]}
 mangadex-api = {version="1.3.0", features=["chrono", "multi-thread"]}
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 itertools = "0.10.5"
+cloudflare-bypasser = "0.2.0"

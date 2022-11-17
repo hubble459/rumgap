@@ -15,8 +15,9 @@ impl ReadM {
                 authors: Some("#first_episode a small"),
                 genres: Some("div.series-summary-wrapper div.ui.list div.item a"),
                 chapter: GenericQueryMangaChapter {
-                    href: "div.season_start table tbody tr td h6 a",
-                    posted: Some("div.season_start table tbody tr td.episode-date"),
+                    base: "div.season_start tr",
+                    href: "td > h6 > a",
+                    posted: Some("td.episode-date"),
                     ..Default::default()
                 },
                 ..Default::default()

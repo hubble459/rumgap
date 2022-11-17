@@ -1,13 +1,16 @@
+use std::time::Duration;
+
 use crate::{
-    model::{Chapter, GenericQuery, Manga, SearchManga},
+    model::{Chapter, GenericQuery, GenericQuerySearch, Manga, SearchManga},
     parser::Parser,
     util,
 };
 use anyhow::{anyhow, bail, Result};
+use cloudflare_bypasser;
 use crabquery::{Document, Element, Elements};
 use once_cell::sync::Lazy;
 use regex::{Regex, RegexBuilder};
-use reqwest::Url;
+use reqwest::{Response, StatusCode, Url};
 
 pub type DocLoc = (Document, Url);
 
@@ -48,12 +51,54 @@ pub trait IGenericQueryParser: Parser {
         })
         .map_err(|e| anyhow!(e.downcast::<&str>().unwrap()))
     }
+    async fn request(
+        &self,
+        url: &Url,
+        user_agent: &str,
+        cookie: &str,
+    ) -> Result<Response> {
+        let response = reqwest::Client::new()
+            .get(url.clone())
+            .header(reqwest::header::USER_AGENT, user_agent)
+            .header(reqwest::header::COOKIE, cookie)
+            .header("Accept", "*/*")
+            .header("Referer", url.to_string())
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await?;
+
+        if response.status() == StatusCode::FORBIDDEN {
+            let mut bypasser = cloudflare_bypasser::Bypasser::default()
+                .retry(10)
+                .random_user_agent(true);
+            let mut retries = 0;
+            loop {
+                if let Ok((c, ua)) = bypasser.bypass(&url.to_string()) {
+                    return Ok(self.request(url, ua.to_str().unwrap(), c.to_str().unwrap()).await?);
+                } else if retries == 10 {
+                    break;
+                } else {
+                    retries += 1;
+                }
+            }
+            bail!("Cloudflare timeout");
+        }
+
+        Ok(response)
+    }
     async fn get_document_from_url(&self, url: &Url) -> Result<(String, DocLoc)> {
-        let response = reqwest::get(url.clone()).await?;
+        let response = self
+            .request(
+                url,
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:107.0) Gecko/20100101 Firefox/107.0",
+                "",
+            )
+            .await?;
+
         let url = response.url().clone();
         let html = response.text().await?;
         let document = self.get_document(&html)?;
-        Ok((html.to_owned(), (document, url)))
+        Ok((html, (document, url)))
     }
     async fn chapters(&self, html: &str, url: &Url, manga_title: &str) -> Result<Vec<Chapter>> {
         let query = &self.get_query().manga.chapter;
@@ -65,7 +110,6 @@ pub trait IGenericQueryParser: Parser {
 
         let href_attrs =
             util::merge_attr_with_default(&query.href_attr, vec!["href", "src", "data-src"]);
-        let title_attrs = util::merge_attr_with_default(&query.title_attr, vec![]);
 
         let mut chapter_number_fallback = elements.elements.len();
 
@@ -73,26 +117,24 @@ pub trait IGenericQueryParser: Parser {
             // Href
             let href = element.select(query.href);
             let href = href.first().ok_or(anyhow!("Missing href for a chapter"))?;
-            let url =
-                util::first_attr(href, &href_attrs).ok_or(anyhow!("Missing href for a chapter"))?;
-            let url = Url::parse(&url).map_err(|e| anyhow!(e))?;
+            let url = self.abs_url(url, href, &href_attrs)?;
 
             // Title
-            let title = if let Some(title_query) = query.title {
-                let title = element.select(title_query);
-                let title = title.first();
-                let title = title.ok_or(anyhow!("Missing title for a chapter"))?;
-                if !title_attrs.is_empty() {
-                    if let Some(title_text) = util::first_attr(title, &title_attrs) {
-                        Some(title_text)
-                    } else {
-                        title.text()
-                    }
+            let title_element = if let Some(title_query) = query.title {
+                if title_query == query.href {
+                    href.clone()
                 } else {
-                    title.text()
+                    let title = element.select(title_query);
+                    let title = title.first().cloned();
+                    title.ok_or(anyhow!("Missing title for a chapter"))?
                 }
             } else {
-                href.text()
+                href.clone()
+            };
+            let title = if let Some(title_attr) = query.title_attr {
+                title_element.attr(title_attr)
+            } else {
+                title_element.text()
             };
             let title = title.ok_or(anyhow!("Missing title for a chapter"))?;
             // Remove manga title from chapter title
@@ -104,17 +146,32 @@ pub trait IGenericQueryParser: Parser {
                 .to_string();
 
             // Number (is in title or we get fallback)
-            let number = Regex::new(r"\d+").unwrap().find_iter(&title).last();
-            let number = if let Some(number) = number {
-                number.as_str().parse().unwrap()
+            let number_element = if let Some(number_query) = query.number {
+                let element = element.select(number_query);
+                element.first().cloned().unwrap_or(title_element)
             } else {
-                chapter_number_fallback
+                title_element
+            };
+            let number = if let Some(attr) = query.number_attr {
+                number_element.attr(attr)
+            } else {
+                number_element.text()
+            };
+            let number: f32 = if let Some(number) = number {
+                let number = Regex::new(r"\d+").unwrap().find_iter(&number).last();
+                if let Some(number) = number {
+                    number.as_str().parse().unwrap()
+                } else {
+                    chapter_number_fallback as f32
+                }
+            } else {
+                chapter_number_fallback as f32
             };
 
             chapters.push(Chapter {
                 url,
                 title,
-                number: number as f32,
+                number,
                 posted: None,
             });
 
@@ -168,49 +225,122 @@ pub trait IGenericQueryParser: Parser {
 
         let images = images
             .into_iter()
-            .map(|img| self.abs_url(location.clone(), &img, attrs.to_vec()))
+            .map(|img| self.abs_url(&location, &img, &attrs.to_vec()))
             .collect::<Result<Vec<Url>>>()?;
 
         Ok(images)
     }
-    async fn do_search(&self, keyword: String, hostnames: Vec<String>) -> Result<Vec<SearchManga>> {
-        let query = self.get_query();
-        let mut results = vec![];
-
-        let mut searchable_hostnames = self.hostnames();
-
-        if let Some(search) = &query.search {
-            if let Some(searchable) = &search.hostnames {
-                searchable_hostnames = searchable.clone();
+    fn parse_keywords(&self, keywords: &str) -> String {
+        if let Some(GenericQuerySearch { encode, .. }) = self.get_query().search {
+            if encode {
+                return urlencoding::encode(keywords).into_owned();
             }
         }
-
-        if !searchable_hostnames.is_empty() {
-            for hostname in hostnames.iter() {
-                if searchable_hostnames.contains(&hostname.as_str()) {
-                    // If hostname is searchable
-                    todo!()
-                    // Add results to results array
-                }
-            }
-        }
-
-        Ok(results)
+        keywords.to_owned()
     }
-    fn abs_url(&self, location: Url, element: &Element, attrs: Vec<&'static str>) -> Result<Url> {
+    fn parse_search_url(&self, hostname: &str, keywords: &str, path: &str) -> Result<Url> {
+        let path = path.trim_start_matches("/");
+        let path = path.replace("[query]", &self.parse_keywords(keywords));
+        let url = format!("https://{}/{}", hostname, path);
+        let url = Url::parse(&url)?;
+
+        Ok(url)
+    }
+    async fn do_search(
+        &self,
+        keywords: String,
+        hostnames: Vec<String>,
+    ) -> Result<Vec<SearchManga>> {
+        let query = self.get_query();
+        if let Some(query) = &query.search {
+            let mut searchable_hostnames = self.hostnames();
+
+            if let Some(hostnames) = &query.hostnames {
+                searchable_hostnames = hostnames.clone();
+            }
+
+            if !searchable_hostnames.is_empty() {
+                let mut results = vec![];
+                let path = query.path;
+                for hostname in hostnames.iter() {
+                    // If hostname is searchable
+                    if searchable_hostnames.contains(&hostname.as_str()) {
+                        let url = self.parse_search_url(&hostname, &keywords, &path)?;
+                        // Add results to results array
+                        let result = self.get_document_from_url(&url).await;
+                        let doc = match result {
+                            Err(e) => {
+                                error!("{:#?}", e);
+                                continue;
+                            }
+                            Ok((_, (doc, _))) => doc,
+                        };
+
+                        let elements = doc.select(query.base);
+
+                        let href_attrs = util::merge_attr_with_default(
+                            &query.href_attr,
+                            vec!["href", "src", "data-src"],
+                        );
+
+                        for element in elements {
+                            // Href
+                            let href = element.select(query.href);
+                            let href = href
+                                .first()
+                                .ok_or(anyhow!("Missing href for a search item"))?;
+                            let url = util::first_attr(href, &href_attrs)
+                                .ok_or(anyhow!("Missing href for a search item"))?;
+                            let url = Url::parse(&url).map_err(|e| anyhow!(e))?;
+
+                            // Title
+                            let title_element = if let Some(title_query) = query.title {
+                                if title_query == query.href {
+                                    href.clone()
+                                } else {
+                                    let title = element.select(title_query);
+                                    let title = title.first().cloned();
+                                    title.ok_or(anyhow!("Missing title for a search item"))?
+                                }
+                            } else {
+                                href.clone()
+                            };
+                            let title = if let Some(title_attr) = query.title_attr {
+                                title_element.attr(title_attr)
+                            } else {
+                                title_element.text()
+                            };
+                            let title = title.ok_or(anyhow!("Missing title for a search item"))?;
+
+                            results.push(SearchManga {
+                                url,
+                                title,
+                                updated: None,
+                                cover: None,
+                            });
+                        }
+                    }
+                }
+                Ok(results)
+            } else {
+                bail!("Missing hostnames to search on")
+            }
+        } else {
+            bail!("Tried to search on a parser that does not support this feature")
+        }
+    }
+    fn abs_url(&self, location: &Url, element: &Element, attrs: &Vec<&'static str>) -> Result<Url> {
         for attr in attrs.iter() {
             let url = &element.attr(attr);
             if let Some(url) = url {
-                let url = Url::parse(&url.to_string());
-                if let Ok(mut url) = url {
-                    if url.domain().is_none() {
-                        url = Url::parse(&format!(
-                            "{}{}",
-                            location.origin().ascii_serialization(),
-                            url.path()
-                        ))?;
-                    }
+                let result = Url::parse(&url.to_string());
+                if let Err(_) = result {
+                    let mut base = location.clone();
+                    base.set_path("/");
+                    let url = base.join(&url.to_string())?;
                     return Ok(url);
+                } else {
+                    return Ok(result?);
                 }
             }
         }
