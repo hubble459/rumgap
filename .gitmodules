@@ -1,0 +1,3 @@
+[submodule "parser/crabquery"]
+	path = parser/crabquery
+	url = git@github.com:hubble459/crabquery.git

@@ -9,6 +9,8 @@ name = "parser"
 path = "src/lib.rs"
 
 [dependencies]
+crabquery = {path = "crabquery"}
+regex = "^1"
 reqwest = "0.11.12"
 chrono = "0.4.23"
 async-trait = "0.1"
@@ -21,4 +23,5 @@ tokio = {version = "^1.21", features = ["macros", "rt-multi-thread"]}
 mangadex-api = {version="1.3.0", features=["chrono", "multi-thread"]}
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 itertools = "0.10.5"
-visdom = "*"
+once_cell = "1"
+macro_rules_attribute = "0.1"

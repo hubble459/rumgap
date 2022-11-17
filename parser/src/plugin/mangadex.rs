@@ -2,13 +2,13 @@ use std::vec;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use reqwest::Url;
 use tokio::time::{Duration, sleep};
 use itertools::Itertools;
 use mangadex_api::{
     types::{Language, MangaStatus, ReferenceExpansionResource, RelationshipType},
     v5::{schema::{RelatedAttributes, ChapterObject}, MangaDexClient},
 };
-use reqwest::Url;
 
 use crate::{model::*, parser::Parser};
 
@@ -26,7 +26,7 @@ impl MangaDex {
 
 #[async_trait]
 impl Parser for MangaDex {
-    async fn manga(&self, url: reqwest::Url) -> anyhow::Result<Manga> {
+    async fn manga(&self, url: Url) -> anyhow::Result<Manga> {
         let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
 
         segments
@@ -121,7 +121,7 @@ impl Parser for MangaDex {
             .collect();
 
         Ok(Manga {
-            url,
+            url: url.clone(),
             cover,
             title: manga
                 .data
@@ -135,7 +135,7 @@ impl Parser for MangaDex {
                 .attributes
                 .description
                 .get(&mangadex_api::types::Language::English)
-                .ok_or(anyhow!("No description"))?
+                .unwrap_or(&"No description".to_owned())
                 .to_owned(),
             alt_titles: manga
                 .data
@@ -173,7 +173,7 @@ impl Parser for MangaDex {
             ongoing: manga.data.attributes.status == MangaStatus::Ongoing,
         })
     }
-    async fn images(&self, url: reqwest::Url) -> anyhow::Result<Vec<reqwest::Url>> {
+    async fn images(&self, url: Url) -> anyhow::Result<Vec<Url>> {
         let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
 
         segments

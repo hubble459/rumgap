@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct GenericQuery {
     pub manga: GenericQueryManga,
     pub images: GenericQueryImages,
@@ -27,7 +28,7 @@ impl Default for GenericQueryManga {
             description_attr: Default::default(),
             cover: Default::default(),
             cover_attrs: Default::default(),
-            ongoing: Default::default(),
+            is_ongoing: Default::default(),
             ongoing_attr: Default::default(),
             alt_titles: Default::default(),
             alt_titles_attr: Default::default(),
@@ -43,7 +44,8 @@ impl Default for GenericQueryManga {
 impl Default for GenericQueryMangaChapter {
     fn default() -> Self {
         Self {
-            href: "ul a, ol a",
+            base: "ul, ol",
+            href: "a",
             href_attr: Default::default(),
             title: Default::default(),
             title_attr: Default::default(),
@@ -64,6 +66,7 @@ impl Default for GenericQueryImages {
     }
 }
 
+#[derive(Clone)]
 pub struct GenericQueryManga {
     pub title: &'static str,
     pub title_attr: Option<&'static str>,
@@ -71,7 +74,7 @@ pub struct GenericQueryManga {
     pub description_attr: Option<&'static str>,
     pub cover: Option<&'static str>,
     pub cover_attrs: Option<Vec<&'static str>>,
-    pub ongoing: Option<&'static str>,
+    pub is_ongoing: Option<&'static str>,
     pub ongoing_attr: Option<&'static str>,
     pub alt_titles: Option<&'static str>,
     pub alt_titles_attr: Option<&'static str>,
@@ -82,7 +85,9 @@ pub struct GenericQueryManga {
     pub chapter: GenericQueryMangaChapter,
 }
 
+#[derive(Clone)]
 pub struct GenericQueryMangaChapter {
+    pub base: &'static str,
     pub href: &'static str,
     pub href_attr: Option<&'static str>,
     pub title: Option<&'static str>,
@@ -93,11 +98,13 @@ pub struct GenericQueryMangaChapter {
     pub number_attr: Option<&'static str>,
 }
 
+#[derive(Clone)]
 pub struct GenericQueryImages {
     pub image: &'static str,
     pub image_attrs: Option<Vec<&'static str>>,
 }
 
+#[derive(Clone)]
 pub struct GenericQuerySearch {
     pub url: &'static str,
     pub href: &'static str,

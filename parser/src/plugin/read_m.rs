@@ -1,4 +1,4 @@
-use super::generic_query_parser::{GenericQueryParser, IGenericQueryParser};
+use super::generic_query_parser::GenericQueryParser;
 use crate::model::{GenericQuery, GenericQueryImages, GenericQueryManga, GenericQueryMangaChapter};
 
 pub struct ReadM;
@@ -10,7 +10,7 @@ impl ReadM {
                 title: "h1.page-title",
                 description: Some("p span"),
                 cover: Some("img.series-profile-thumb"),
-                ongoing: Some("span.series-status.aqua"),
+                is_ongoing: Some("span.series-status.aqua"),
                 alt_titles: Some("div.sub-title.pt-sm"),
                 authors: Some("#first_episode a small"),
                 genres: Some("div.series-summary-wrapper div.ui.list div.item a"),

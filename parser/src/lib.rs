@@ -2,28 +2,62 @@ pub mod model;
 pub mod parser;
 pub mod plugin;
 pub use reqwest::Url;
+mod util;
+
+#[macro_use]
+extern crate macro_rules_attribute;
+
 #[cfg(test)]
 mod tests {
+    use once_cell::sync::Lazy;
     use reqwest::Url;
 
-    use crate::parser::{MangaParser, Parser};
+    use crate::{
+        model::Manga,
+        parser::{MangaParser, Parser},
+    };
 
-    #[tokio::test]
-    async fn main_parser() {
-        let parser = MangaParser::new();
+    static PARSER: Lazy<MangaParser> = Lazy::new(|| MangaParser::new());
 
-        let result = parser.images(Url::parse("https://isekaiscanmanga.com/manga/cancel-this-wish/chapter-53/").unwrap()).await;
-        let result = result.unwrap();
-        println!("{:#?}", result);
-        assert!(!result.is_empty());
+    macro_rules! manga_tests {
+        ($(
+            $(#[$meta:meta])*
+            $name:ident: $url:expr,
+        )*) => {
+            $(
+                /// [`url`]: $url
+                #[tokio::test]
+                async fn $name() {
+                    let url = Url::parse($url).unwrap();
+                    let manga = PARSER.manga(url).await.unwrap();
+                    assert_manga(manga).await;
+                }
+            )*
+        }
+    }
 
-        // let url = Url::parse("https://mangadex.org/title/28c77530-dfa1-4b05-8ec3-998960ba24d4/otomege-sekai-wa-mob-ni-kibishii-sekai-desu").unwrap();
+    async fn assert_manga(manga: Manga) {
+        assert!(!manga.title.is_empty(), "Title is empty");
+        assert!(!manga.description.is_empty(), "Description is empty");
+        assert!(manga.ongoing, "Manga is not ongoing");
+        assert!(manga.url.has_host(), "Url is missing host");
+        assert!(!manga.authors.is_empty(), "Missing authors");
+        assert!(!manga.genres.is_empty(), "Missing genres");
+        assert!(!manga.alt_titles.is_empty(), "Missing alternative titles");
+        assert!(!manga.chapters.is_empty(), "Missing chapters");
 
-        // let manga = parser.manga(url).await.unwrap();
+        let first_chapter = manga.chapters.first().unwrap();
+        let images = PARSER.images(first_chapter.url.clone()).await;
+        assert!(images.is_ok(), "error: {:#?}", images.unwrap_err());
+        let images = images.unwrap();
+        assert!(!images.is_empty(), "No images found in chapter");
+    }
 
-        // assert!(!manga.title.is_empty());
-        // assert!(!manga.description.is_empty());
+    manga_tests! {
+        // Madara
+        isekaiscanmanga: "https://isekaiscanmanga.com/manga/cancel-this-wish",
 
-        // println!("{:#?}", manga);
+        // JSON API
+        mangadex: "https://mangadex.org/title/56a35035-3c2c-4220-a764-a5d92d470e51/danshikou-ni-dokusareta-otokonoko",
     }
 }

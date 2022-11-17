@@ -28,7 +28,11 @@ use cors::CORS;
 
 async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
     let conn = &Db::fetch(&rocket).unwrap().conn;
-    let _ = migration::Migrator::up(conn, None).await;
+    let result = migration::Migrator::up(conn, None).await;
+    if let Err(e) = result {
+        println!("ERROR: {:#?}", e);
+        return Err(rocket);
+    }
     Ok(rocket)
 }
 
