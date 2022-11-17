@@ -17,8 +17,19 @@ pub type DocLoc<'html> = (Elements<'html>, Url);
 
 #[async_trait::async_trait]
 pub trait IGenericQueryParser {
-    fn new(generic_query: GenericQuery) -> Self;
-    async fn get_document_from_url(&self, url: Url) -> anyhow::Result<(String, DocLoc)>;
+    // Getters
+    fn get_query() -> GenericQuery;
+    fn get_document() -> {
+        return Vis::load(html).map_err(|e| anyhow!(e));
+    }
+    // Async Functions
+    async fn get_document_from_url(&self, url: Url) -> anyhow::Result<(String, DocLoc)> {
+        let response = reqwest::get(url).await?;
+        let url = response.url().clone();
+        let html = response.text().await?;
+        let document = get_document(&html)?;
+        Ok((html.to_owned(), (document, url)))
+    }
     async fn chapters(&self, html: &str, url: &Url, title: &String) -> Vec<Chapter>;
     fn abs_url(
         &self,
@@ -42,13 +53,6 @@ impl IGenericQueryParser for GenericQueryParser {
         GenericQueryParser {
             query: generic_query,
         }
-    }
-    async fn get_document_from_url(&self, url: Url) -> anyhow::Result<(String, DocLoc)> {
-        let response = reqwest::get(url).await?;
-        let url = response.url().clone();
-        let html = response.text().await?;
-        let document = get_document(&html)?;
-        Ok((html.to_owned(), (document, url)))
     }
 
     fn get_document(html: &str) -> anyhow::Result<Elements> {
