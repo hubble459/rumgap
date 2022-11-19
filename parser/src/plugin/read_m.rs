@@ -1,4 +1,4 @@
-use super::generic_query_parser::{GenericQueryParser, IGenericQueryParser};
+use super::generic_query_parser::GenericQueryParser;
 use crate::model::{GenericQuery, GenericQueryImages, GenericQueryManga, GenericQueryMangaChapter};
 
 pub struct ReadM;
@@ -16,7 +16,7 @@ impl ReadM {
                 genres: Some("div.series-summary-wrapper div.ui.list div.item a"),
                 chapter: GenericQueryMangaChapter {
                     base: "div.season_start tr",
-                    href: "td > h6 > a",
+                    href: Some("td > h6 > a"),
                     posted: Some("td.episode-date"),
                     ..Default::default()
                 },

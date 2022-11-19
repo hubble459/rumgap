@@ -1,3 +1,6 @@
 [submodule "parser/crabquery"]
 	path = parser/crabquery
 	url = git@github.com:hubble459/crabquery.git
+[submodule "parser/cloudflare-bypasser"]
+	path = parser/cloudflare-bypasser
+	url = git@github.com:hubble459/cloudflare-bypasser.git

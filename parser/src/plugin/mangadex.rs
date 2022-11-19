@@ -1,16 +1,22 @@
 use std::vec;
 
-use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use reqwest::Url;
-use tokio::time::{Duration, sleep};
 use itertools::Itertools;
 use mangadex_api::{
     types::{Language, MangaStatus, ReferenceExpansionResource, RelationshipType},
-    v5::{schema::{RelatedAttributes, ChapterObject}, MangaDexClient},
+    v5::{
+        schema::{ChapterObject, RelatedAttributes},
+        MangaDexClient,
+    },
 };
+use reqwest::Url;
+use tokio::time::{sleep, Duration};
 
-use crate::{model::*, parser::Parser};
+use crate::{
+    model::*,
+    parse_error::{ParseError, Result},
+    parser::Parser,
+};
 
 pub struct MangaDex {
     client: MangaDexClient,
@@ -27,14 +33,19 @@ impl MangaDex {
 #[async_trait]
 impl Parser for MangaDex {
     async fn manga(&self, url: Url) -> Result<Manga> {
-        let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
+        let mut segments = url
+            .path_segments()
+            .ok_or(ParseError::NotAccepted(url.to_string()))?;
 
         segments
             .next()
             .filter(|s| s == &"title" || s == &"manga")
-            .ok_or(anyhow!("Can't parse this url"))?;
+            .ok_or(ParseError::NotAccepted(url.to_string()))?;
 
-        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(anyhow!("No ID found in url"))?)?;
+        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(ParseError::NotAccepted(
+            format!("No ID found in url ({})", url.as_str()),
+        ))?)
+        .map_err(|e| ParseError::Other(e.into()))?;
 
         let manga = self
             .client
@@ -42,9 +53,11 @@ impl Parser for MangaDex {
             .get()
             .manga_id(uuid)
             .include(&mangadex_api::types::ReferenceExpansionResource::Author)
-            .build()?
+            .build()
+            .map_err(|e| ParseError::Other(e.into()))?
             .send()
-            .await?;
+            .await
+            .map_err(|e| ParseError::Other(e.into()))?;
 
         let cover_id = manga
             .data
@@ -58,16 +71,21 @@ impl Parser for MangaDex {
                 .cover()
                 .get()
                 .cover_id(&relationship.id)
-                .build()?
+                .build()
+                .map_err(|e| ParseError::Other(e.into()))?
                 .send()
-                .await?;
+                .await
+                .map_err(|e| ParseError::Other(e.into()))?;
 
-            Some(Url::parse(&format!(
-                "{}/covers/{}/{}",
-                mangadex_api::constants::CDN_URL,
-                uuid,
-                cover.data.attributes.file_name
-            ))?)
+            Some(
+                Url::parse(&format!(
+                    "{}/covers/{}/{}",
+                    mangadex_api::constants::CDN_URL,
+                    uuid,
+                    cover.data.attributes.file_name
+                ))
+                .map_err(|e| ParseError::Other(e.into()))?,
+            )
         } else {
             None
         };
@@ -90,9 +108,12 @@ impl Parser for MangaDex {
                 .offset(offset)
                 .translated_language(vec![Language::English])
                 .manga_id(uuid)
-                .build()?
+                .build()
+                .map_err(|e| ParseError::Other(e.into()))?
                 .send()
-                .await??;
+                .await
+                .map_err(|e| ParseError::Other(e.into()))?
+                .map_err(|e| ParseError::Other(e.into()))?;
             chapters.append(&mut results.data.clone());
             total = results.total;
             offset += 500;
@@ -109,13 +130,9 @@ impl Parser for MangaDex {
                     .parse()
                     .unwrap(),
                 posted: Some(*chapter.attributes.created_at.as_ref()),
-                title:  chapter.attributes.title.to_owned(),
-                url: Url::parse(&format!(
-                    "{}/chapter/{}",
-                    mangadex_api::API_URL,
-                    chapter.id
-                ))
-                .unwrap(),
+                title: chapter.attributes.title.to_owned(),
+                url: Url::parse(&format!("{}/chapter/{}", mangadex_api::API_URL, chapter.id))
+                    .unwrap(),
             })
             .sorted_by(|c1, c2| c1.posted.unwrap().cmp(&c2.posted.unwrap()))
             .collect();
@@ -128,7 +145,7 @@ impl Parser for MangaDex {
                 .attributes
                 .title
                 .get(&mangadex_api::types::Language::English)
-                .ok_or(anyhow!("No title"))?
+                .ok_or(ParseError::MissingMangaTitle)?
                 .to_owned(),
             description: manga
                 .data
@@ -174,23 +191,30 @@ impl Parser for MangaDex {
         })
     }
     async fn images(&self, url: &Url) -> Result<Vec<Url>> {
-        let mut segments = url.path_segments().ok_or(anyhow!("Can't parse this url"))?;
+        let mut segments = url
+            .path_segments()
+            .ok_or(ParseError::NotAccepted(url.to_string()))?;
 
         segments
             .next()
             .filter(|s| s == &"chapter")
-            .ok_or(anyhow!("Can't parse this url"))?;
+            .ok_or(ParseError::NotAccepted(url.to_string()))?;
 
-        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(anyhow!("No ID found in url"))?)?;
+        let uuid = &uuid::Uuid::parse_str(segments.next().ok_or(ParseError::NotAccepted(
+            format!("No ID found in url ({})", url.as_str()),
+        ))?)
+        .map_err(|e| ParseError::Other(e.into()))?;
 
         let at_home = self
             .client
             .at_home()
             .server()
             .chapter_id(uuid)
-            .build()?
+            .build()
+            .map_err(|e| ParseError::Other(e.into()))?
             .send()
-            .await?;
+            .await
+            .map_err(|e| ParseError::Other(e.into()))?;
 
         let images: Vec<Url> = at_home
             .chapter
@@ -211,11 +235,7 @@ impl Parser for MangaDex {
 
         Ok(images)
     }
-    async fn search(
-        &self,
-        keyword: String,
-        _hostnames: Vec<String>,
-    ) -> Result<Vec<SearchManga>> {
+    async fn search(&self, keyword: String, _hostnames: Vec<String>) -> Result<Vec<SearchManga>> {
         let results = self
             .client
             .search()
@@ -223,9 +243,11 @@ impl Parser for MangaDex {
             .add_available_translated_language(Language::English)
             .title(keyword.as_str())
             .include(ReferenceExpansionResource::CoverArt)
-            .build()?
+            .build()
+            .map_err(|e| ParseError::Other(e.into()))?
             .send()
-            .await?;
+            .await
+            .map_err(|e| ParseError::Other(e.into()))?;
 
         let search_results = results
             .data

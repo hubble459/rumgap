@@ -1,5 +1,9 @@
-use crate::{model::*, plugin::plugins};
-use anyhow::{anyhow, Result};
+use crate::{
+    model::*,
+    parse_error::{ParseError, Result},
+    plugin::plugins,
+    util,
+};
 use async_trait::async_trait;
 use futures::future::join_all;
 use reqwest::Url;
@@ -8,11 +12,7 @@ use reqwest::Url;
 pub trait Parser {
     async fn manga(&self, url: Url) -> Result<Manga>;
     async fn images(&self, url: &Url) -> Result<Vec<Url>>;
-    async fn search(
-        &self,
-        keyword: String,
-        hostnames: Vec<String>,
-    ) -> Result<Vec<SearchManga>>;
+    async fn search(&self, keyword: String, hostnames: Vec<String>) -> Result<Vec<SearchManga>>;
     fn hostnames(&self) -> Vec<&'static str>;
     fn can_search(&self) -> bool;
     fn rate_limit(&self) -> u32;
@@ -31,32 +31,28 @@ impl MangaParser {
 #[async_trait]
 impl Parser for MangaParser {
     async fn manga(&self, url: Url) -> Result<Manga> {
-        let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
+        let hostname = util::get_hostname(&url)?;
 
         let parser = self
             .parsers
             .iter()
-            .find(|parser| parser.hostnames().contains(&hostname))
-            .ok_or(anyhow!("No parser found for {}", hostname))?;
+            .find(|parser| parser.hostnames().contains(&hostname.as_str()))
+            .ok_or(ParseError::NoParserFound(hostname.to_string()))?;
 
         parser.manga(url).await
     }
     async fn images(&self, url: &Url) -> Result<Vec<Url>> {
-        let hostname = url.host_str().ok_or(anyhow!("No hostname in url"))?;
+        let hostname = util::get_hostname(&url)?;
 
         let parser = self
             .parsers
             .iter()
-            .find(|parser| parser.hostnames().contains(&hostname))
-            .ok_or(anyhow!("No parser found for {}", hostname))?;
+            .find(|parser| parser.hostnames().contains(&hostname.as_str()))
+            .ok_or(ParseError::NoParserFound(hostname.to_string()))?;
 
         parser.images(url).await
     }
-    async fn search(
-        &self,
-        keyword: String,
-        hostnames: Vec<String>,
-    ) -> Result<Vec<SearchManga>> {
+    async fn search(&self, keyword: String, hostnames: Vec<String>) -> Result<Vec<SearchManga>> {
         let parsers = self.parsers.iter().filter(|parser| {
             parser.can_search()
                 && parser

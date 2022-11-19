@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub struct GenericQuery {
     pub manga: GenericQueryManga,
     pub images: GenericQueryImages,
@@ -44,7 +45,7 @@ impl Default for GenericQueryMangaChapter {
     fn default() -> Self {
         Self {
             base: "ul, ol",
-            href: "a",
+            href: Default::default(),
             href_attr: Default::default(),
             title: Default::default(),
             title_attr: Default::default(),
@@ -56,15 +57,7 @@ impl Default for GenericQueryMangaChapter {
     }
 }
 
-impl Default for GenericQueryImages {
-    fn default() -> Self {
-        Self {
-            image: "img",
-            image_attrs: Default::default(),
-        }
-    }
-}
-
+#[derive(Clone, Debug)]
 pub struct GenericQueryManga {
     pub title: &'static str,
     pub title_attr: Option<&'static str>,
@@ -83,9 +76,11 @@ pub struct GenericQueryManga {
     pub chapter: GenericQueryMangaChapter,
 }
 
+#[derive(Clone, Debug)]
 pub struct GenericQueryMangaChapter {
     pub base: &'static str,
-    pub href: &'static str,
+    /// if None, [base] will be used
+    pub href: Option<&'static str>,
     pub href_attr: Option<&'static str>,
     pub title: Option<&'static str>,
     pub title_attr: Option<&'static str>,
@@ -95,11 +90,22 @@ pub struct GenericQueryMangaChapter {
     pub number_attr: Option<&'static str>,
 }
 
+#[derive(Clone, Debug)]
 pub struct GenericQueryImages {
     pub image: &'static str,
     pub image_attrs: Option<Vec<&'static str>>,
 }
 
+impl Default for GenericQueryImages {
+    fn default() -> Self {
+        Self {
+            image: "img",
+            image_attrs: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct GenericQuerySearch {
     /// Like `/search?q=[query]` or `/search/[query]`
     ///
