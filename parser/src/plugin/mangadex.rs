@@ -259,7 +259,7 @@ impl Parser for MangaDex {
                     .get(&mangadex_api::types::Language::English)
                     .unwrap_or(&"No title".to_owned())
                     .to_owned(),
-                updated: m.attributes.updated_at.as_ref().map(|date| *date.as_ref()),
+                posted: m.attributes.updated_at.as_ref().map(|date| *date.as_ref()),
                 cover: m
                     .relationships
                     .clone()
@@ -288,8 +288,8 @@ impl Parser for MangaDex {
         vec!["api.mangadex.org", "mangadex.org"]
     }
 
-    fn can_search(&self) -> bool {
-        true
+    fn can_search(&self) -> Option<Vec<String>> {
+        Some(vec!["mangadex.org".to_owned()])
     }
 
     fn rate_limit(&self) -> u32 {

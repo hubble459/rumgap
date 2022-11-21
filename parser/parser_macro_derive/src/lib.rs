@@ -17,7 +17,7 @@ fn impl_parser_macro(ast: &syn::DeriveInput) -> TokenStream {
     let gen = quote! {
         #[async_trait::async_trait]
         impl crate::parser::Parser for #name {
-            fn can_search(&self) -> bool {
+            fn can_search(&self) -> Option<Vec<String>> {
                 self.parser_can_search()
             }
 

@@ -5,6 +5,6 @@ use serde::{Serialize, Deserialize};
 pub struct SearchManga {
     pub url: reqwest::Url,
     pub title: String,
-    pub updated: Option<DateTime<Utc>>,
+    pub posted: Option<DateTime<Utc>>,
     pub cover: Option<reqwest::Url>,
 }

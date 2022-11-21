@@ -12,8 +12,8 @@ impl Default for GenericQuery {
         Self {
             manga: Default::default(),
             images: Default::default(),
-            search: Default::default(),
             hostnames: Default::default(),
+            search: None,
             date_formats: Default::default(),
         }
     }
@@ -112,14 +112,33 @@ pub struct GenericQuerySearch {
     /// Will be translated to https://<hostname><path>
     pub path: &'static str,
     pub base: &'static str,
-    pub href: &'static str,
+    pub href: Option<&'static str>,
     pub href_attr: Option<&'static str>,
     pub title: Option<&'static str>,
     pub title_attr: Option<&'static str>,
-    pub image: Option<&'static str>,
-    pub image_attrs: Option<Vec<&'static str>>,
-    pub updated: Option<&'static str>,
-    pub updated_attr: Option<&'static str>,
+    pub cover: Option<&'static str>,
+    pub cover_attrs: Option<Vec<&'static str>>,
+    pub posted: Option<&'static str>,
+    pub posted_attr: Option<&'static str>,
     pub encode: bool,
     pub hostnames: Option<Vec<&'static str>>,
+}
+
+impl Default for GenericQuerySearch {
+    fn default() -> Self {
+        Self {
+            base: "",
+            path: "",
+            href: Default::default(),
+            href_attr: Default::default(),
+            title: Default::default(),
+            title_attr: Default::default(),
+            cover: Default::default(),
+            cover_attrs: Default::default(),
+            posted: Default::default(),
+            posted_attr: Default::default(),
+            encode: true,
+            hostnames: Default::default(),
+        }
+    }
 }

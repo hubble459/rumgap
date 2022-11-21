@@ -7,13 +7,18 @@ use crate::{
     util,
 };
 use crabquery::{Document, Element, Elements};
-use once_cell::sync::Lazy;
 use regex::{Regex, RegexBuilder};
 use reqwest::{RequestBuilder, Response, StatusCode, Url};
 
 pub type DocLoc = (Document, Url);
 
-static GENERIC_LIST_SPLITTER: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\s\n\r\t:;\-]*").unwrap());
+lazy_static! {
+    static ref GENERIC_LIST_SPLITTER: Regex = Regex::new(r"[\s\n\r\t:;\-]*").unwrap();
+    static ref NORMALIZE_TITLE_MANGA: Regex = RegexBuilder::new(r"\s*manga\s*")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+}
 
 #[async_trait::async_trait]
 pub trait IGenericQueryParser: Parser {
@@ -22,16 +27,16 @@ pub trait IGenericQueryParser: Parser {
             let elements: Elements = util::select(doc, query).into();
             if let Some(attr) = attr {
                 if let Some(text) = elements.attr(attr) {
-                    return text.split("\n").map(String::from).collect();
+                    return text.split("\n").map(|t| String::from(t.trim())).collect();
                 }
             } else {
                 if let Some(text) = elements.text() {
                     if elements.elements.len() > 1 {
-                        return text.split("\n").map(String::from).collect();
+                        return text.split("\n").map(|t| String::from(t.trim())).collect();
                     } else {
                         return GENERIC_LIST_SPLITTER
                             .split(&text)
-                            .map(String::from)
+                            .map(|t| String::from(t.trim()))
                             .collect();
                     }
                 }
@@ -47,6 +52,8 @@ pub trait IGenericQueryParser: Parser {
         .map_err(|_e| ParseError::BadHTML)
     }
     async fn request(&self, url: &Url, builder: Option<RequestBuilder>) -> Result<Response> {
+        // TODO: Fix CloudFlare IUAM
+
         let builder = if let Some(builder) = builder {
             builder
         } else {
@@ -85,68 +92,42 @@ pub trait IGenericQueryParser: Parser {
         let query = &self.get_query().manga.chapter;
         let doc = self.get_document(&html)?;
 
-        let elements: Elements = util::select(&doc, query.base).into();
+        let elements = util::select(&doc, query.base);
 
         let mut chapters = vec![];
 
-        let href_attrs =
-            util::merge_attr_with_default(&query.href_attr, vec!["href", "src", "data-src"]);
+        let href_attrs = util::merge_attr_with_default(&query.href_attr, vec!["href"]);
 
         let mut chapter_number_fallback = elements.elements.len();
 
         for element in elements.elements.iter() {
             // Href
-            let href = if let Some(href_query) = query.href {
-                let href = util::select(element, href_query);
-                let href = href
-                    .elements
-                    .first()
-                    .cloned()
-                    .ok_or(ParseError::MissingChapterHref)?;
-                href
-            } else {
-                element.clone()
-            };
+            let href = util::select_element_fallback(element, query.href, Some(element.clone()));
+            let href = href.ok_or(ParseError::MissingChapterHref)?;
             let url = self.abs_url(url, &href, &href_attrs)?;
 
             // Title
-            let title_element = if let Some(title_query) = query.title {
-                if Some(title_query) == query.href {
-                    href.clone()
-                } else {
-                    let title = util::select(element, title_query);
-                    let title = title.elements.first().cloned();
-                    title.ok_or(ParseError::MissingChapterTitle)?
-                }
-            } else {
-                href.clone()
-            };
-            let title = if let Some(title_attr) = query.title_attr {
-                title_element.attr(title_attr)
-            } else {
-                title_element.text()
-            };
-            let title = title.ok_or(ParseError::MissingChapterTitle)?;
+            let title_element =
+                util::select_element_fallback(element, query.title, Some(href.clone()))
+                    .ok_or(ParseError::MissingChapterTitle)?;
+            let title = util::select_text_or_attr(title_element.clone(), query.title_attr)
+                .ok_or(ParseError::MissingChapterTitle)?;
             // Remove manga title from chapter title
             let title = RegexBuilder::new(&("$".to_owned() + &manga_title.to_lowercase()))
                 .case_insensitive(true)
                 .build()
                 .unwrap()
                 .replace(&title, "")
+                .trim()
                 .to_string();
 
             // Number (is in title or we get fallback)
-            let number_element = if let Some(number_query) = query.number {
-                let element = util::select(element, number_query);
-                element.elements.first().cloned().unwrap_or(title_element)
-            } else {
-                title_element
-            };
-            let number = if let Some(attr) = query.number_attr {
-                number_element.attr(attr)
-            } else {
-                number_element.text()
-            };
+            let number = util::select_fallback(
+                element,
+                query.number,
+                query.number_attr,
+                Some(title_element.clone()),
+            );
             let number: f32 = if let Some(number) = number {
                 let number = Regex::new(r"\d+").unwrap().find_iter(&number).last();
                 if let Some(number) = number {
@@ -158,11 +139,24 @@ pub trait IGenericQueryParser: Parser {
                 chapter_number_fallback as f32
             };
 
+            // Posted
+            let posted = util::select_fallback(
+                element,
+                query.posted,
+                query.posted_attr,
+                Some(element.clone()),
+            );
+            let posted = if let Some(date) = posted {
+                util::try_parse_date(&date)
+            } else {
+                None
+            };
+
             chapters.push(Chapter {
                 url,
                 title,
                 number,
-                posted: None,
+                posted,
             });
 
             chapter_number_fallback -= 1;
@@ -180,8 +174,8 @@ pub trait IGenericQueryParser: Parser {
                 html.to_owned(),
                 Manga {
                     url: doc_loc.1.clone(),
-                    title: self.title(&doc_loc)?,
-                    description: self.description(&doc_loc)?,
+                    title: self.normalize_title(self.title(&doc_loc)?.as_str()),
+                    description: self.description(&doc_loc)?.trim().to_owned(),
                     cover: self.cover(&doc_loc),
                     ongoing: self.ongoing(&doc_loc),
                     genres: self.genres(&doc_loc),
@@ -220,7 +214,12 @@ pub trait IGenericQueryParser: Parser {
 
         self.get_images(doc_loc)
     }
-    fn parse_keywords(&self, keywords: &str) -> String {
+
+    fn normalize_title(&self, title: &str) -> String {
+        NORMALIZE_TITLE_MANGA.replace_all(title, "").trim().to_owned()
+    }
+
+    fn parse_keywords(&self, _hostname: &str, keywords: &str) -> String {
         if let Some(GenericQuerySearch { encode, .. }) = self.get_query().search {
             if encode {
                 return urlencoding::encode(keywords).into_owned();
@@ -230,7 +229,7 @@ pub trait IGenericQueryParser: Parser {
     }
     fn parse_search_url(&self, hostname: &str, keywords: &str, path: &str) -> Result<Url> {
         let path = path.trim_start_matches("/");
-        let path = path.replace("[query]", &self.parse_keywords(keywords));
+        let path = path.replace("[query]", &self.parse_keywords(hostname, keywords));
         let url = format!("https://{}/{}", hostname, path);
         let url = Url::parse(&url).map_err(|_| ParseError::InvalidSearchUrl(url))?;
 
@@ -254,16 +253,18 @@ pub trait IGenericQueryParser: Parser {
         }
 
         let mut results = vec![];
+
         let path = query.path;
         for hostname in hostnames.iter() {
             // If hostname is searchable
             if searchable_hostnames.contains(&hostname.as_str()) {
                 let url = self.parse_search_url(&hostname, &keywords, &path)?;
+                debug!("searching: {}", url);
                 // Add results to results array
                 let result = self.get_document_from_url(&url).await;
                 let doc = match result {
                     Err(e) => {
-                        error!("{:#?}", e);
+                        error!("{} {:?}", url, e);
                         continue;
                     }
                     Ok((_, (doc, _))) => doc,
@@ -271,41 +272,49 @@ pub trait IGenericQueryParser: Parser {
 
                 let elements = util::select(&doc, query.base);
 
-                let href_attrs = util::merge_attr_with_default(
-                    &query.href_attr,
-                    vec!["href", "src", "data-src"],
-                );
+                let href_attrs = util::merge_attr_with_default(&query.href_attr, vec!["href"]);
+                let cover_attrs =
+                    util::merge_vec_with_default(&query.cover_attrs, vec!["src", "src-data"]);
 
-                for element in elements.elements {
+                for element in elements.elements.iter() {
                     // Href
-                    let href = util::select(&element, query.href);
-                    let href = href.elements.first().ok_or(ParseError::MissingSearchHref)?;
-                    let url = self.abs_url(&url, href, &href_attrs)?;
+                    let href =
+                        util::select_element_fallback(element, query.href, Some(element.clone()));
+                    let href = href.ok_or(ParseError::MissingSearchHref)?;
+                    let search_url = self.abs_url(&url, &href, &href_attrs)?;
 
                     // Title
-                    let title_element = if let Some(title_query) = query.title {
-                        if title_query == query.href {
-                            href.clone()
-                        } else {
-                            let title = util::select(&element, title_query);
-                            let title = title.elements.first().cloned();
-                            title.ok_or(ParseError::MissingSearchTitle)?
-                        }
+                    let title = util::select_fallback(
+                        element,
+                        query.title,
+                        query.title_attr,
+                        Some(href.clone()),
+                    )
+                    .ok_or(ParseError::MissingSearchTitle)?;
+
+                    // Posted
+                    let posted = util::select_fallback(
+                        element,
+                        query.posted,
+                        query.posted_attr,
+                        Some(element.clone()),
+                    )
+                    .map_or(None, |date| util::try_parse_date(&date));
+
+                    // Cover
+                    let cover =
+                        util::select_element_fallback(element, query.cover, Some(element.clone()));
+                    let cover = if let Some(cover) = cover {
+                        self.abs_url(&url, &cover, &cover_attrs).ok()
                     } else {
-                        href.clone()
+                        None
                     };
-                    let title = if let Some(title_attr) = query.title_attr {
-                        title_element.attr(title_attr)
-                    } else {
-                        title_element.text()
-                    };
-                    let title = title.ok_or(ParseError::MissingSearchTitle)?;
 
                     results.push(SearchManga {
-                        url,
+                        url: search_url,
                         title,
-                        updated: None,
-                        cover: None,
+                        posted,
+                        cover,
                     });
                 }
             }
@@ -316,7 +325,7 @@ pub trait IGenericQueryParser: Parser {
         for attr in attrs.iter() {
             let url = &element.attr(attr);
             if let Some(url) = url {
-                let result = Url::parse(&url.to_string());
+                let result = Url::parse(&url.trim().to_string());
                 if let Err(_) = result {
                     let mut base = location.clone();
                     base.set_path("/");
@@ -416,8 +425,22 @@ pub trait IGenericQueryParser: Parser {
         self.collect_list(doc, query.manga.authors, query.manga.authors_attr)
     }
 
-    fn parser_can_search(&self) -> bool {
-        self.get_query().search.is_some()
+    fn parser_can_search(&self) -> Option<Vec<String>> {
+        let query = self.get_query();
+        if let Some(search) = &query.search {
+            let hostnames: Vec<String> = if let Some(hostnames) = &search.hostnames {
+                hostnames.iter().map(|s| s.to_string()).collect()
+            } else {
+                query.hostnames.iter().map(|s| s.to_string()).collect()
+            };
+            if hostnames.is_empty() {
+                None
+            } else {
+                Some(hostnames)
+            }
+        } else {
+            None
+        }
     }
     fn parser_hostnames(&self) -> Vec<&'static str> {
         self.get_query().hostnames.clone()

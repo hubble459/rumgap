@@ -9,6 +9,7 @@ use super::generic_query_parser::{GenericQueryParser, IGenericQueryParser};
 use crate::{
     model::{
         Chapter, GenericQuery, GenericQueryImages, GenericQueryManga, GenericQueryMangaChapter,
+        GenericQuerySearch,
     },
     parse_error::{ParseError, Result},
     util,
@@ -24,11 +25,16 @@ const AJAX_SPECIAL: [&str; 6] = [
 ];
 
 /// action=manga_get_chapters
-const AJAX_NORMAL: [&str; 4] = [
+const AJAX_NORMAL: [&str; 5] = [
     "mangafoxfull.com",
     "mangazukiteam.com",
     "mangaonlineteam.com",
-    "yaoi.mobi"
+    "yaoi.mobi",
+    "1stkissmanga.club"
+];
+
+const NO_SEARCH: [&str; 1] = [
+    "manhuaus.com",
 ];
 
 const AJAX_IMAGES: [&str; 1] = ["azmanhwa.net"];
@@ -44,7 +50,7 @@ impl Madara {
         let query = GenericQuery {
             manga: GenericQueryManga {
                 title: "div.post-title h1",
-                description: Some("div.description-summary h3, div.summary__content p, div.dsct p"),
+                description: Some("div.description-summary h3, div.summary__content p, div.dsct p, div.summary__content"),
                 is_ongoing: Some("div.summary-heading:has(h5:icontains(status)) + div"),
                 cover: Some("div.summary_image img.lazyloaded"),
                 cover_attrs: Some(vec!["data-src"]),
@@ -54,7 +60,8 @@ impl Madara {
                 chapter: GenericQueryMangaChapter {
                     base: "li.wp-manga-chapter, ul.row-content-chapter li",
                     href: Some("a"),
-                    posted: Some("i, span.chapter-time"),
+                    posted: Some("i, span.chapter-time, span.chapter-release-date a"),
+                    posted_attr: Some("title"),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -63,7 +70,19 @@ impl Madara {
                 image: "div img.wp-manga-chapter-img, div.text-left > p > img, img[alt*=Page]",
                 ..Default::default()
             },
-            search: None,
+            search: Some(GenericQuerySearch {
+                path: "/?post_type=wp-manga&s=[query]",
+                base: "div.row.c-tabs-item__content, div.bsx-item",
+                href: Some("h3 a"),
+                cover: Some("div > a > img"),
+                cover_attrs: Some(vec!["data-src", "data-lazy-src", "src"]),
+                posted: Some(
+                    "div.post-on > span:not(a), div.post-on > span > a, div.post-on > span",
+                ),
+                posted_attr: Some("title"),
+                encode: true,
+                ..Default::default()
+            }),
             hostnames: vec![
                 "1stkissmanga.club",
                 "1stkissmanga.io",
@@ -200,8 +219,6 @@ impl IGenericQueryParser for Madara {
                 .map_err(|_| ParseError::InvalidChapterUrl(url.to_string()))?;
             url.set_query(Some("mode=vertical&quality=high"));
 
-            debug!("{}", url.to_string());
-
             let response = self.request(&url, None).await?;
             let url = response.url().clone();
             let json: AjaxImageResponse = response.json().await?;
@@ -211,6 +228,27 @@ impl IGenericQueryParser for Madara {
         } else {
             self.parser.images_from_url(url).await
         }
+    }
+
+    fn parse_search_url(&self, hostname: &str, keywords: &str, path: &str) -> Result<Url> {
+        let mut path = path;
+        if hostname == "azmanhwa.net" {
+            path = "/search?keyword=[query]";
+        }
+
+        self.parser.parse_search_url(hostname, &keywords, path)
+    }
+
+    fn parse_keywords(&self, hostname: &str, keywords: &str) -> String {
+        let keywords = self.parser.parse_keywords(hostname, keywords);
+
+        keywords
+    }
+
+    fn parser_can_search(&self) -> Option<Vec<String>> {
+        let can_search = self.parser.parser_can_search();
+
+        can_search.map(|arr| arr.into_iter().filter(|str| !NO_SEARCH.contains(&str.as_str())).collect())
     }
 }
 

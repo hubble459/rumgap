@@ -34,6 +34,10 @@ pub enum ParseError {
     #[error("Invalid chapter url: {0}")]
     InvalidChapterUrl(String),
 
+    // Images
+    #[error("No images")]
+    MissingImages,
+
     // Search
     #[error("Missing search title")]
     MissingSearchTitle,

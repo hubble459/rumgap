@@ -1,8 +1,8 @@
-use rocket::serde::{Serialize, Deserialize};
+use rocket::serde::Serialize;
 
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
-pub struct Pagination<T: Serialize + for<'de> Deserialize<'de>> {
+pub struct Pagination<T: Serialize> {
     pub page: u64,
     pub limit: u64,
     pub num_items: u64,

@@ -14,7 +14,7 @@ pub trait Parser {
     async fn images(&self, url: &Url) -> Result<Vec<Url>>;
     async fn search(&self, keyword: String, hostnames: Vec<String>) -> Result<Vec<SearchManga>>;
     fn hostnames(&self) -> Vec<&'static str>;
-    fn can_search(&self) -> bool;
+    fn can_search(&self) -> Option<Vec<String>>;
     fn rate_limit(&self) -> u32;
 }
 
@@ -54,11 +54,10 @@ impl Parser for MangaParser {
     }
     async fn search(&self, keyword: String, hostnames: Vec<String>) -> Result<Vec<SearchManga>> {
         let parsers = self.parsers.iter().filter(|parser| {
-            parser.can_search()
-                && parser
-                    .hostnames()
-                    .iter()
-                    .any(|hn| hostnames.contains(&hn.to_string()))
+            parser.can_search().map_or_else(
+                || false,
+                |arr| arr.iter().any(|hn| hostnames.contains(&hn.to_string())),
+            )
         });
 
         let mut processes = vec![];
@@ -74,7 +73,14 @@ impl Parser for MangaParser {
         let results: Vec<SearchManga> = join_all(processes)
             .await
             .into_iter()
-            .filter(|res| res.is_ok())
+            .filter(|res| {
+                if let Err(e) = res {
+                    error!("{:#?}", e);
+                    false
+                } else {
+                    true
+                }
+            })
             .flat_map(|results| results.unwrap())
             .collect();
 
@@ -86,8 +92,20 @@ impl Parser for MangaParser {
             .flat_map(|parser| parser.hostnames())
             .collect()
     }
-    fn can_search(&self) -> bool {
-        true
+    fn can_search(&self) -> Option<Vec<String>> {
+        let hostnames: Vec<String> = self
+            .parsers
+            .iter()
+            .map(|parser| parser.can_search())
+            .filter(|option| option.is_some())
+            .flat_map(|option| option.unwrap())
+            .collect();
+
+        if hostnames.is_empty() {
+            None
+        } else {
+            Some(hostnames)
+        }
     }
     fn rate_limit(&self) -> u32 {
         0
