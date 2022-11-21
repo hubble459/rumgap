@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use crabquery::{Element, Elements, Selectable};
-use regex::Regex;
+use regex::{Regex, Captures};
 use reqwest::Url;
 
 use crate::parse_error::{ParseError, Result};
@@ -149,7 +149,8 @@ where
 
 lazy_static! {
     static ref CLEAN_DATE: Regex = Regex::new(r"[^\w\d:.+\-]+").unwrap();
-    static ref ORDINAL_NUMBER: Regex = Regex::new(r"(nd|st|rd|th)").unwrap();
+    static ref CLEAN_DATE_2: Regex = Regex::new(r"-{2,}").unwrap();
+    static ref ORDINAL_NUMBER: Regex = Regex::new(r"(\d)(nd|st|rd|th)").unwrap();
     static ref DIGITS_ONLY: Regex = Regex::new(r"^\d+$").unwrap();
     static ref HAS_DIGITS: Regex = Regex::new(r"\d+").unwrap();
     static ref NONE_LETTER: Regex = Regex::new(r"\W").unwrap();
@@ -171,12 +172,12 @@ const DEFAULT_DATE_FORMATS: [&str; 18] = [
     "%Y-%m-%dT%H:%M:%SZ",
     // 2022-01-30T09:10:11
     "%Y-%m-%dT%H:%M:%S",
+    // Juli 30 22 - 09:10
+    "%B-%d-%y-%H:%M",
     // Juli 30 2022 09:10
     "%B-%d-%Y-%H:%M",
     // Oct 30 22 09:10:11
     "%b-%d-%y-%H:%M:%S",
-    // Juli 30 22 - 09:10
-    "%B-%d-%y---%H:%M",
     // Juli-30,22 09:10:11
     "%B-%d-%y-%H:%M:%S",
     // Oct 30 09:10
@@ -243,8 +244,9 @@ pub fn try_parse_date(date: &str) -> Option<DateTime<Utc>> {
 
     // Check if date format (multiple digits)
     if HAS_DIGITS.find_iter(date).count() > 1 {
-        let date = CLEAN_DATE.replace_all(date, "-");
-        let date = &ORDINAL_NUMBER.replace_all(&date.into_owned(), "").into_owned();
+        let date = CLEAN_DATE.replace_all(date, "-").into_owned();
+        let date = CLEAN_DATE_2.replace_all(&date, "-");
+        let date = &ORDINAL_NUMBER.replace_all(&date.into_owned(), |cap: &Captures| cap[1].to_owned()).into_owned();
         for format in DEFAULT_DATE_FORMATS {
             let datetime = NaiveDateTime::parse_from_str(date, format);
             if let Ok(date) = datetime {

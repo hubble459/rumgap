@@ -155,7 +155,7 @@ async fn assert_manga(manga: Manga, strictness: u8) {
     for chapter in manga.chapters.iter() {
         assert!(chapter.url.has_host(), "Chapter url is missing host");
         if strictness & 0b1000 == 0b1000 {
-            assert!(chapter.posted.is_some(), "Chapter is missing a posted date");
+            assert!(chapter.posted.is_some(), "Chapter {} is missing a posted date", chapter.number);
         }
     }
 
@@ -229,6 +229,12 @@ fn date_parse() {
     compare_without_time(&now, date);
 
     let date = parser::util::try_parse_date(&now.format("%B %d %y - %H:%M").to_string());
+    compare_without_time(&now, date);
+
+    let date = parser::util::try_parse_date(&now.format("%B %d %Y - %H:%M").to_string());
+    compare_without_time(&now, date);
+
+    let date = parser::util::try_parse_date(&now.format("%B %d, %Y").to_string());
     compare_without_time(&now, date);
 
     let date = parser::util::try_parse_date("about 1 Weeks ago!");

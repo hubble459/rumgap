@@ -142,8 +142,7 @@ impl IGenericQueryParser for Madara {
         } else if AJAX_NORMAL.contains(hostname) {
             let id = {
                 let doc = self.get_document(html)?;
-                let el = util::select(&doc, "input.rating-post-id, #wp-manga-js-extra");
-                let el = el.elements.first();
+                let el = util::select_first(&doc, "input.rating-post-id, #wp-manga-js-extra");
                 if let Some(el) = el {
                     let id = el.attr("value");
                     if let None = id {
@@ -194,20 +193,18 @@ impl IGenericQueryParser for Madara {
         if AJAX_IMAGES.contains(hostname) {
             let chapter_id = {
                 let doc = self.get_document_from_url(url).await?.1 .0;
-                let element = util::select(&doc, "script:contains(chapter_id)");
-                let element = element
-                    .elements
-                    .first()
+                let element = util::select_first(&doc, "script:contains(chapter_id)")
                     .ok_or(ParseError::OtherStr("Cannot find script with chapter id"))?;
                 let script = element
                     .text()
                     .ok_or(ParseError::OtherStr("Cannot read script text"))?;
+                debug!("script: {}", script);
                 let regex = Regex::new(r#"chapter_id\s*=\s*(\d+)"#).unwrap();
                 let found = regex.captures(&script);
                 if let Some(found) = found {
                     found
                         .get(1)
-                        .ok_or(ParseError::OtherStr("Could not find chapter ID for images"))?
+                        .ok_or(ParseError::OtherStr("Could not find chapter ID for images in capture"))?
                         .as_str()
                         .to_owned()
                 } else {
