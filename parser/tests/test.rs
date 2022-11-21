@@ -107,21 +107,21 @@ manga_tests! {
     manga_tx: "https://mangatx.com/manga/lightning-degree/";
 }
 
-manga_tests!(
+manga_tests! {
     misc,
     read_m: "https://readm.org/manga/19309";
     reaper_scans: "https://reaperscans.com/comics/5601-the-tutorial-is-too-hard", 0;
     manga347: "https://manga347.com/manga/the-ultimate-of-all-ages/15", 0;
     mangadex: "https://mangadex.org/title/19a107f1-7e6e-487e-8ab0-19c2618d9cd2/peter-grill-and-the-philosopher-s-time";
-);
+}
 
-manga_tests!(
+manga_tests! {
     manga_kakalot,
 
     manga_kakalot: "https://mangakakalot.com/manga/youkai_gakkou_no_sensei_hajimemashita";
     manga_bat_com: "https://h.mangabat.com/read-tj397750";
     manga_bat_best: "http://mangabat.best/manga/worthless-regression", 0b0101;
-);
+}
 
 #[tokio::test]
 #[ignore = "is for quick testing"]
