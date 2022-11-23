@@ -53,7 +53,7 @@ impl ActiveModelBehavior for ActiveModel {
     }
 }
 
-use parser::model::Manga;
+use manga_parser::model::Manga;
 
 impl IntoActiveModel<ActiveModel> for Manga {
     fn into_active_model(self) -> ActiveModel {

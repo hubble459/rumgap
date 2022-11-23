@@ -1,4 +1,4 @@
-use parser::{
+use manga_parser::{
     model::SearchManga,
     parser::{MangaParser, Parser},
 };

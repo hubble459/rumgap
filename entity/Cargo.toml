@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 chrono = "0.4.23"
-parser = {path = "../parser"}
+manga-parser = {path = "../manga_parser"}
 rocket = {version = "0.5.0-rc.2", features = [
   "json",
 ]}

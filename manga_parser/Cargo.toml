@@ -1,11 +1,11 @@
 [package]
-name = "parser"
+name = "manga-parser"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
-name = "parser"
+name = "manga_parser"
 path = "src/lib.rs"
 
 [dependencies]

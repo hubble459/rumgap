@@ -1,9 +1,9 @@
-extern crate parser;
+extern crate manga_parser;
 
 use chrono::{DateTime, Duration, Months, Utc};
 use reqwest::Url;
 
-use parser::{
+use manga_parser::{
     model::Manga,
     parse_error::{ParseError, Result},
     parser::{MangaParser, Parser},
@@ -23,7 +23,7 @@ lazy_static! {
 fn init() {
     let _ = env_logger::builder()
         .write_style(env_logger::WriteStyle::Always)
-        .filter(Some("parser"), log::LevelFilter::Debug)
+        .filter(Some("manga-parser"), log::LevelFilter::Debug)
         .is_test(true)
         .try_init();
 }
@@ -38,7 +38,7 @@ macro_rules! manga_tests {
         ) => {
             mod $scraper {
                 use crate::{init, PARSER, Url, ParseError, assert_manga};
-                use crate::parser::parser::Parser;
+                use crate::manga_parser::parser::Parser;
 
                 $(
                     #[doc = "[`url`]: $url"]
@@ -183,73 +183,73 @@ fn date_parse() {
     init();
     let now = Utc::now();
 
-    let date = parser::util::try_parse_date(&now.timestamp_millis().to_string());
+    let date = manga_parser::util::try_parse_date(&now.timestamp_millis().to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date("Today");
+    let date = manga_parser::util::try_parse_date("Today");
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date("Hottest");
+    let date = manga_parser::util::try_parse_date("Hottest");
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date("Yesterday");
+    let date = manga_parser::util::try_parse_date("Yesterday");
     compare_without_time(&(now - Duration::days(1)), date);
 
-    let date = parser::util::try_parse_date("Last week");
+    let date = manga_parser::util::try_parse_date("Last week");
     compare_without_time(&(now - Duration::weeks(1)), date);
 
-    let date = parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.to_rfc3339());
+    let date = manga_parser::util::try_parse_date(&now.to_rfc3339());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%SZ").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%S").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%Y-%m-%dT%H:%M:%S").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%B %e, %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%B %e, %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%B %e, %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%B %e, %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%erd %B %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%erd %B %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%eth %B %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%eth %B %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%est %B %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%est %B %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%end %B %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%end %B %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%B %d %y - %H:%M").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%B %d %y - %H:%M").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%B %d %Y - %H:%M").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%B %d %Y - %H:%M").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date(&now.format("%B %d, %Y").to_string());
+    let date = manga_parser::util::try_parse_date(&now.format("%B %d, %Y").to_string());
     compare_without_time(&now, date);
 
-    let date = parser::util::try_parse_date("about 1 Weeks ago!");
+    let date = manga_parser::util::try_parse_date("about 1 Weeks ago!");
     compare_without_time(&(now - Duration::weeks(1)), date);
 
-    let date = parser::util::try_parse_date("15 Week");
+    let date = manga_parser::util::try_parse_date("15 Week");
     compare_without_time(&(now - Duration::weeks(15)), date);
 
-    let date = parser::util::try_parse_date("like 2 minutes ago");
+    let date = manga_parser::util::try_parse_date("like 2 minutes ago");
     compare_without_time(&(now - Duration::minutes(2)), date);
 
-    let date = parser::util::try_parse_date("Release 2 month ago");
+    let date = manga_parser::util::try_parse_date("Release 2 month ago");
     compare_without_time(&now.checked_sub_months(Months::new(2)).unwrap(), date);
 
-    let date = parser::util::try_parse_date("2 years");
+    let date = manga_parser::util::try_parse_date("2 years");
     compare_without_time(&now.checked_sub_months(Months::new(24)).unwrap(), date);
 }
 

@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
-use parser::parser::{MangaParser, Parser};
-use parser::Url;
+use manga_parser::parser::{MangaParser, Parser};
+use manga_parser::Url;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::response::Redirect;

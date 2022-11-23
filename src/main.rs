@@ -7,6 +7,7 @@ use rocket::{Build, Rocket};
 
 use migration::MigratorTrait;
 use sea_orm_rocket::Database;
+use manga_parser::parser::MangaParser;
 
 mod api;
 mod auth;
@@ -42,7 +43,7 @@ fn rocket() -> _ {
     rocket::build()
         .attach(Db::init())
         .attach(CORS)
-        .manage(parser::parser::MangaParser::new())
+        .manage(MangaParser::new())
         .attach(AdHoc::try_on_ignite("Migrations", run_migrations))
         .mount(format!("/api/{}", manga::base()), manga::routes())
         .mount(format!("/api/{}", chapter::base()), chapter::routes())
