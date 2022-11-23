@@ -9,36 +9,26 @@ version = "0.1.0"
 members = [".", "entity", "migration", "manga_parser"]
 
 [dependencies]
-log = "*"
-env_logger = "*"
-anyhow = "1"
-argon2 = "0.4.1"
-async-stream = {version = "^0.3"}
-async-trait = "0.1.58"
+actix-files = "0.6"
+actix-web = "4"
 entity = {path = "entity"}
+migration = {path = "migration"}
+manga-parser = {path = "manga_parser"}
+log = "0.4"
+env_logger = "0.9"
+derive_more = "0.99"
+argon2 = "0.4.1"
+async-trait = "0.1.58"
 futures = {version = "^0.3"}
 futures-util = {version = "^0.3"}
 hmac = "0.12.1"
 jwt = "0.16.0"
-migration = {path = "migration"}
-manga-parser = {path = "manga_parser"}
-rand_core = {version = "0.6", features = ["std"]}
-rocket = {version = "0.5.0-rc.2", features = ["json"]}
-serde_json = {version = "^1"}
 sha2 = "0.10.6"
 chrono = "0.4"
 regex = "1.7.0"
-
-[dependencies.sea-orm-rocket]
-git = "https://github.com/SeaQL/sea-orm"
-
-[dependencies.sea-orm]
-features = [
-  "runtime-tokio-native-tls",
-  "sqlx-mysql",
-  "with-chrono",
-]
-version = "^0.10"
+dotenvy = "0.15"
+listenfd = "1"
+sea-orm = { version = "0.10", features = [ "runtime-tokio-native-tls", "sqlx-mysql", "with-chrono" ]}
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

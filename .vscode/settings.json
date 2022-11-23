@@ -28,4 +28,5 @@
         "zuki"
     ],
     "stylelint.enable": false,
+    "crates.listPreReleases": true
 }

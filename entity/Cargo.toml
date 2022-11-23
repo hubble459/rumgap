@@ -9,11 +9,7 @@ name = "entity"
 path = "src/lib.rs"
 
 [dependencies]
-chrono = "0.4.23"
-manga-parser = {path = "../manga_parser"}
-rocket = {version = "0.5.0-rc.2", features = [
-  "json",
-]}
+serde = { version = "1", features = ["derive"] }
 
 [dependencies.sea-orm]
 features = ["with-chrono"]
