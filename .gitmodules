@@ -1,4 +1,3 @@
-[submodule "manga-parser/crabquery"]
-	path = manga-parser/crabquery
-	url = git@github.com:hubble459/crabquery.git
-
+[submodule "manga_parser"]
+	path = manga_parser
+	url = git@github.com:hubble459/rs-manga-parser.git
