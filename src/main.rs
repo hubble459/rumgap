@@ -1,36 +1,33 @@
-use actix_web::{error, get, middleware::{Logger, self}, App, HttpServer, Result, web};
-use actix_files::Files as Fs;
-use derive_more::{Display, Error};
-use listenfd::ListenFd;
-use log::info;
+#[macro_use]
+extern crate log;
+
+#[macro_use]
+extern crate actix_web;
+
+mod api;
+mod middleware;
+use actix_web::{error, middleware::Logger, web, App, Error, HttpServer, Result};
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
-use std::env;
-
-#[derive(Debug, Clone)]
-struct AppState {
-    conn: DatabaseConnection,
-}
-
-#[derive(Debug, Display, Error)]
-#[display(fmt = "my error: {}", name)]
-pub struct MyError {
-    name: &'static str,
-}
-
-// Use default implementation for `error_response()` method
-impl error::ResponseError for MyError {}
 
 #[get("/")]
-async fn index() -> Result<&'static str, MyError> {
-    let err = MyError { name: "test error" };
-    info!("{}", err);
-    Err(err)
+async fn index(data: web::Data<DatabaseConnection>) -> Result<&'static str, Error> {
+    let conn = &data;
+
+    Ok("fuck")
 }
 
+#[post("/login")]
+async fn login(pool: web::Data<DatabaseConnection>) -> Result<&'static str, Error> {
+    Ok("owo")
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    use actix_files::Files as Fs;
+    use listenfd::ListenFd;
+    use std::{env, time::Duration};
+
     std::env::set_var("RUST_LOG", "info");
     std::env::set_var("RUST_BACKTRACE", "1");
     env_logger::init();
@@ -47,21 +44,20 @@ async fn main() -> std::io::Result<()> {
     let conn = Database::connect(&db_url).await.unwrap();
     Migrator::up(&conn, None).await.unwrap();
 
-    // build app state
-    let state = AppState { conn };
-
     // create server and try to serve over socket if possible
-    let mut listenfd = ListenFd::from_env();
+    let mut listen_fd = ListenFd::from_env();
     let mut server = HttpServer::new(move || {
         App::new()
             .service(Fs::new("/static", "./api/static"))
-            .app_data(web::Data::new(state.clone()))
-            .wrap(middleware::Logger::default()) // enable logger
+            // .app_data(web::Data::new(state.clone()))
+            .app_data(web::Data::new(conn.clone()))
+            .wrap(Logger::default()) // enable logger
             // .default_service(web::route().to(not_found))
             .configure(init)
-    });
+    })
+    .keep_alive(Duration::from_secs(75));
 
-    server = match listenfd.take_tcp_listener(0)? {
+    server = match listen_fd.take_tcp_listener(0)? {
         Some(listener) => server.listen(listener)?,
         None => server.bind(&server_url)?,
     };

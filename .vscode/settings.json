@@ -28,5 +28,18 @@
         "zuki"
     ],
     "stylelint.enable": false,
-    "crates.listPreReleases": true
+    "crates.listPreReleases": true,
+    "discord.enabled": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "localhost",
+            "database": "rust_manga",
+            "username": "postgres",
+            "password": "postgres"
+        }
+    ]
 }
