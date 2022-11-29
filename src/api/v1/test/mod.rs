@@ -1,8 +1,6 @@
-use actix_web::http;
 use actix_web::test::TestRequest;
-use actix_web::{test, App};
+use actix_web::{http, test, App};
 use once_cell::sync::OnceCell;
-use serde_json::json;
 
 use crate::*;
 
@@ -40,8 +38,14 @@ async fn test_login() {
             "username": "test",
             "password": "test"
         }))
+        .append_header((header::AUTHORIZATION, "owo"))
         .send_request(&app)
         .await;
 
     assert_eq!(resp.status(), http::StatusCode::OK);
+
+    info!("{:?}", resp.request());
+
+    let data: serde_json::value::Value = test::read_body_json(resp).await;
+    data["owo"].as_str().unwrap();
 }

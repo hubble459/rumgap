@@ -6,6 +6,8 @@ extern crate actix_web;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
+#[macro_use(json)]
+extern crate serde_json;
 
 mod api;
 mod middleware;
@@ -16,11 +18,45 @@ use std::env;
 use std::time::Duration;
 
 use actix_files::Files as Fs;
+use actix_web::body::{BoxBody, MessageBody};
+use actix_web::dev::Service;
+use actix_web::http::header::{self, HeaderValue};
 use actix_web::middleware::{Logger, NormalizePath};
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, ResponseError};
+use derive_more::{Display, Error};
+use futures::FutureExt;
 use listenfd::ListenFd;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
+
+#[derive(Debug, Error, Display)]
+#[display(fmt = "owo")]
+struct JsonError(pub actix_web::Error);
+
+impl ResponseError for JsonError {
+    fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
+        info!("hewo?");
+        let error = &self.0;
+        let mut response = error.error_response();
+        let headers = response.headers_mut();
+        headers.append(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        let status = response.status();
+        response.set_body(BoxBody::new(
+            json!({
+                "error": error.to_string(),
+                "code": status.to_string(),
+            })
+            .to_string(),
+        ))
+    }
+
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        self.0.error_response().status()
+    }
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -42,10 +78,40 @@ async fn main() -> std::io::Result<()> {
     let mut listen_fd = ListenFd::from_env();
     let mut server = HttpServer::new(move || {
         App::new()
+            .wrap_fn(|req, srv| {
+                srv.call(req).map(|res| {
+                    res.map(|mut res| {
+                        if !res.status().is_success() {
+                            let headers = res.headers_mut();
+                            headers.append(
+                                header::CONTENT_TYPE,
+                                HeaderValue::from_static("application/json"),
+                            );
+                            return res.map_body(|head, body| {
+                                let bytes = body.try_into_bytes().unwrap();
+                                let mut message = String::from_utf8(bytes.to_vec()).unwrap();
+                                if message.is_empty() {
+                                    message = head.reason().to_string();
+                                }
+                                BoxBody::new(
+                                    json!({
+                                        "error": message,
+                                        "code": head.status.as_u16(),
+                                    })
+                                    .to_string(),
+                                )
+                            });
+                        }
+                        res
+                    })
+                })
+            })
             .service(Fs::new("/static", "./static"))
             .app_data(web::Data::new(conn.clone()))
             .wrap(Logger::default())
-            .wrap(NormalizePath::new(actix_web::middleware::TrailingSlash::Always))
+            .wrap(NormalizePath::new(
+                actix_web::middleware::TrailingSlash::Trim,
+            ))
             // .default_service(web::route().to(not_found))
             .configure(init_routes)
     })
@@ -66,7 +132,7 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
     info!("Connecting to database and running migrations...");
     let conn = Database::connect(db_url).await?;
     Migrator::up(&conn, None).await?;
-    info!("Done");
+    info!("Connected to the database");
 
     Ok(conn)
 }
