@@ -1,28 +1,47 @@
+use derive_more::Deref;
 use hmac::{Hmac, Mac};
 use jwt::{SignWithKey, VerifyWithKey};
 use lazy_static::lazy_static;
+use sea_orm::{EntityTrait, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-use actix_web::{error::ErrorUnauthorized, Error, FromRequest};
+use actix_web::{error::{ErrorUnauthorized, ErrorNotFound, ErrorInternalServerError}, Error, FromRequest, web};
 use sha2::Sha256;
 
 #[derive(Serialize, Deserialize)]
 pub struct Token {
-    pub id: u32,
+    pub id: i32,
 }
 
 lazy_static! {
     static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(b"bUHhhHH#!bU@NkNUnK12").unwrap();
 }
 
-fn sign(id: u32) -> Result<String, jwt::Error> {
+pub fn sign(id: i32) -> Result<String, jwt::Error> {
     Token { id }.sign_with_key(&SECRET_KEY.clone())
 }
 
+#[derive(Deref)]
+pub struct User(pub entity::user::Model);
+
+bitflags! {
+    pub struct UserPermissions: u32 {
+        const USER = 0b00000001;
+        const MOD = 0b00000010;
+        const ADMIN = 0b00000100;
+    }
+}
+
+impl User {
+    pub fn has_permission(&self, permission: UserPermissions) -> bool {
+        (UserPermissions::from_bits(self.0.permissions as u32).unwrap() & permission) == permission
+    }
+}
+
 pub struct AuthService {
-    user: u32,
+    pub user: User,
 }
 
 impl FromRequest for AuthService {
@@ -48,7 +67,14 @@ impl FromRequest for AuthService {
                     .verify_with_key(&SECRET_KEY.clone())
                     .map_err(|e| ErrorUnauthorized(e.to_string()))?;
 
-                Ok(Self { user: id })
+                let conn: &web::Data<DatabaseConnection> = req.app_data().unwrap();
+                let user = entity::user::Entity::find_by_id(id)
+                    .one(conn.as_ref())
+                    .await
+                    .map_err(ErrorInternalServerError)?
+                    .ok_or(ErrorNotFound(""))?;
+
+                Ok(Self { user: User(user) })
             } else {
                 Err(ErrorUnauthorized("Missing Bearer token"))
             }

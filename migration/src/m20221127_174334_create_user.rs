@@ -20,8 +20,9 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(User::Username).string_len(15).not_null())
-                    .col(ColumnDef::new(User::Email).string_len(255).not_null())
+                    .col(ColumnDef::new(User::Permissions).small_integer().not_null().default(0))
+                    .col(ColumnDef::new(User::Username).string_len(15).unique_key().not_null())
+                    .col(ColumnDef::new(User::Email).string_len(255).unique_key().not_null())
                     .col(
                         ColumnDef::new(User::PasswordHash)
                             .string_len(255)
@@ -48,6 +49,7 @@ impl MigrationTrait for Migration {
 pub enum User {
     Table,
     Id,
+    Permissions,
     Username,
     Email,
     PasswordHash,

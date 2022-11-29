@@ -29,7 +29,6 @@
     ],
     "stylelint.enable": false,
     "crates.listPreReleases": true,
-    "discord.enabled": true,
     "sqltools.connections": [
         {
             "previewLimit": 50,
@@ -41,5 +40,6 @@
             "username": "postgres",
             "password": "postgres"
         }
-    ]
+    ],
+    "discord.enabled": true
 }
