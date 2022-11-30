@@ -4,24 +4,35 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "user")]
+#[sea_orm(table_name = "manga")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub permissions: i16,
     #[sea_orm(unique)]
-    pub username: String,
-    #[sea_orm(unique)]
-    pub email: String,
-    pub password_hash: String,
+    pub url: String,
+    pub title: String,
+    pub description: String,
+    pub cover: String,
+    pub is_ongoing: bool,
+    pub genres: Vec<String>,
+    pub authors: Vec<String>,
+    pub alt_titles: Vec<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::chapter::Entity")]
+    Chapter,
     #[sea_orm(has_many = "super::reading::Entity")]
     Reading,
+}
+
+impl Related<super::chapter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Chapter.def()
+    }
 }
 
 impl Related<super::reading::Entity> for Entity {

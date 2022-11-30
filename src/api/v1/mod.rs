@@ -2,8 +2,6 @@ use actix_web::web;
 
 mod data;
 mod route;
-#[cfg(test)]
-mod test;
 mod util;
 
 pub fn routes() -> actix_web::Scope {

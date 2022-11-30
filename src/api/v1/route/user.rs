@@ -1,12 +1,11 @@
-use actix_web::error::{ErrorBadGateway, ErrorConflict, ErrorInternalServerError, ErrorNotFound};
+use actix_web::error::{ErrorBadRequest, ErrorConflict, ErrorInternalServerError, ErrorNotFound};
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, Responder, Result};
-use entity::user::{
-    ActiveModel as ActiveUser, Column as UserColumn, Entity as user, Model as User,
-};
+use entity::user::{ActiveModel as ActiveUser, Column as UserColumn, Entity as user};
+use migration::{Alias, Expr, JoinType};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, Set,
+    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set,
 };
 
 use crate::api::v1::data;
@@ -14,15 +13,37 @@ use crate::api::v1::data::paginate::{Paginate, PaginateQuery};
 use crate::api::v1::util::{encrypt, permission, verify};
 use crate::middleware::auth::{sign, AuthService};
 
+#[rustfmt::skip]
+pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<data::user::Full> {
+    let following_alias = Alias::new("following");
+    let followers_alias = Alias::new("followers");
+
+    let found_user = user::find_by_id(user_id)
+        .join_as(JoinType::LeftJoin, entity::friend::Relation::User1.def().rev(), following_alias.clone())
+        .join_as(JoinType::LeftJoin, entity::friend::Relation::User2.def().rev(), followers_alias.clone())
+        .column_as(Expr::col((following_alias, entity::friend::Column::Id)).count(), "count_following")
+        .column_as(Expr::col((followers_alias, entity::friend::Column::Id)).count(), "count_followers")
+        .group_by(UserColumn::Id)
+        .into_model::<data::user::Full>()
+        .one(db)
+        .await
+        .map_err(ErrorInternalServerError)?
+        .ok_or(ErrorNotFound("User not found"))?;
+
+    Ok(found_user)
+}
+
 #[get("")]
 async fn index(
     conn: web::Data<DatabaseConnection>,
     query: web::Query<PaginateQuery>,
-) -> Result<Paginate<Vec<User>>> {
+) -> Result<Paginate<Vec<data::user::Partial>>> {
     let db = conn.as_ref();
 
     // Create paginate object
-    let paginate = user::find().paginate(db, query.limit);
+    let paginate = user::find()
+        .into_model::<data::user::Partial>()
+        .paginate(db, query.limit);
 
     // Get max page
     let amount = paginate
@@ -59,12 +80,16 @@ async fn store(
 
     let db = conn.as_ref();
 
-    let created = new_user
-        .insert(db)
-        .await
-        .map_err(ErrorInternalServerError)?;
+    let created = new_user.insert(db).await.map_err(|e| {
+        if verify::is_conflict(&e) {
+            return ErrorConflict("Username or email already in use");
+        }
+        ErrorInternalServerError(e)
+    })?;
 
-    Ok((web::Json(created), StatusCode::CREATED))
+    let full_user = get_user_by_id(db, created.id).await?;
+
+    Ok((web::Json(full_user), StatusCode::CREATED))
 }
 
 #[patch("/{user_id}")]
@@ -101,29 +126,26 @@ async fn edit(
     }
 
     let created = edit_user.update(db).await.map_err(|e| {
-        error!("{:#?}", e);
-        ErrorConflict(e)
+        if verify::is_conflict(&e) {
+            return ErrorConflict("Username or email already in use");
+        }
+        ErrorInternalServerError(e)
     })?;
 
-    Ok(web::Json(created))
+    let full_user = get_user_by_id(db, created.id).await?;
+
+    Ok(web::Json(full_user))
 }
 
 #[get("/{user_id}")]
-async fn get(
-    path: web::Path<u16>,
-    conn: web::Data<DatabaseConnection>,
-) -> Result<impl Responder> {
+async fn get(path: web::Path<u16>, conn: web::Data<DatabaseConnection>) -> Result<impl Responder> {
     let user_id = path.into_inner();
 
     let db = conn.as_ref();
 
-    let found_user = user::find_by_id(user_id as i32)
-        .one(db)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .ok_or(ErrorNotFound("User not found"))?;
+    let full_user = get_user_by_id(db, user_id as i32).await?;
 
-    Ok(web::Json(found_user))
+    Ok(web::Json(full_user))
 }
 
 #[delete("/{user_id}")]
@@ -162,11 +184,11 @@ async fn login(
     let filter;
 
     if let Some(username) = data.0.username {
-        filter = UserColumn::Username.eq(username);
+        filter = UserColumn::Username.eq(username.to_ascii_lowercase());
     } else if let Some(email) = data.0.email {
-        filter = UserColumn::Email.eq(email);
+        filter = UserColumn::Email.eq(email.to_ascii_lowercase());
     } else {
-        return Err(ErrorBadGateway("Missing username or email"));
+        return Err(ErrorBadRequest("Missing username or email"));
     }
 
     let found = user::find()
@@ -178,9 +200,10 @@ async fn login(
 
     encrypt::verify(&found.password_hash, &data.0.password)?;
 
-    let mut json = json!(found);
+    let full_user = get_user_by_id(db, found.id).await?;
 
-    json["token"] = json!(sign(found.id).map_err(ErrorInternalServerError)?);
+    let mut json = json!(full_user);
+    json["token"] = json!(sign(full_user.id).map_err(ErrorInternalServerError)?);
 
     Ok((web::Json(json), StatusCode::CREATED))
 }

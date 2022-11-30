@@ -44,6 +44,28 @@ pub struct AuthService {
     pub user: User,
 }
 
+impl AuthService {
+    pub fn is_restricted(&self) -> bool {
+        self.user.permissions == 0
+    }
+
+    pub fn is_user(&self) -> bool {
+        self.has_permission(1 << 0)
+    }
+
+    pub fn is_mod(&self) -> bool {
+        self.has_permission(1 << 1)
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.has_permission(1 << 2)
+    }
+
+    fn has_permission(&self, perm: i16) -> bool {
+        (self.user.permissions & perm) == perm
+    }
+}
+
 impl FromRequest for AuthService {
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;

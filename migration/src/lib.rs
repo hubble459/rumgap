@@ -3,6 +3,9 @@ pub use sea_orm_migration::prelude::*;
 mod m20221127_174330_create_triggers;
 mod m20221127_174334_create_user;
 mod m20221127_180216_create_friend;
+mod m20221130_215742_create_manga;
+mod m20221130_215749_create_chapter;
+mod m20221130_215753_create_reading;
 mod trigger;
 
 pub struct Migrator;
@@ -14,6 +17,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20221127_174330_create_triggers::Migration),
             Box::new(m20221127_174334_create_user::Migration),
             Box::new(m20221127_180216_create_friend::Migration),
+            Box::new(m20221130_215742_create_manga::Migration),
+            Box::new(m20221130_215749_create_chapter::Migration),
+            Box::new(m20221130_215753_create_reading::Migration),
         ]
     }
 }

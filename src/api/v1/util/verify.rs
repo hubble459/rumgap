@@ -1,4 +1,5 @@
 use actix_web::{error::ErrorBadRequest, Result};
+use migration::DbErr;
 use regex::Regex;
 
 lazy_static! {
@@ -21,7 +22,7 @@ pub fn username(username: &str) -> Result<String> {
             "Username should only contain [a-zA-Z0-9_]+",
         ))
     } else {
-        Ok(String::from(username))
+        Ok(username.to_ascii_lowercase())
     }
 }
 
@@ -31,7 +32,7 @@ pub fn email(email: &str) -> Result<String> {
     if !IS_EMAIL.is_match(email) {
         Err(ErrorBadRequest("Invalid email"))
     } else {
-        Ok(String::from(email))
+        Ok(email.to_ascii_lowercase())
     }
 }
 
@@ -57,4 +58,15 @@ pub fn password(email: &str) -> Result<String> {
     } else {
         Ok(String::from(password))
     }
+}
+
+pub fn is_conflict(err: &DbErr) -> bool {
+    if let DbErr::Query(sea_orm::RuntimeErr::SqlxError(e)) = err {
+        if let Some(db_err) = e.as_database_error() {
+            if db_err.code() == Some(std::borrow::Cow::Borrowed("23505")) {
+                return true;
+            }
+        }
+    }
+    return false;
 }

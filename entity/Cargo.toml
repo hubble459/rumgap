@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 serde = "1"
-sea-orm = "0.10"
+sea-orm =  { version = "0.10", features = ["default", "postgres-array"]}
