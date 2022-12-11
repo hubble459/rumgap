@@ -21,7 +21,7 @@ use actix_files::Files as Fs;
 use actix_web::body::{BoxBody, MessageBody};
 use actix_web::dev::Service;
 use actix_web::http::header::{self, HeaderValue};
-use actix_web::middleware::{Logger, NormalizePath};
+use actix_web::middleware::{Logger, NormalizePath, Compress};
 use actix_web::{web, App, HttpServer, ResponseError};
 use derive_more::{Display, Error};
 use futures::FutureExt;
@@ -35,7 +35,6 @@ struct JsonError(pub actix_web::Error);
 
 impl ResponseError for JsonError {
     fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
-        info!("hewo?");
         let error = &self.0;
         let mut response = error.error_response();
         let headers = response.headers_mut();
@@ -60,9 +59,8 @@ impl ResponseError for JsonError {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "info");
     std::env::set_var("RUST_BACKTRACE", "1");
-    env_logger::init();
+    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
 
     // Get env vars
     dotenvy::dotenv().ok();
@@ -87,16 +85,21 @@ async fn main() -> std::io::Result<()> {
                                 header::CONTENT_TYPE,
                                 HeaderValue::from_static("application/json"),
                             );
+                            let cloned_res = res.request().clone();
                             return res.map_body(|head, body| {
                                 let bytes = body.try_into_bytes().unwrap();
                                 let mut message = String::from_utf8(bytes.to_vec()).unwrap();
                                 if message.is_empty() {
                                     message = head.reason().to_string();
                                 }
+                                let code = head.status.as_u16();
+                                if code == 500 {
+                                    error!("{} {:?}", cloned_res.uri().to_string(), message);
+                                }
                                 BoxBody::new(
                                     json!({
                                         "error": message,
-                                        "code": head.status.as_u16(),
+                                        "code": code,
                                     })
                                     .to_string(),
                                 )
@@ -109,6 +112,7 @@ async fn main() -> std::io::Result<()> {
             .service(Fs::new("/static", "./static"))
             .app_data(web::Data::new(conn.clone()))
             .wrap(Logger::default())
+            .wrap(Compress::default())
             .wrap(NormalizePath::new(
                 actix_web::middleware::TrailingSlash::Trim,
             ))

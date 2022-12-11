@@ -15,7 +15,7 @@ manga-parser = {path = "manga_parser"}
 migration = {path = "migration"}
 entity = {path = "entity"}
 log = "0"
-env_logger = "0"
+log4rs = { version = "1", features = ["gzip"] }
 derive_more = "0.99"
 argon2 = "0.4.1"
 async-trait = "0.1.58"

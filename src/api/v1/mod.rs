@@ -5,5 +5,7 @@ mod route;
 mod util;
 
 pub fn routes() -> actix_web::Scope {
-    web::scope("/v1").service(route::user::routes())
+    web::scope("/v1")
+        .service(route::user::routes())
+        .service(route::manga::routes())
 }

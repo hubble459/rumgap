@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Manga::Url).string_len(511).not_null().unique_key())
                     .col(ColumnDef::new(Manga::Title).string_len(511).not_null())
                     .col(ColumnDef::new(Manga::Description).string().not_null())
-                    .col(ColumnDef::new(Manga::Cover).string_len(511).not_null())
+                    .col(ColumnDef::new(Manga::Cover).string_len(511))
                     .col(ColumnDef::new(Manga::IsOngoing).boolean().not_null())
                     .col(ColumnDef::new(Manga::Genres).array(ColumnType::String(Some(255))).not_null())
                     .col(ColumnDef::new(Manga::Authors).array(ColumnType::String(Some(255))).not_null())

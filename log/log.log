@@ -1,0 +1,35 @@
+2022-12-11 17:32:05 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 17:32:06 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 17:32:06 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 17:32:26 | INFO  | src\api\v1\route\manga.rs:42 — Saving manga [https://www.topmanhua.com/manhua/the-beginning-after-the-end/]
+2022-12-11 17:32:27 | INFO  | src\api\v1\route\manga.rs:93 — Inserting 172 chapter(s)
+2022-12-11 17:32:27 | ERROR | src\main.rs:98 — /api/v1/manga "Execution Error: error returned from database: duplicate key value violates unique constraint \"chapter_url_key\""
+2022-12-11 17:43:21 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 17:43:21 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 17:43:21 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 17:43:22 | INFO  | src\api\v1\route\manga.rs:42 — Saving manga [https://www.topmanhua.com/manhua/the-beginning-after-the-end/]
+2022-12-11 17:43:24 | INFO  | src\api\v1\route\manga.rs:93 — Inserting 171 chapter(s)
+2022-12-11 17:43:24 | ERROR | src\main.rs:98 — /api/v1/manga "Type Error: A null value was encountered while decoding cover"
+2022-12-11 17:46:10 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 17:46:11 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 17:46:11 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 17:46:13 | ERROR | src\main.rs:98 — /api/v1/manga "Query Error: no column found for name: next_update"
+2022-12-11 17:53:46 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 17:53:46 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 17:53:46 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 17:53:47 | ERROR | src\main.rs:98 — /api/v1/manga "Query Error: no column found for name: next_update"
+2022-12-11 17:55:04 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 17:55:05 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 17:55:05 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 17:55:07 | ERROR | src\main.rs:98 — /api/v1/manga "Query Error: error returned from database: syntax error at or near \"CAST\""
+2022-12-11 18:09:17 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 18:09:18 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 18:09:18 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 18:14:46 | ERROR | src\main.rs:98 — /api/v1/manga/5 "Query Error: no column found for name: id"
+2022-12-11 18:18:55 | INFO  | src\main.rs:137 — Connecting to database and running migrations...
+2022-12-11 18:18:55 | INFO  | src\main.rs:140 — Connected to the database
+2022-12-11 18:18:55 | INFO  | src\main.rs:130 — Starting server at 127.0.0.1:8000
+2022-12-11 18:18:58 | INFO  | src\api\v1\route\manga.rs:195 — Updating manga with id '5' [https://www.topmanhua.com/manhua/the-beginning-after-the-end/]
+2022-12-11 18:18:58 | INFO  | src\api\v1\route\manga.rs:44 — Saving manga [https://www.topmanhua.com/manhua/the-beginning-after-the-end/]
+2022-12-11 18:18:59 | INFO  | src\api\v1\route\manga.rs:80 — Cleared 171 chapter(s)
+2022-12-11 18:18:59 | INFO  | src\api\v1\route\manga.rs:95 — Inserting 171 chapter(s)

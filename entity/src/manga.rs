@@ -12,7 +12,7 @@ pub struct Model {
     pub url: String,
     pub title: String,
     pub description: String,
-    pub cover: String,
+    pub cover: Option<String>,
     pub is_ongoing: bool,
     pub genres: Vec<String>,
     pub authors: Vec<String>,

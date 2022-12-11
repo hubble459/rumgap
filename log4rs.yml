@@ -1,0 +1,33 @@
+appenders:
+    stdout:
+        kind: console
+        encoder:
+            pattern: "{d(%Y-%m-%d %H:%M:%S)} | \e[1;32m{({l}):5.5}\e[0m | {f}:{L} — {m}{n}"
+
+    log_file:
+        kind: rolling_file
+        path: "log/log.log"
+        encoder:
+            pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}"
+        policy:
+            trigger:
+                kind: size
+                limit: 30 mb
+            roller:
+                kind: fixed_window
+                pattern: logs/bot_{}.gz
+                count: 5
+                base: 1
+
+root:
+    level: error
+    appenders:
+        - stdout
+
+loggers:
+    rumgap:
+        level: info
+        appenders:
+            - log_file
+            - stdout
+        additive: false

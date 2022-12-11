@@ -7,10 +7,9 @@ pub async fn get_db() -> DatabaseConnection {
     if let Some(conn) = CONN.get() {
         return conn.clone();
     } else {
-        std::env::set_var("RUST_LOG", "info");
         std::env::set_var("RUST_BACKTRACE", "1");
         dotenvy::dotenv().unwrap();
-        env_logger::init();
+        log::set_max_level(log::LevelFilter::Info);
 
         let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file");
         let conn = crate::conn_db(&db_url).await.unwrap();
