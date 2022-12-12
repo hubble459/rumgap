@@ -2,9 +2,11 @@ use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{DeriveColumn, EnumIter, FromQueryResult, IdenStatic};
 use serde::{Deserialize, Serialize};
 
+use super::paginate::PaginateQuery;
+
 #[derive(Debug, Deserialize)]
 pub struct Post {
-    pub url: String,
+    pub urls: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -12,10 +14,17 @@ pub struct Patch {
     pub url: String,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+#[derive(Debug, Copy, Clone, EnumIter, DeriveColumn)]
 pub enum Minimal {
     Url,
     UpdatedAt,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IndexQuery {
+    #[serde(flatten)]
+    pub paginate: PaginateQuery,
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromQueryResult)]

@@ -7,7 +7,7 @@ use chrono::{Duration, Utc};
 use entity::manga::{ActiveModel as ActiveManga, Column as MangaColumn, Entity as manga};
 use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
-use migration::Expr;
+use migration::{Expr, SimpleExpr};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::{
@@ -16,8 +16,125 @@ use sea_orm::{
 };
 
 use crate::api::v1::data;
-use crate::api::v1::data::paginate::{Paginate, PaginateQuery};
+use crate::api::v1::data::paginate::Paginate;
+use crate::api::v1::util::search::parse::{Field, Search};
 use crate::middleware::auth::AuthService;
+
+const ALLOWED_FIELDS: [(&str, &str); 7] = [
+    ("title", "ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title ILIKE"),
+    ("description", "manga.description ILIKE"),
+    ("url", "manga.url IS"),
+    ("genres", "ARRAY_TO_STRING(manga.genres, ', ') ILIKE"),
+    ("genre", "ARRAY_TO_STRING(manga.genres, ', ') ILIKE"),
+    ("authors", "ARRAY_TO_STRING(manga.authors, ', ') ILIKE"),
+    ("author", "ARRAY_TO_STRING(manga.authors, ', ') ILIKE"),
+    // TODO 13/12/2022: These
+    // "next_update",
+    // "count_chapters",
+    // "last_updated",
+];
+
+fn lucene_filter(query: Search) -> Result<SimpleExpr> {
+    let with_fields: Vec<&Field> = query.iter().filter(|q| q.name.is_some()).collect();
+    let mut expressions = vec![];
+    for field in with_fields.into_iter() {
+        let name = field.name.as_ref().unwrap();
+        let name_key = ALLOWED_FIELDS.iter().find(|(key, _)| key == name);
+        if name_key.is_none() {
+            return Err(ErrorBadRequest(format!(
+                "Field with name '{}' is not allowed",
+                name
+            )));
+        }
+        let (_key, name) = name_key.unwrap();
+
+        let not = if field.exclude {
+            String::from("NOT ")
+        } else {
+            String::new()
+        };
+
+        expressions.push(Expr::cust_with_values(
+            &format!("{}{} $1", not, name),
+            vec![format!("%{}%", field.value.clone())],
+        ));
+    }
+
+
+    let without_fields: Vec<String> = query
+        .iter()
+        .filter(|q| q.name.is_none() && !q.exclude)
+        .map(|field| format!("%{}%", field.value))
+        .collect();
+
+    if !without_fields.is_empty() {
+        let expr = Expr::cust_with_values(
+            &format!(
+                r#"
+                ARRAY_TO_STRING(manga.genres, ', ')     || ' ' ||
+                ARRAY_TO_STRING(manga.authors, ', ')    || ' ' ||
+                ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' ||
+                manga.description                       || ' ' ||
+                manga.title                             ILIKE {}"#,
+                (0..without_fields.len())
+                    .enumerate()
+                    .map(|(i, _)| format!("${}", i + 1))
+                    .collect::<Vec<String>>()
+                    .join(" || ")
+            ),
+            without_fields,
+        );
+
+        expressions.push(expr);
+    }
+
+    let exclude_fields: Vec<String> = query
+        .iter()
+        .filter(|q| q.name.is_none() && q.exclude)
+        .map(|field| format!("%{}%", field.value))
+        .collect();
+
+    if !exclude_fields.is_empty() {
+        let expr = Expr::cust_with_values(
+            &format!(
+                r#"
+                NOT (ARRAY_TO_STRING(manga.genres, ', ')|| ' ' ||
+                ARRAY_TO_STRING(manga.authors, ', ')    || ' ' ||
+                ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' ||
+                manga.description                       || ' ' ||
+                manga.title                             ILIKE {})"#,
+                (0..exclude_fields.len())
+                    .enumerate()
+                    .map(|(i, _)| format!("${}", i + 1))
+                    .collect::<Vec<String>>()
+                    .join(" || ")
+            ),
+            exclude_fields,
+        );
+
+        expressions.push(expr);
+    }
+
+    if expressions.is_empty() {
+        return Ok(Expr::val(1).eq(1));
+    }
+    let first = expressions.first().unwrap().clone();
+
+    let expression = expressions
+        .into_iter()
+        .skip(1)
+        .fold(first, |total, expr| total.and(expr));
+
+    println!(
+        "Filter {}",
+        migration::Query::select()
+            .and_where(expression.clone())
+            .to_owned()
+            .to_string(migration::PostgresQueryBuilder)
+    );
+
+    Ok(expression)
+}
 
 #[rustfmt::skip]
 pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<data::manga::Full> {
@@ -106,19 +223,25 @@ pub async fn save_manga(
 #[get("")]
 async fn index(
     conn: web::Data<DatabaseConnection>,
-    query: web::Query<PaginateQuery>,
+    query: web::Query<data::manga::IndexQuery>,
 ) -> Result<Paginate<Vec<data::manga::Full>>> {
     let db = conn.as_ref();
 
     // Create paginate object
-    let paginate = manga::find()
+    let mut paginate = manga::find()
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
         .column_as(entity::chapter::Column::Posted.max(), "last_updated")
         .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next_update")
-        .group_by(MangaColumn::Id)
+        .group_by(MangaColumn::Id);
+
+    if let Some(search) = query.search.clone() {
+        paginate = paginate.having(lucene_filter(search.into())?);
+    }
+
+    let paginate = paginate
         .into_model::<data::manga::Full>()
-        .paginate(db, query.limit);
+        .paginate(db, query.paginate.limit);
 
     // Get max page
     let amount = paginate
@@ -128,15 +251,15 @@ async fn index(
 
     // Get items from page
     let items = paginate
-        .fetch_page(query.page)
+        .fetch_page(query.paginate.page)
         .await
         .map_err(ErrorInternalServerError)?;
 
     Ok(Paginate {
         total: amount.number_of_items,
         max_page: amount.number_of_pages,
-        page: query.page,
-        limit: query.limit,
+        page: query.paginate.page,
+        limit: query.paginate.limit,
         items,
     })
 }
@@ -145,33 +268,60 @@ async fn index(
 async fn store(
     conn: web::Data<DatabaseConnection>,
     data: web::Json<data::manga::Post>,
+    _auth: AuthService,
 ) -> Result<impl Responder> {
-    let db = conn.as_ref();
+    let db = conn.into_inner();
 
-    let url = Url::parse(&data.url).map_err(ErrorBadRequest)?;
+    let urls: Result<Vec<Url>, _> = data
+        .urls
+        .clone()
+        .into_iter()
+        .map(|url| Url::parse(&url))
+        .collect();
+    let urls = urls.map_err(ErrorBadRequest)?;
 
-    // Check for conflict
-    manga::find()
-        .filter(MangaColumn::Url.eq(data.url.clone()))
-        .one(db)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .map_or_else(
-            || Ok(()),
-            |m| {
-                Err(ErrorConflict(format!(
-                    "Manga already exists with id {}",
-                    m.id
-                )))
-            },
-        )?;
+    let handles = urls.into_iter().map(|url| {
+        let db = db.clone();
+        return actix_web::rt::spawn(async move {
+            let db = db.clone();
+            // Check for conflict
+            manga::find()
+                .filter(MangaColumn::Url.eq(url.clone().to_string()))
+                .one(db.as_ref())
+                .await
+                .map_err(ErrorInternalServerError)?
+                .map_or_else(
+                    || Ok(()),
+                    |m| {
+                        Err(ErrorConflict(format!(
+                            "Manga {} already exists with id {}",
+                            m.url, m.id
+                        )))
+                    },
+                )?;
 
-    // TODO 11/12/2022: Group similar (alt) titles
+            // TODO 11/12/2022: Group similar (alt) titles
 
-    // Fetch and save manga
-    let m = save_manga(db, None, url).await?;
+            // Fetch and save manga
+            return save_manga(&db, None, url).await;
+        });
+    });
 
-    Ok((web::Json(m), StatusCode::CREATED))
+    let handles = futures::future::join_all(handles).await;
+    let mut mangas = vec![];
+
+    for handle in handles {
+        match handle {
+            Ok(m) => {
+                mangas.push(m?);
+            }
+            Err(e) => {
+                return Err(ErrorInternalServerError(e));
+            }
+        }
+    }
+
+    Ok((web::Json(mangas), StatusCode::CREATED))
 }
 
 #[get("/{manga_id}")]
@@ -224,7 +374,6 @@ async fn delete(
     if result.rows_affected == 1 {
         Ok(HttpResponse::NoContent())
     } else {
-        // Should never happen
         Err(ErrorNotFound("Manga not found!"))
     }
 }
@@ -239,15 +388,12 @@ pub fn routes() -> actix_web::Scope {
 
 #[cfg(test)]
 mod test {
-    const TEST_USERNAME: &str = "test";
-    const TEST_PASSWORD: &str = "P@ssw0rd!";
-    const TEST_EMAIL: &str = "test@gmail.com";
+    const TEST_URL: &str = "https://www.topmanhua.com/manhua/the-beginning-after-the-end/";
 
     crate::test::test_resource! {
         manga "/api/v1/manga";
 
-        post: "/" => StatusCode::CREATED; json!({"username": TEST_USERNAME, "email": TEST_EMAIL, "password": TEST_PASSWORD});;
-        post: "/login" => StatusCode::CREATED; json!({"username": TEST_USERNAME, "password": TEST_PASSWORD});;
+        post: "/" => StatusCode::CREATED; json!({"url": TEST_URL});;
         get: "/";;
         get: "/" 0 id;;
         delete: "/" 0 id => StatusCode::NO_CONTENT, AUTHORIZATION: "Bearer " 1 token;;

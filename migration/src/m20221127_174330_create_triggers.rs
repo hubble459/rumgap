@@ -1,7 +1,5 @@
-use sea_orm_migration::{
-    prelude::*,
-    sea_orm::{ConnectionTrait, Statement},
-};
+use sea_orm_migration::prelude::*;
+use sea_orm_migration::sea_orm::{ConnectionTrait, Statement};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -9,6 +7,22 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                String::from("CREATE EXTENSION fuzzystrmatch;"),
+            ))
+            .await?;
+
+        manager
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                String::from("CREATE EXTENSION pg_trgm;"),
+            ))
+            .await?;
+
         manager
             .get_connection()
             .execute(Statement::from_string(
@@ -36,6 +50,22 @@ impl MigrationTrait for Migration {
             .execute(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("DROP FUNCTION trigger_set_timestamp;"),
+            ))
+            .await?;
+
+        manager
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                String::from("DROP EXTENSION pg_trgm;"),
+            ))
+            .await?;
+
+        manager
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                String::from("DROP EXTENSION fuzzystrmatch;"),
             ))
             .await?;
 

@@ -21,7 +21,7 @@ use actix_files::Files as Fs;
 use actix_web::body::{BoxBody, MessageBody};
 use actix_web::dev::Service;
 use actix_web::http::header::{self, HeaderValue};
-use actix_web::middleware::{Logger, NormalizePath, Compress};
+use actix_web::middleware::{Compress, Logger, NormalizePath};
 use actix_web::{web, App, HttpServer, ResponseError};
 use derive_more::{Display, Error};
 use futures::FutureExt;
