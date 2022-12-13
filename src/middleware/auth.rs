@@ -27,6 +27,7 @@ pub fn sign(id: i32) -> Result<String, jwt::Error> {
 pub struct User(pub entity::user::Model);
 
 bitflags! {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
     pub struct UserPermissions: u32 {
         const USER = 0b00000001;
         const MOD = 0b00000010;

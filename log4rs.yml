@@ -4,6 +4,12 @@ appenders:
         encoder:
             pattern: "{d(%Y-%m-%d %H:%M:%S)} | \e[1;32m{({l}):5.5}\e[0m | {f}:{L} — {m}{n}"
 
+    stdout_ext:
+        kind: console
+        encoder:
+            pattern: "{d(%Y-%m-%d %H:%M:%S)} | \e[1;32m{({l}):5.5}\e[0m | {m}{n}"
+
+
     log_file:
         kind: rolling_file
         path: "log/log.log"
@@ -31,3 +37,10 @@ loggers:
             - log_file
             - stdout
         additive: false
+    http_log:
+        level: info
+        appenders:
+            - log_file
+            - stdout_ext
+        additive: false
+

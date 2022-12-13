@@ -6,6 +6,8 @@ extern crate actix_web;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate phf;
 #[macro_use(json)]
 extern crate serde_json;
 
@@ -111,7 +113,7 @@ async fn main() -> std::io::Result<()> {
             })
             .service(Fs::new("/static", "./static"))
             .app_data(web::Data::new(conn.clone()))
-            .wrap(Logger::default())
+            .wrap(Logger::new("%{r}a %r %s %T").log_target("http_log"))
             .wrap(Compress::default())
             .wrap(NormalizePath::new(
                 actix_web::middleware::TrailingSlash::Trim,

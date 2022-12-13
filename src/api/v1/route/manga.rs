@@ -7,7 +7,7 @@ use chrono::{Duration, Utc};
 use entity::manga::{ActiveModel as ActiveManga, Column as MangaColumn, Entity as manga};
 use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
-use migration::{Expr, SimpleExpr};
+use migration::Expr;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::{
@@ -17,124 +17,11 @@ use sea_orm::{
 
 use crate::api::v1::data;
 use crate::api::v1::data::paginate::Paginate;
-use crate::api::v1::util::search::parse::{Field, Search};
+use crate::api::v1::util::search::manga::lucene_filter;
 use crate::middleware::auth::AuthService;
 
-const ALLOWED_FIELDS: [(&str, &str); 7] = [
-    ("title", "ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title ILIKE"),
-    ("description", "manga.description ILIKE"),
-    ("url", "manga.url IS"),
-    ("genres", "ARRAY_TO_STRING(manga.genres, ', ') ILIKE"),
-    ("genre", "ARRAY_TO_STRING(manga.genres, ', ') ILIKE"),
-    ("authors", "ARRAY_TO_STRING(manga.authors, ', ') ILIKE"),
-    ("author", "ARRAY_TO_STRING(manga.authors, ', ') ILIKE"),
-    // TODO 13/12/2022: These
-    // "next_update",
-    // "count_chapters",
-    // "last_updated",
-];
-
-fn lucene_filter(query: Search) -> Result<SimpleExpr> {
-    let with_fields: Vec<&Field> = query.iter().filter(|q| q.name.is_some()).collect();
-    let mut expressions = vec![];
-    for field in with_fields.into_iter() {
-        let name = field.name.as_ref().unwrap();
-        let name_key = ALLOWED_FIELDS.iter().find(|(key, _)| key == name);
-        if name_key.is_none() {
-            return Err(ErrorBadRequest(format!(
-                "Field with name '{}' is not allowed",
-                name
-            )));
-        }
-        let (_key, name) = name_key.unwrap();
-
-        let not = if field.exclude {
-            String::from("NOT ")
-        } else {
-            String::new()
-        };
-
-        expressions.push(Expr::cust_with_values(
-            &format!("{}{} $1", not, name),
-            vec![format!("%{}%", field.value.clone())],
-        ));
-    }
-
-
-    let without_fields: Vec<String> = query
-        .iter()
-        .filter(|q| q.name.is_none() && !q.exclude)
-        .map(|field| format!("%{}%", field.value))
-        .collect();
-
-    if !without_fields.is_empty() {
-        let expr = Expr::cust_with_values(
-            &format!(
-                r#"
-                ARRAY_TO_STRING(manga.genres, ', ')     || ' ' ||
-                ARRAY_TO_STRING(manga.authors, ', ')    || ' ' ||
-                ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' ||
-                manga.description                       || ' ' ||
-                manga.title                             ILIKE {}"#,
-                (0..without_fields.len())
-                    .enumerate()
-                    .map(|(i, _)| format!("${}", i + 1))
-                    .collect::<Vec<String>>()
-                    .join(" || ")
-            ),
-            without_fields,
-        );
-
-        expressions.push(expr);
-    }
-
-    let exclude_fields: Vec<String> = query
-        .iter()
-        .filter(|q| q.name.is_none() && q.exclude)
-        .map(|field| format!("%{}%", field.value))
-        .collect();
-
-    if !exclude_fields.is_empty() {
-        let expr = Expr::cust_with_values(
-            &format!(
-                r#"
-                NOT (ARRAY_TO_STRING(manga.genres, ', ')|| ' ' ||
-                ARRAY_TO_STRING(manga.authors, ', ')    || ' ' ||
-                ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' ||
-                manga.description                       || ' ' ||
-                manga.title                             ILIKE {})"#,
-                (0..exclude_fields.len())
-                    .enumerate()
-                    .map(|(i, _)| format!("${}", i + 1))
-                    .collect::<Vec<String>>()
-                    .join(" || ")
-            ),
-            exclude_fields,
-        );
-
-        expressions.push(expr);
-    }
-
-    if expressions.is_empty() {
-        return Ok(Expr::val(1).eq(1));
-    }
-    let first = expressions.first().unwrap().clone();
-
-    let expression = expressions
-        .into_iter()
-        .skip(1)
-        .fold(first, |total, expr| total.and(expr));
-
-    println!(
-        "Filter {}",
-        migration::Query::select()
-            .and_where(expression.clone())
-            .to_owned()
-            .to_string(migration::PostgresQueryBuilder)
-    );
-
-    Ok(expression)
-}
+pub const NEXT_UPDATE_QUERY: &str =
+    "(MAX(chapter.posted) + (MAX(chapter.posted) - MIN(chapter.posted)) / NULLIF(COUNT(*) - 1, 0))";
 
 #[rustfmt::skip]
 pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<data::manga::Full> {
@@ -142,7 +29,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<d
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
         .column_as(entity::chapter::Column::Posted.max(), "last_updated")
-        .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next_update")
+        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next_update")
         .group_by(MangaColumn::Id)
         .into_model::<data::manga::Full>()
         .one(db)
