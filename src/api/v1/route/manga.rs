@@ -219,7 +219,7 @@ async fn store(
 }
 
 #[get("/{manga_id}")]
-async fn get(path: web::Path<u16>, conn: web::Data<DatabaseConnection>) -> Result<impl Responder> {
+async fn get(path: web::Path<i32>, conn: web::Data<DatabaseConnection>) -> Result<impl Responder> {
     let manga_id = path.into_inner();
     let db = conn.as_ref();
 
@@ -241,14 +241,14 @@ async fn get(path: web::Path<u16>, conn: web::Data<DatabaseConnection>) -> Resul
         return Ok(web::Json(updated));
     }
 
-    let full_manga = get_manga_by_id(db, manga_id as i32).await?;
+    let full_manga = get_manga_by_id(db, manga_id).await?;
 
     Ok(web::Json(full_manga))
 }
 
 #[delete("/{manga_id}")]
 async fn delete(
-    path: web::Path<u16>,
+    path: web::Path<i32>,
     conn: web::Data<DatabaseConnection>,
     auth: AuthService,
 ) -> Result<impl Responder> {
@@ -260,7 +260,7 @@ async fn delete(
 
     let db = conn.as_ref();
 
-    let result = manga::delete_by_id(manga_id as i32)
+    let result = manga::delete_by_id(manga_id)
         .exec(db)
         .await
         .map_err(ErrorInternalServerError)?;
@@ -282,14 +282,5 @@ pub fn routes() -> actix_web::Scope {
 
 #[cfg(test)]
 mod test {
-    const TEST_URL: &str = "https://www.topmanhua.com/manhua/the-beginning-after-the-end/";
 
-    crate::test::test_resource! {
-        manga "/api/v1/manga";
-
-        post: "/" => StatusCode::CREATED; json!({"url": TEST_URL});;
-        get: "/";;
-        get: "/" 0 id;;
-        delete: "/" 0 id => StatusCode::NO_CONTENT, AUTHORIZATION: "Bearer " 1 token;;
-    }
 }

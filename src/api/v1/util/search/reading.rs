@@ -2,7 +2,6 @@ use migration::SimpleExpr;
 
 use super::field::SearchField;
 use super::parse::Search;
-use crate::api::v1::route::manga::NEXT_UPDATE_QUERY;
 
 const SELECT_MANGA_ALL: &str = r#"
 ARRAY_TO_STRING(manga.genres, ', ')     || ' ' ||
@@ -20,9 +19,12 @@ static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "authors" => SearchField::Array("manga.authors"),
     "author" => SearchField::Array("manga.authors"),
     "last" => SearchField::Date("MAX(chapter.posted)", false),
-    "next" => SearchField::Date(NEXT_UPDATE_QUERY, true),
+    "next" => SearchField::Date(SELECT_MANGA_ALL, true),
     "chapter" => SearchField::Number("COUNT(chapter.id)"),
     "chapters" => SearchField::Number("COUNT(chapter.id)"),
+    "progress" => SearchField::Number("reading.progress"),
+    "updated" => SearchField::Date("reading.updated_at", false),
+    "created" => SearchField::Date("reading.created_at", false),
     "*" => SearchField::Text(SELECT_MANGA_ALL),
 };
 

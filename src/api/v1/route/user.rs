@@ -94,18 +94,18 @@ async fn store(
 
 #[patch("/{user_id}")]
 async fn edit(
-    path: web::Path<u16>,
+    path: web::Path<i32>,
     conn: web::Data<DatabaseConnection>,
     auth: AuthService,
     data: web::Json<data::user::Patch>,
 ) -> Result<impl Responder> {
     let user_id = path.into_inner();
 
-    permission::can_edit(auth, user_id as i32)?;
+    permission::can_edit(auth, user_id)?;
 
     let db = conn.as_ref();
 
-    let found_user = user::find_by_id(user_id as i32)
+    let found_user = user::find_by_id(user_id)
         .one(db)
         .await
         .map_err(ErrorInternalServerError)?
@@ -138,29 +138,29 @@ async fn edit(
 }
 
 #[get("/{user_id}")]
-async fn get(path: web::Path<u16>, conn: web::Data<DatabaseConnection>) -> Result<impl Responder> {
+async fn get(path: web::Path<i32>, conn: web::Data<DatabaseConnection>) -> Result<impl Responder> {
     let user_id = path.into_inner();
 
     let db = conn.as_ref();
 
-    let full_user = get_user_by_id(db, user_id as i32).await?;
+    let full_user = get_user_by_id(db, user_id).await?;
 
     Ok(web::Json(full_user))
 }
 
 #[delete("/{user_id}")]
 async fn delete(
-    path: web::Path<u16>,
+    path: web::Path<i32>,
     conn: web::Data<DatabaseConnection>,
     auth: AuthService,
 ) -> Result<impl Responder> {
     let user_id = path.into_inner();
 
-    permission::can_edit(auth, user_id as i32)?;
+    permission::can_edit(auth, user_id)?;
 
     let db = conn.as_ref();
 
-    let result = user::delete_by_id(user_id as i32)
+    let result = user::delete_by_id(user_id)
         .exec(db)
         .await
         .map_err(ErrorInternalServerError)?;

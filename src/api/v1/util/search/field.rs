@@ -17,6 +17,18 @@ pub enum SearchField {
     Number(&'static str),
 }
 
+impl ToString for SearchField {
+    fn to_string(&self) -> String {
+        match self {
+            SearchField::Array(s) => s.to_string(),
+            SearchField::Text(s) => s.to_string(),
+            SearchField::Date(s, _) => s.to_string(),
+            SearchField::Equals(s) => s.to_string(),
+            SearchField::Number(s) => s.to_string(),
+        }
+    }
+}
+
 impl SearchField {
     pub fn into_expression(self, value: &str, exclude: bool) -> actix_web::Result<SimpleExpr> {
         let mut expr = String::new();

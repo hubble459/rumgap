@@ -8,4 +8,5 @@ pub fn routes() -> actix_web::Scope {
     web::scope("/v1")
         .service(route::user::routes())
         .service(route::manga::routes())
+        .service(route::reading::routes())
 }
