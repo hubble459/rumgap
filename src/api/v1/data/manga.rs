@@ -42,6 +42,6 @@ pub struct Full {
     pub updated_at: DateTimeWithTimeZone,
     // special
     pub count_chapters: i64,
-    pub next_update: Option<DateTimeWithTimeZone>,
-    pub last_updated: DateTimeWithTimeZone,
+    pub next: Option<DateTimeWithTimeZone>,
+    pub last: Option<DateTimeWithTimeZone>,
 }

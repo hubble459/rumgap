@@ -28,8 +28,8 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<d
     let found_user = manga::find_by_id(manga_id)
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
-        .column_as(entity::chapter::Column::Posted.max(), "last_updated")
-        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next_update")
+        .column_as(entity::chapter::Column::Posted.max(), "last")
+        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
         .group_by(MangaColumn::Id)
         .into_model::<data::manga::Full>()
         .one(db)
@@ -118,8 +118,8 @@ async fn index(
     let mut paginate = manga::find()
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
-        .column_as(entity::chapter::Column::Posted.max(), "last_updated")
-        .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next_update")
+        .column_as(entity::chapter::Column::Posted.max(), "last")
+        .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next")
         .group_by(MangaColumn::Id);
 
     if let Some(search) = query.search.clone() {

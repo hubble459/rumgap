@@ -5,7 +5,6 @@ use crate::api::v1::{util::search::parse::Field, route::manga::NEXT_UPDATE_QUERY
 
 use super::{parse::Search, field::SearchField};
 
-
 static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "title" => SearchField::Text("ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title"),
     "description" => SearchField::Text("manga.description"),
@@ -14,8 +13,9 @@ static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "genre" => SearchField::Array("manga.genres"),
     "authors" => SearchField::Array("manga.authors"),
     "author" => SearchField::Array("manga.authors"),
-    "last" => SearchField::Date("MAX(chapter.posted)"),
-    "next" => SearchField::Date(NEXT_UPDATE_QUERY),
+    "last" => SearchField::Date("MAX(chapter.posted)", false),
+    "next" => SearchField::Date(NEXT_UPDATE_QUERY, true),
+    "chapter" => SearchField::Number("COUNT(chapter.id)"),
     "chapters" => SearchField::Number("COUNT(chapter.id)"),
 };
 
@@ -29,7 +29,7 @@ pub fn lucene_filter(query: Search) -> actix_web::Result<SimpleExpr> {
         let name_key = SEARCH_FIELDS.get(name);
         if name_key.is_none() {
             return Err(ErrorBadRequest(format!(
-                "Field with name '{}' is not allowed",
+                "Field with name '{}' does not exist",
                 name
             )));
         }
