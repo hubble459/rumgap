@@ -25,6 +25,7 @@ pub struct IndexQuery {
     #[serde(flatten)]
     pub paginate: PaginateQuery,
     pub search: Option<String>,
+    pub order: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromQueryResult)]

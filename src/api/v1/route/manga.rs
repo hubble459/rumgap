@@ -12,10 +12,10 @@ use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QuerySelect, Set,
+    QuerySelect, Set, QueryOrder,
 };
 
-use crate::api::v1::data;
+use crate::api::v1::{data, util};
 use crate::api::v1::data::paginate::Paginate;
 use crate::api::v1::util::search::manga::lucene_filter;
 use crate::middleware::auth::AuthService;
@@ -124,6 +124,13 @@ async fn index(
 
     if let Some(search) = query.search.clone() {
         paginate = paginate.having(lucene_filter(search.into())?);
+    }
+
+    if let Some(order) = query.order.clone() {
+        let columns = util::order::manga::parse(&order)?;
+        for (column, order) in columns {
+            paginate = paginate.order_by(column, order);
+        }
     }
 
     let paginate = paginate
