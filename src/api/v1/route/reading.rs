@@ -1,34 +1,45 @@
-use actix_web::error::{
-    ErrorForbidden, ErrorInternalServerError, ErrorNotFound,
-};
+use actix_web::error::{ErrorForbidden, ErrorInternalServerError, ErrorNotFound};
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, Responder, Result};
-use entity::reading::{ActiveModel as ActiveReading, Column as ReadingColumn, Entity as reading};
+use entity::reading::{
+    ActiveModel as ActiveReading, Column as ReadingColumn, Entity as reading_entity,
+};
+use migration::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait, Set,
 };
 
 use crate::api::v1::data::paginate::Paginate;
+use crate::api::v1::route::manga::NEXT_UPDATE_QUERY;
 use crate::api::v1::util::search::reading::lucene_filter;
 use crate::api::v1::{data, util};
 use crate::middleware::auth::AuthService;
 
 #[rustfmt::skip]
-pub async fn get_reading_by_id(db: &DatabaseConnection, user_id: i32, reading_id: i32) -> Result<data::reading::Full> {
-    let found_user = reading::find_by_id(reading_id)
+pub async fn get_reading_by_id(db: &DatabaseConnection, user_id: i32, reading_id: i32) -> Result<serde_json::Value> {
+    let (reading, manga) = reading_entity::find_by_id(reading_id)
         .filter(ReadingColumn::UserId.eq(user_id))
         .left_join(entity::manga::Entity)
-        .join(migration::JoinType::LeftJoin, entity::manga::Relation::Chapter.def())
-        .column_as(entity::chapter::Column::Id.count(), "count_chapters")
+        .select_also(entity::manga::Entity)
+        .join(
+            migration::JoinType::LeftJoin,
+            entity::manga::Relation::Chapter.def(),
+        )
+        .column_as(entity::chapter::Column::Id.count(), "B_count_chapters")
+        .column_as(entity::chapter::Column::Posted.max(), "B_last")
+        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "B_next")
+        .group_by(entity::manga::Column::Id)
         .group_by(ReadingColumn::Id)
-        .into_model::<data::reading::Full>()
+        .into_model::<data::reading::Full, data::manga::Full>()
         .one(db)
         .await
         .map_err(ErrorInternalServerError)?
         .ok_or(ErrorNotFound("Chapter not found"))?;
 
-    Ok(found_user)
+    let mut found = json!(reading);
+    found["manga"] = json!(manga);
+    Ok(found)
 }
 
 #[get("")]
@@ -36,15 +47,22 @@ async fn index(
     conn: web::Data<DatabaseConnection>,
     query: web::Query<data::reading::IndexQuery>,
     auth: AuthService,
-) -> Result<Paginate<Vec<data::reading::Full>>> {
+) -> Result<Paginate<Vec<serde_json::Value>>> {
     let db = conn.as_ref();
 
     // Create paginate object
-    let mut paginate = reading::find()
-        .left_join(entity::manga::Entity)
-        .join(migration::JoinType::LeftJoin, entity::manga::Relation::Chapter.def())
-        .column_as(entity::chapter::Column::Id.count(), "count_chapters")
+    let mut paginate = reading_entity::find()
         .filter(ReadingColumn::UserId.eq(auth.user.id))
+        .left_join(entity::manga::Entity)
+        .select_also(entity::manga::Entity)
+        .join(
+            migration::JoinType::LeftJoin,
+            entity::manga::Relation::Chapter.def(),
+        )
+        .column_as(entity::chapter::Column::Id.count(), "B_count_chapters")
+        .column_as(entity::chapter::Column::Posted.max(), "B_last")
+        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "B_next")
+        .group_by(entity::manga::Column::Id)
         .group_by(ReadingColumn::Id);
 
     if let Some(search) = query.search.clone() {
@@ -59,7 +77,7 @@ async fn index(
     }
 
     let paginate = paginate
-        .into_model::<data::reading::Full>()
+        .into_model::<data::reading::Full, data::manga::Full>()
         .paginate(db, query.paginate.limit);
 
     // Get max page
@@ -79,7 +97,14 @@ async fn index(
         max_page: amount.number_of_pages,
         page: query.paginate.page,
         limit: query.paginate.limit,
-        items,
+        items: items
+            .into_iter()
+            .map(|(reading, manga)| {
+                let mut reading = json!(reading);
+                reading["manga"] = json!(manga);
+                reading
+            })
+            .collect(),
     })
 }
 
@@ -129,7 +154,7 @@ async fn patch(
     let reading_id = path.into_inner();
     let db = conn.as_ref();
 
-    reading::find_by_id(reading_id)
+    reading_entity::find_by_id(reading_id)
         .filter(ReadingColumn::UserId.eq(auth.user.id))
         .one(db)
         .await
@@ -164,7 +189,7 @@ async fn delete(
 
     let db = conn.as_ref();
 
-    let result = reading::delete_by_id(reading_id)
+    let result = reading_entity::delete_by_id(reading_id)
         .exec(db)
         .await
         .map_err(ErrorInternalServerError)?;

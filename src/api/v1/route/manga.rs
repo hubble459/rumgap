@@ -25,7 +25,7 @@ pub const NEXT_UPDATE_QUERY: &str =
 
 #[rustfmt::skip]
 pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<data::manga::Full> {
-    let found_user = manga::find_by_id(manga_id)
+    let found_manga = manga::find_by_id(manga_id)
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
         .column_as(entity::chapter::Column::Posted.max(), "last")
@@ -37,7 +37,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<d
         .map_err(ErrorInternalServerError)?
         .ok_or(ErrorNotFound("Manga not found"))?;
 
-    Ok(found_user)
+    Ok(found_manga)
 }
 
 pub async fn save_manga(
@@ -233,8 +233,13 @@ async fn get(path: web::Path<i32>, conn: web::Data<DatabaseConnection>) -> Resul
         .map_err(ErrorInternalServerError)?
         .ok_or(ErrorNotFound("Manga not found"))?;
 
+    let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
+        .unwrap_or("3600000".to_string())
+        .parse()
+        .unwrap_or(3600000);
+
     // Check if it should be updated
-    if (Utc::now() - Duration::minutes(5)) > updated_at {
+    if (Utc::now() - Duration::milliseconds(interval_ms)) > updated_at {
         // Update
         info!("Updating manga with id '{}' [{}]", manga_id, url);
         let updated = save_manga(db, Some(manga_id.into()), Url::parse(&url).unwrap()).await?;

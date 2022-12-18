@@ -41,5 +41,5 @@
             "password": "postgres"
         }
     ],
-    "discord.enabled": true
+    "discord.enabled": true,
 }
