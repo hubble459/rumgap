@@ -20,6 +20,12 @@ use crate::api::v1::data::paginate::Paginate;
 use crate::api::v1::util::search::manga::lucene_filter;
 use crate::middleware::auth::AuthService;
 
+use super::chapter;
+
+lazy_static! {
+    pub static ref MANGA_PARSER: MangaParser = MangaParser::new();
+}
+
 pub const NEXT_UPDATE_QUERY: &str =
     "(MAX(chapter.posted) + (MAX(chapter.posted) - MIN(chapter.posted)) / NULLIF(COUNT(*) - 1, 0))";
 
@@ -47,8 +53,7 @@ pub async fn save_manga(
 ) -> actix_web::Result<data::manga::Full> {
     info!("Saving manga [{}]", url.to_string());
 
-    let manga_parser = MangaParser::new();
-    let m = manga_parser
+    let m = MANGA_PARSER
         .manga(url)
         .await
         .map_err(ErrorInternalServerError)?;
@@ -283,6 +288,7 @@ pub fn routes() -> actix_web::Scope {
         .service(store)
         .service(get)
         .service(delete)
+        .service(chapter::routes())
 }
 
 #[cfg(test)]

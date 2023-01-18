@@ -45,6 +45,7 @@ pub struct AuthService {
     pub user: User,
 }
 
+#[allow(dead_code)]
 impl AuthService {
     pub fn is_restricted(&self) -> bool {
         self.user.permissions == 0

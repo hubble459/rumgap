@@ -42,4 +42,5 @@
         }
     ],
     "discord.enabled": true,
+    "vscord.enabled": true,
 }
