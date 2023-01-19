@@ -9,19 +9,16 @@ version = "0.1.0"
 members = [".", "manga_parser", "migration", "entity"]
 
 [dependencies]
-actix-files = "0.6.2"
-actix-web = "4.2.1"
+tonic = "0.8"
+prost = "0.11"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 manga-parser = {path = "manga_parser"}
 migration = {path = "migration"}
 entity = {path = "entity"}
 log = "0.4.17"
 log4rs = { version = "1.2.0", features = ["gzip"] }
-derive_more = "0.99.17"
-argon2 = "0.4.1"
-async-trait = "0.1.59"
 lazy_static = "1.4.0"
-futures = {version = "0.3.25"}
-futures-util = {version = "0.3.25"}
+argon2 = "0.4.1"
 hmac = "0.12.1"
 jwt = "0.16.0"
 sha2 = "0.10.6"
@@ -35,6 +32,12 @@ bitflags = "2.0.0-rc.1"
 once_cell = "1.16.0"
 sea-orm = { version = "0.10.5" }
 phf = { version = "0.11.1", features = ["macros"] }
+derive_more = "0.99.17"
+futures = {version = "0.3.25"}
+futures-util = {version = "0.3.25"}
+
+[build-dependencies]
+tonic-build = "0.8"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"
