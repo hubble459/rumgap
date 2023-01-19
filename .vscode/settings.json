@@ -43,4 +43,9 @@
     ],
     "discord.enabled": true,
     "vscord.enabled": true,
+    "protoc": {
+        "options": [
+            "--proto_path=protos",
+        ]
+    }
 }

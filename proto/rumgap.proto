@@ -1,0 +1,15 @@
+syntax = "proto3";
+package rumgap;
+
+import "user.proto";
+import "paginate.proto";
+
+service User {
+    rpc Create (UserRequest) returns (UserReply);
+    rpc Get (Id) returns (UserReply);
+    rpc Index (PaginateQuery) returns (UsersReply);
+}
+
+message Id {
+    uint32 id = 1;
+}

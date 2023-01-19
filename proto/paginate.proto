@@ -1,0 +1,7 @@
+syntax = "proto3";
+package rumgap;
+
+message PaginateQuery {
+    uint32 limit = 1;
+    uint32 page = 2;
+}

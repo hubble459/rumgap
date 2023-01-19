@@ -1,0 +1,17 @@
+syntax = "proto3";
+package rumgap;
+
+message UserRequest {
+    string username = 1;
+    string password = 2;
+}
+
+message UserReply {
+    uint32 id = 1;
+    string username = 2;
+    string password = 3;
+}
+
+message UsersReply {
+    repeated UserReply items = 1;
+}
