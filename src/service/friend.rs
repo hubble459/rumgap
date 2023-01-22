@@ -6,7 +6,7 @@ use sea_orm::{
 use tonic::{Request, Response, Status};
 
 use crate::data;
-use crate::interceptor::auth::LoggedInUser;
+use crate::interceptor::auth::{LoggedInUser, UserPermissions};
 use crate::proto::friend_server::{Friend, FriendServer};
 use crate::proto::{
     FriendRequest, PaginateQuery, PaginateReply, UserFullReply, UserReply, UsersReply,
@@ -165,4 +165,4 @@ impl Friend for MyFriend {
     }
 }
 
-crate::export_server!(FriendServer, MyFriend, auth = true);
+crate::export_server!(FriendServer, MyFriend, auth = UserPermissions::USER);

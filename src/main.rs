@@ -6,8 +6,6 @@ extern crate lazy_static;
 extern crate bitflags;
 #[macro_use]
 extern crate phf;
-#[macro_use]
-extern crate serde_json;
 
 use std::env;
 
@@ -85,27 +83,15 @@ fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 }
 
 
-
 macro_rules! export_server {
     ($server:ident, $server_handler:ident) => {
-        $crate::export_server!($server, $server_handler, auth = false);
-    };
-    ($server:ident, $server_handler:ident, auth = true) => {
-        pub fn server() -> tonic::service::interceptor::InterceptedService<$server<$server_handler>, $crate::interceptor::auth::LoggedInCheck> {
-            $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in())
-        }
-
-        // pub fn server() -> $server<$server_handler> {
-        //     if $authorized {
-        //         $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in())
-        //     } else {
-        //         $server::new($server_handler::default())
-        //     }
-        // }
-    };
-    ($server:ident, $server_handler:ident, auth = false) => {
         pub fn server() -> $server<$server_handler> {
             $server::new($server_handler::default())
+        }
+    };
+    ($server:ident, $server_handler:ident, auth = $auth:expr) => {
+        pub fn server() -> tonic::service::interceptor::InterceptedService<$server<$server_handler>, $crate::interceptor::auth::LoggedInCheck> {
+            $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in($auth))
         }
     };
 }

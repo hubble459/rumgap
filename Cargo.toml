@@ -15,6 +15,7 @@ tower = { version = "0.4" }
 tonic-async-interceptor = "0.1.0"
 prost = "0.11"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio-stream = "0.1"
 manga-parser = {path = "manga_parser"}
 migration = {path = "migration"}
 entity = {path = "entity"}

@@ -24,7 +24,7 @@ pub fn sign(id: i32) -> Result<String, jwt::Error> {
 pub struct LoggedInUser(pub entity::user::Model);
 
 bitflags! {
-    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct UserPermissions: u32 {
         const USER = 0b00000001;
         const MOD = 0b00000010;
@@ -69,19 +69,27 @@ pub async fn check_auth(mut req: Request<()>) -> Result<Request<()>, Status> {
     Ok(req)
 }
 
-pub fn logged_in() -> LoggedInCheck {
-    LoggedInCheck::default()
+pub fn logged_in(perms: UserPermissions) -> LoggedInCheck {
+    LoggedInCheck { perms }
 }
 
-#[derive(Default, Clone)]
-pub struct LoggedInCheck;
+#[derive(Clone)]
+pub struct LoggedInCheck {
+    perms: UserPermissions,
+}
 
 impl Interceptor for LoggedInCheck {
     fn call(&mut self, req: tonic::Request<()>) -> Result<tonic::Request<()>, Status> {
         let user = req.extensions().get::<LoggedInUser>();
 
         match user {
-            Some(_user) => Ok(req),
+            Some(user) => {
+                if user.has_permission(self.perms) {
+                    Ok(req)
+                } else {
+                    Err(Status::permission_denied("You are missing permissions to make this call"))
+                }
+            },
             None => Err(Status::unauthenticated(
                 "You need to be logged in to make this request!",
             )),
