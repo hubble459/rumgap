@@ -1,0 +1,23 @@
+syntax = "proto3";
+package rumgap;
+
+import "paginate.proto";
+
+message MangaRequest {
+    string username = 1;
+    string password = 2;
+}
+
+message MangasRequest {
+    repeated MangaRequest items = 1;
+}
+
+message MangaReply {
+    int32 id = 1;
+    string username = 2;
+}
+
+message MangasReply {
+    PaginateReply pagination = 1;
+    repeated MangaReply items = 2;
+}

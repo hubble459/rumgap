@@ -9,8 +9,10 @@ version = "0.1.0"
 members = [".", "manga_parser", "migration", "entity"]
 
 [dependencies]
-tonic = "0.8"
+tonic = { version = "0.8", features = ["tower"] }
 tonic-reflection = "0.6"
+tower = { version = "0.4" }
+tonic-async-interceptor = "0.1.0"
 prost = "0.11"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 manga-parser = {path = "manga_parser"}

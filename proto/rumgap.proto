@@ -2,14 +2,23 @@ syntax = "proto3";
 package rumgap;
 
 import "user.proto";
+import "manga.proto";
 import "paginate.proto";
 
 service User {
-    rpc Create (UserRequest) returns (UserReply);
+    rpc Register (UserRegisterRequest) returns (UserTokenReply);
+    rpc Login (UserRequest) returns (UserTokenReply);
     rpc Get (Id) returns (UserReply);
     rpc Index (PaginateQuery) returns (UsersReply);
 }
 
+service Manga {
+    rpc Create (MangaRequest) returns (MangaReply);
+    rpc CreateMany (MangasRequest) returns (stream MangaReply);
+    rpc Get (Id) returns (MangaReply);
+    rpc Index (PaginateQuery) returns (MangasReply);
+}
+
 message Id {
-    uint32 id = 1;
+    int32 id = 1;
 }

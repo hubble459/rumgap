@@ -1,17 +1,37 @@
 syntax = "proto3";
 package rumgap;
 
-message UserRequest {
+import "paginate.proto";
+
+message UserRegisterRequest {
     string username = 1;
     string password = 2;
+    string email = 3;
+}
+
+message UserRequest {
+    string password = 1;
+    oneof identifier {
+        string username = 2;
+        string email = 3;
+    }
 }
 
 message UserReply {
-    uint32 id = 1;
+    int32 id = 1;
     string username = 2;
-    string password = 3;
+    string email = 3;
+    int32 permissions = 4;
+    int64 created_at = 5;
+    int64 updated_at = 6;
+}
+
+message UserTokenReply {
+    UserReply user = 1;
+    string token = 2;
 }
 
 message UsersReply {
-    repeated UserReply items = 1;
+    PaginateReply pagination = 1;
+    repeated UserReply items = 2;
 }
