@@ -2,14 +2,22 @@ syntax = "proto3";
 package rumgap;
 
 import "user.proto";
+import "friend.proto";
 import "manga.proto";
 import "paginate.proto";
 
 service User {
     rpc Register (UserRegisterRequest) returns (UserTokenReply);
     rpc Login (UserRequest) returns (UserTokenReply);
-    rpc Get (Id) returns (UserReply);
+    rpc Get (Id) returns (UserFullReply);
     rpc Index (PaginateQuery) returns (UsersReply);
+}
+
+service Friend {
+    rpc Follow (FriendRequest) returns (UserFullReply);
+    rpc Unfollow (FriendRequest) returns (UserFullReply);
+    rpc Following (PaginateQuery) returns (UsersReply);
+    rpc Followers (PaginateQuery) returns (UsersReply);
 }
 
 service Manga {

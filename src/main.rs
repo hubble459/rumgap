@@ -6,17 +6,22 @@ extern crate lazy_static;
 extern crate bitflags;
 #[macro_use]
 extern crate phf;
+#[macro_use]
+extern crate serde_json;
 
 use std::env;
 
 use migration::{DbErr, Migrator, MigratorTrait};
-use sea_orm::{DatabaseConnection, Database};
-use tonic::{transport::Server, Request, Status};
-use tonic_reflection::server::Builder;
+use sea_orm::{Database, DatabaseConnection};
+use tonic::transport::Server;
+use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
+use tonic_reflection::server::Builder;
 
-mod service;
+mod data;
 mod interceptor;
+mod service;
+mod util;
 
 pub mod proto {
     tonic::include_proto!("rumgap");
@@ -44,9 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Running server on {}", addr);
 
     Server::builder()
-        .layer(tonic::service::interceptor(move |req| intercept(req, conn.clone())))
+        .layer(tonic::service::interceptor(move |req| {
+            intercept(req, conn.clone())
+        }))
         .layer(async_interceptor(interceptor::auth::check_auth))
         .add_service(service::user::server())
+        .add_service(service::friend::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
@@ -75,3 +83,31 @@ fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 
     Ok(req)
 }
+
+
+
+macro_rules! export_server {
+    ($server:ident, $server_handler:ident) => {
+        $crate::export_server!($server, $server_handler, auth = false);
+    };
+    ($server:ident, $server_handler:ident, auth = true) => {
+        pub fn server() -> tonic::service::interceptor::InterceptedService<$server<$server_handler>, $crate::interceptor::auth::LoggedInCheck> {
+            $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in())
+        }
+
+        // pub fn server() -> $server<$server_handler> {
+        //     if $authorized {
+        //         $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in())
+        //     } else {
+        //         $server::new($server_handler::default())
+        //     }
+        // }
+    };
+    ($server:ident, $server_handler:ident, auth = false) => {
+        pub fn server() -> $server<$server_handler> {
+            $server::new($server_handler::default())
+        }
+    };
+}
+
+pub(crate) use export_server;

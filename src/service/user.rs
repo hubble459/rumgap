@@ -1,12 +1,19 @@
 use migration::{Alias, Expr, JoinType};
-use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait, QuerySelect, RelationTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QuerySelect, RelationTrait,
+};
 use tonic::{Request, Response, Status};
 
+use crate::data;
+use crate::interceptor::auth::sign;
+use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    Id, PaginateQuery, PaginateReply, UserRegisterRequest, UserReply, UserRequest, UserTokenReply,
-    UsersReply,
+    Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply, UserRequest,
+    UserTokenReply, UsersReply,
 };
+use crate::util::{argon, verify};
 
 #[rustfmt::skip]
 pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<data::user::Full, Status> {
@@ -16,8 +23,8 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
     let user = entity::user::Entity::find_by_id(user_id)
         .join_as(JoinType::LeftJoin, entity::friend::Relation::User1.def().rev(), following_alias.clone())
         .join_as(JoinType::LeftJoin, entity::friend::Relation::User2.def().rev(), followers_alias.clone())
-        .column_as(Expr::col((following_alias, entity::friend::Column::Id)).count(), "count_following")
-        .column_as(Expr::col((followers_alias, entity::friend::Column::Id)).count(), "count_followers")
+        .column_as(Expr::col((following_alias, entity::friend::Column::UserId)).count(), "count_following")
+        .column_as(Expr::col((followers_alias, entity::friend::Column::FriendId)).count(), "count_followers")
         .group_by(entity::user::Column::Id)
         .into_model::<data::user::Full>()
         .one(db)
@@ -33,25 +40,11 @@ pub struct MyUser {}
 
 #[tonic::async_trait]
 impl User for MyUser {
-    async fn get(&self, request: Request<Id>) -> Result<Response<UserReply>, Status> {
+    async fn get(&self, request: Request<Id>) -> Result<Response<UserFullReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-
         let req = request.get_ref();
-
-        let user = entity::user::Entity::find_by_id(req.id)
-            .one(db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?
-            .ok_or(Status::not_found("User not found"))?;
-
-        Ok(Response::new(UserReply {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            permissions: user.permissions as i32,
-            created_at: user.created_at.timestamp_millis(),
-            updated_at: user.updated_at.timestamp_millis(),
-        }))
+        let full_user = get_user_by_id(db, req.id).await?;
+        Ok(Response::new(full_user.into()))
     }
 
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
@@ -102,28 +95,64 @@ impl User for MyUser {
         &self,
         request: Request<UserRegisterRequest>,
     ) -> Result<Response<UserTokenReply>, Status> {
-        unimplemented!();
-        // let req = request.into_inner();
-        // Ok(Response::new(UserReply {
-        //     id: 1,
-        //     username: format!("Hello {}!", req.username),
-        // }))
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
+
+        let user = entity::user::ActiveModel {
+            username: ActiveValue::Set(verify::username(&req.username)?),
+            email: ActiveValue::Set(verify::email(&req.email)?),
+            password_hash: ActiveValue::Set(argon::encrypt(&verify::password(&req.password)?)?),
+            ..Default::default()
+        };
+
+        let user = user.insert(db).await.map_err(|e| {
+            if verify::is_conflict(&e) {
+                return Status::already_exists("Username or email already in use");
+            }
+            Status::internal(e.to_string())
+        })?;
+
+        let full_user = get_user_by_id(db, user.id).await?;
+        let token = sign(full_user.id).map_err(|e| Status::aborted(e.to_string()))?;
+        Ok(Response::new(UserTokenReply {
+            token,
+            user: Some(full_user.into()),
+        }))
     }
 
     async fn login(
         &self,
         request: Request<UserRequest>,
     ) -> Result<Response<UserTokenReply>, Status> {
-        unimplemented!();
+        let error = "Username and password mismatch";
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
 
-        // let req = request.into_inner();
-        // Ok(Response::new(UserReply {
-        //     id: 0,
-        //     username: req.username,
-        // }))
+        let identifier = req.identifier.as_ref().unwrap();
+
+        let filter = match identifier {
+            Identifier::Username(username) => {
+                entity::user::Column::Username.eq(username.to_ascii_lowercase())
+            }
+            Identifier::Email(email) => entity::user::Column::Email.eq(email.to_ascii_lowercase()),
+        };
+
+        let user = entity::user::Entity::find()
+            .filter(filter)
+            .one(db)
+            .await
+            .map_err(|e| Status::aborted(e.to_string()))?
+            .ok_or(Status::not_found(error))?;
+
+        argon::verify(&user.password_hash, &req.password)?;
+
+        let full_user = get_user_by_id(db, user.id).await?;
+        let token = sign(full_user.id).map_err(|e| Status::aborted(e.to_string()))?;
+        Ok(Response::new(UserTokenReply {
+            token,
+            user: Some(full_user.into()),
+        }))
     }
 }
 
-pub fn server() -> UserServer<MyUser> {
-    UserServer::new(MyUser::default())
-}
+crate::export_server!(UserServer, MyUser);

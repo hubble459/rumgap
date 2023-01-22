@@ -26,8 +26,19 @@ message UserReply {
     int64 updated_at = 6;
 }
 
+message UserFullReply {
+    int32 id = 1;
+    string username = 2;
+    string email = 3;
+    int32 permissions = 4;
+    int64 count_following = 5;
+    int64 count_followers = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
+}
+
 message UserTokenReply {
-    UserReply user = 1;
+    UserFullReply user = 1;
     string token = 2;
 }
 
