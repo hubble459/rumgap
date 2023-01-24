@@ -14,7 +14,7 @@ use crate::proto::{
     PaginateReply, PaginateSearchQuery, ReadingPatchRequest, ReadingPostRequest, ReadingReply,
     ReadingsReply,
 };
-use crate::util::search::manga::lucene_filter;
+use crate::util::search::reading::lucene_filter;
 use crate::{data, util};
 
 #[rustfmt::skip]
