@@ -213,4 +213,4 @@ impl Reading for MyReading {
     }
 }
 
-crate::export_server!(ReadingServer, MyReading, auth = UserPermissions::USER);
+crate::export_service!(ReadingServer, MyReading, auth = UserPermissions::USER);

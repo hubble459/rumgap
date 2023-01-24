@@ -1,18 +1,7 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{DeriveColumn, EnumIter, FromQueryResult, IdenStatic};
-use serde::{Deserialize, Serialize};
 
 use crate::proto::MangaReply;
-
-#[derive(Debug, Deserialize)]
-pub struct Post {
-    pub urls: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Patch {
-    pub url: String,
-}
 
 #[derive(Debug, Copy, Clone, EnumIter, DeriveColumn)]
 pub enum Minimal {
@@ -20,7 +9,7 @@ pub enum Minimal {
     UpdatedAt,
 }
 
-#[derive(Debug, Serialize, FromQueryResult)]
+#[derive(Debug, FromQueryResult)]
 pub struct Full {
     pub id: i32,
     pub url: String,

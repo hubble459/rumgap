@@ -158,4 +158,4 @@ impl User for MyUser {
     }
 }
 
-crate::export_server!(UserServer, MyUser);
+crate::export_service!(UserServer, MyUser);

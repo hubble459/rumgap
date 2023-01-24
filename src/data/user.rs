@@ -1,10 +1,9 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::FromQueryResult;
-use serde::Serialize;
 
 use crate::proto::UserFullReply;
 
-#[derive(Debug, Serialize, FromQueryResult)]
+#[derive(Debug, FromQueryResult)]
 pub struct Full {
     pub id: i32,
     pub permissions: i16,

@@ -99,4 +99,4 @@ impl Chapter for MyChapter {
     }
 }
 
-crate::export_server!(ChapterServer, MyChapter);
+crate::export_service!(ChapterServer, MyChapter);

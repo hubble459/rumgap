@@ -165,4 +165,4 @@ impl Friend for MyFriend {
     }
 }
 
-crate::export_server!(FriendServer, MyFriend, auth = UserPermissions::USER);
+crate::export_service!(FriendServer, MyFriend, auth = UserPermissions::USER);

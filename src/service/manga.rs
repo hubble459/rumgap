@@ -273,4 +273,4 @@ impl Manga for MyManga {
     }
 }
 
-crate::export_server!(MangaServer, MyManga);
+crate::export_service!(MangaServer, MyManga);

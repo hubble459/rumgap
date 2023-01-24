@@ -21,12 +21,18 @@ mod interceptor;
 mod service;
 mod util;
 
+/// Load all ProtoBuf files
 pub mod proto {
     tonic::include_proto!("rumgap");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("descriptor");
 }
 
+/// Start the server
+///
+/// Init log4rs
+/// Init database
+/// Add all services
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
@@ -67,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Make a connection to the database and run migrations
 async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
     // Establish connection to database and apply migrations
     info!("Connecting to database and running migrations...");
@@ -77,26 +84,34 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
     Ok(conn)
 }
 
+/// Add the database to all requests via their extensions
 fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
-    println!("Intercepting request: {:?}", req);
+    // Log incomming request
+    info!("Intercepting request: {:?}", req);
 
     req.extensions_mut().insert(conn);
 
     Ok(req)
 }
 
-
-macro_rules! export_server {
+/// Macro for exporting a service
+macro_rules! export_service {
     ($server:ident, $server_handler:ident) => {
         pub fn server() -> $server<$server_handler> {
             $server::new($server_handler::default())
         }
     };
     ($server:ident, $server_handler:ident, auth = $auth:expr) => {
-        pub fn server() -> tonic::service::interceptor::InterceptedService<$server<$server_handler>, $crate::interceptor::auth::LoggedInCheck> {
-            $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in($auth))
+        pub fn server() -> tonic::service::interceptor::InterceptedService<
+            $server<$server_handler>,
+            $crate::interceptor::auth::LoggedInCheck,
+        > {
+            $server::with_interceptor(
+                $server_handler::default(),
+                $crate::interceptor::auth::logged_in($auth),
+            )
         }
     };
 }
 
-pub(crate) use export_server;
+pub(crate) use export_service;
