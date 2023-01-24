@@ -143,15 +143,15 @@ impl Manga for MyManga {
             .clone();
         let req = request.get_ref();
         let mut stream =
-            Box::pin(tokio_stream::iter(req.items.clone()).throttle(Duration::from_millis(200)));
+            Box::pin(tokio_stream::iter(req.urls.clone()).throttle(Duration::from_millis(200)));
 
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
-            while let Some(item) = stream.next().await {
+            while let Some(url) = stream.next().await {
                 let url =
-                    Url::parse(&item.url).map_err(|e| Status::invalid_argument(e.to_string()));
+                    Url::parse(&url).map_err(|e| Status::invalid_argument(e.to_string()));
 
                 let res: Result<MangaReply, Status> = match url {
                     Ok(url) => save_manga(&db, None, url).await,

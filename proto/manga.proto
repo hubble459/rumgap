@@ -8,7 +8,7 @@ message MangaRequest {
 }
 
 message MangasRequest {
-    repeated MangaRequest items = 1;
+    repeated string urls = 1;
 }
 
 message MangaReply {
