@@ -57,21 +57,21 @@ pub async fn save_manga(
 ) -> Result<MangaReply, Status> {
     info!("Saving manga [{}]", url.to_string());
 
-    let m = MANGA_PARSER
+    let manga = MANGA_PARSER
         .manga(url)
         .await
         .map_err(|e| Status::internal(e.to_string()))?;
 
     let saved = entity::manga::ActiveModel {
         id: id.map_or(NotSet, |id| Set(id)),
-        title: Set(m.title),
-        description: Set(m.description),
-        is_ongoing: Set(m.is_ongoing),
-        cover: Set(m.cover.map(|url| url.to_string())),
-        url: Set(m.url.to_string()),
-        authors: Set(m.authors),
-        alt_titles: Set(m.alt_titles),
-        genres: Set(m.genres),
+        title: Set(manga.title),
+        description: Set(manga.description),
+        is_ongoing: Set(manga.is_ongoing),
+        cover: Set(manga.cover.map(|url| url.to_string())),
+        url: Set(manga.url.to_string()),
+        authors: Set(manga.authors),
+        alt_titles: Set(manga.alt_titles),
+        genres: Set(manga.genres),
         ..Default::default()
     }
     .save(db)
@@ -80,8 +80,8 @@ pub async fn save_manga(
 
     let manga_id = saved.id.unwrap();
 
-    if m.chapters.is_empty() {
-        error!("No chapters found for {} [{}]", manga_id, m.url.to_string());
+    if manga.chapters.is_empty() {
+        error!("No chapters found for {} [{}]", manga_id, manga.url.to_string());
     } else {
         // Remove old chapters
         let res = entity::chapter::Entity::delete_many()
@@ -95,7 +95,7 @@ pub async fn save_manga(
 
         // Add new chapters
         let mut chapters = vec![];
-        for chapter in m.chapters.iter() {
+        for chapter in manga.chapters.iter() {
             chapters.push(entity::chapter::ActiveModel {
                 manga_id: Set(manga_id),
                 number: Set(chapter.number),
@@ -157,6 +157,8 @@ impl Manga for MyManga {
                     Ok(url) => save_manga(&db, None, url).await,
                     Err(e) => Err(e),
                 };
+
+                info!("manga stream res: {:#?}", res);
 
                 match tx.send(res).await {
                     Ok(_) => {

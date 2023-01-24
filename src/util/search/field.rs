@@ -31,6 +31,7 @@ impl ToString for SearchField {
 
 impl SearchField {
     pub fn into_expression(self, value: &str, exclude: bool) -> Result<SimpleExpr, Status> {
+        let mut wild = false;
         let mut expr = String::new();
 
         if exclude {
@@ -40,9 +41,11 @@ impl SearchField {
         match self {
             SearchField::Array(ident) => {
                 expr += &format!("ARRAY_TO_STRING({}, ', ') ILIKE $1", ident);
+                wild = true;
             }
             SearchField::Text(ident) => {
                 expr += &format!("{} ILIKE $1", ident);
+                wild = true;
             }
             SearchField::Date(ident, future) => {
                 let captures = SEARCH_DATE_REGEX.captures(&value).unwrap();
@@ -94,6 +97,12 @@ impl SearchField {
                 }
             }
         }
+
+        let value = if wild {
+            format!("%{}%", value)
+        } else {
+            value.to_string()
+        };
 
         Ok(Expr::cust_with_values(&expr, vec![value]))
     }

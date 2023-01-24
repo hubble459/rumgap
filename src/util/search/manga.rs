@@ -10,7 +10,7 @@ ARRAY_TO_STRING(manga.genres, ', ')     || ' ' ||
 ARRAY_TO_STRING(manga.authors, ', ')    || ' ' ||
 ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' ||
 manga.description                       || ' ' ||
-manga.title                             ILIKE"#;
+manga.title"#;
 
 static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "title" => SearchField::Text("ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title"),
