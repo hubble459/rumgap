@@ -15,7 +15,7 @@ pub struct Patch {
 #[derive(Debug, Serialize, FromQueryResult)]
 pub struct Full {
     pub id: i32,
-    pub title: i32,
+    pub title: String,
     pub progress: i32,
     pub cover: Option<String>,
     pub count_chapters: i32,

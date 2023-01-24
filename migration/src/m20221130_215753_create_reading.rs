@@ -13,15 +13,9 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Reading::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(Reading::Id)
-                            .integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
-                    .col(ColumnDef::new(Reading::MangaId).integer().not_null())
                     .col(ColumnDef::new(Reading::UserId).integer().not_null())
+                    .col(ColumnDef::new(Reading::MangaId).integer().not_null())
+                    .primary_key(Index::create().col(Reading::UserId).col(Reading::MangaId))
                     .col(ColumnDef::new(Reading::Progress).integer().not_null().default(0))
                     .foreign_key(
                         ForeignKey::create()
@@ -57,7 +51,6 @@ impl MigrationTrait for Migration {
 #[derive(Iden)]
 enum Reading {
     Table,
-    Id,
     MangaId,
     UserId,
     Progress,

@@ -19,14 +19,15 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_many = "super::reading::Entity")]
-    Reading,
-}
+pub enum Relation {}
 
-impl Related<super::reading::Entity> for Entity {
+impl Related<super::manga::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Reading.def()
+        super::reading::Relation::Manga.def()
+    }
+
+    fn via() -> Option<RelationDef> {
+        Some(super::reading::Relation::User.def().rev())
     }
 }
 

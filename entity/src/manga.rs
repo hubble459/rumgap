@@ -25,8 +25,6 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::chapter::Entity")]
     Chapter,
-    #[sea_orm(has_many = "super::reading::Entity")]
-    Reading,
 }
 
 impl Related<super::chapter::Entity> for Entity {
@@ -35,9 +33,13 @@ impl Related<super::chapter::Entity> for Entity {
     }
 }
 
-impl Related<super::reading::Entity> for Entity {
+impl Related<super::user::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Reading.def()
+        super::reading::Relation::User.def()
+    }
+
+    fn via() -> Option<RelationDef> {
+        Some(super::reading::Relation::Manga.def().rev())
     }
 }
 

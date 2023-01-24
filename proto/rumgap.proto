@@ -5,6 +5,7 @@ import "user.proto";
 import "friend.proto";
 import "manga.proto";
 import "chapter.proto";
+import "reading.proto";
 import "paginate.proto";
 
 service User {
@@ -33,6 +34,17 @@ service Chapter {
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
 }
 
+service Reading {
+    rpc Get (Id) returns (ReadingReply);
+    rpc Index (PaginateSearchQuery) returns (ReadingsReply);
+    rpc Edit (ReadingPatchRequest) returns (ReadingReply);
+    rpc Create (ReadingPostRequest) returns (ReadingReply);
+    rpc Delete (Id) returns (Empty);
+}
+
 message Id {
     int32 id = 1;
+}
+
+message Empty {
 }
