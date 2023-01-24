@@ -1,23 +1,28 @@
 use std::pin::Pin;
 use std::time::Duration;
 
+use chrono::Utc;
 use futures::Stream;
 use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
 use migration::Expr;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QuerySelect,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
-use crate::data;
 use crate::proto::manga_server::{Manga, MangaServer};
-use crate::proto::{Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateQuery};
+use crate::proto::{
+    Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
+};
+use crate::util::search::manga::lucene_filter;
+use crate::{data, util};
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<MangaReply, Status>> + Send>>;
 
@@ -122,19 +127,20 @@ impl Manga for MyManga {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
 
-        let url = Url::parse(&req.url)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let url = Url::parse(&req.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        Ok(Response::new(
-            save_manga(db, None, url).await?
-        ))
+        Ok(Response::new(save_manga(db, None, url).await?))
     }
 
     async fn create_many(
         &self,
         request: Request<MangasRequest>,
     ) -> Result<Response<Self::CreateManyStream>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap().clone();
+        let db = request
+            .extensions()
+            .get::<DatabaseConnection>()
+            .unwrap()
+            .clone();
         let req = request.get_ref();
         let mut stream =
             Box::pin(tokio_stream::iter(req.items.clone()).throttle(Duration::from_millis(200)));
@@ -174,15 +180,88 @@ impl Manga for MyManga {
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
-        
-        Ok(Response::new(get_manga_by_id(db, req.id).await?))
+        let manga_id = req.id;
+
+        let (url, updated_at): (String, DateTimeWithTimeZone) =
+            entity::manga::Entity::find_by_id(manga_id)
+                .select_only()
+                .column(entity::manga::Column::Url)
+                .column(entity::manga::Column::UpdatedAt)
+                .into_values::<_, data::manga::Minimal>()
+                .one(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?
+                .ok_or(Status::not_found("Manga not found"))?;
+
+        let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
+            .unwrap_or("3600000".to_string())
+            .parse()
+            .unwrap_or(3600000);
+
+        // Check if it should be updated
+        let manga = if (Utc::now() - chrono::Duration::microseconds(interval_ms)) > updated_at {
+            // Update
+            info!("Updating manga with id '{}' [{}]", manga_id, url);
+            save_manga(db, Some(manga_id.into()), Url::parse(&url).unwrap()).await?
+        } else {
+            get_manga_by_id(db, manga_id).await?
+        };
+
+        Ok(Response::new(manga))
     }
 
     async fn index(
         &self,
-        request: Request<PaginateQuery>,
+        request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
-        unimplemented!()
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
+        let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
+        let mut paginate = entity::manga::Entity::find()
+            .left_join(entity::chapter::Entity)
+            .column_as(entity::chapter::Column::Id.count(), "count_chapters")
+            .column_as(entity::chapter::Column::Posted.max(), "last")
+            .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next")
+            .group_by(entity::manga::Column::Id);
+
+        if let Some(search) = req.search.clone() {
+            paginate = paginate.having(lucene_filter(search.into())?);
+        }
+
+        if let Some(order) = req.order.clone() {
+            let columns = util::order::manga::parse(&order)?;
+            for (column, order) in columns {
+                paginate = paginate.order_by(column, order);
+            }
+        }
+
+        let paginate = paginate
+            .into_model::<data::manga::Full>()
+            .paginate(db, per_page);
+
+        // Get max page and total items
+        let amount = paginate
+            .num_items_and_pages()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let page = req.page.unwrap_or(0).clamp(0, amount.number_of_pages - 1);
+
+        // Get items from page
+        let items = paginate
+            .fetch_page(page)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(MangasReply {
+            pagination: Some(PaginateReply {
+                page,
+                per_page,
+                max_page: amount.number_of_pages - 1,
+                total: amount.number_of_items,
+            }),
+            items: items.into_iter().map(|manga| manga.into()).collect(),
+        }))
     }
 }
 

@@ -49,11 +49,8 @@ impl User for MyUser {
 
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-
         let req = request.get_ref();
-
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
-
         let paginate = entity::user::Entity::find().paginate(db, per_page);
 
         // Get max page and total items

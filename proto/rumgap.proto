@@ -4,6 +4,7 @@ package rumgap;
 import "user.proto";
 import "friend.proto";
 import "manga.proto";
+import "chapter.proto";
 import "paginate.proto";
 
 service User {
@@ -24,7 +25,12 @@ service Manga {
     rpc Create (MangaRequest) returns (MangaReply);
     rpc CreateMany (MangasRequest) returns (stream MangaReply);
     rpc Get (Id) returns (MangaReply);
-    rpc Index (PaginateQuery) returns (MangasReply);
+    rpc Index (PaginateSearchQuery) returns (MangasReply);
+}
+
+service Chapter {
+    rpc Get (Id) returns (ImagesReply);
+    rpc Index (PaginateChapterQuery) returns (ChaptersReply);
 }
 
 message Id {
