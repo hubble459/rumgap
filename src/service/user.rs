@@ -59,7 +59,13 @@ impl User for MyUser {
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let page = req.page.unwrap_or(0).clamp(0, amount.number_of_pages - 1);
+        let max_page = if amount.number_of_pages == 0 {
+            0
+        } else {
+            amount.number_of_pages - 1
+        };
+
+        let page = req.page.unwrap_or(0).clamp(0, max_page);
 
         // Get items from page
         let items = paginate
@@ -71,7 +77,7 @@ impl User for MyUser {
             pagination: Some(PaginateReply {
                 page,
                 per_page,
-                max_page: amount.number_of_pages - 1,
+                max_page,
                 total: amount.number_of_items,
             }),
             items: items

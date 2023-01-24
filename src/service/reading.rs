@@ -1,5 +1,5 @@
 use migration::Expr;
-use sea_orm::ActiveValue::{Set};
+use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
@@ -10,9 +10,8 @@ use super::manga::NEXT_UPDATE_QUERY;
 use crate::interceptor::auth::{LoggedInUser, UserPermissions};
 use crate::proto::reading_server::{Reading, ReadingServer};
 use crate::proto::{
-    Empty, Id,
-    PaginateReply, PaginateSearchQuery, ReadingPatchRequest, ReadingPostRequest, ReadingReply,
-    ReadingsReply,
+    Empty, Id, PaginateReply, PaginateSearchQuery, ReadingPatchRequest, ReadingPostRequest,
+    ReadingReply, ReadingsReply,
 };
 use crate::util::search::reading::lucene_filter;
 use crate::{data, util};
@@ -109,7 +108,13 @@ impl Reading for MyReading {
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let page = req.page.unwrap_or(0).clamp(0, amount.number_of_pages - 1);
+        let max_page = if amount.number_of_pages == 0 {
+            0
+        } else {
+            amount.number_of_pages - 1
+        };
+
+        let page = req.page.unwrap_or(0).clamp(0, max_page);
 
         // Get items from page
         let items = paginate
@@ -121,7 +126,7 @@ impl Reading for MyReading {
             pagination: Some(PaginateReply {
                 page,
                 per_page,
-                max_page: amount.number_of_pages - 1,
+                max_page,
                 total: amount.number_of_items,
             }),
             items: items

@@ -199,7 +199,7 @@ impl Manga for MyManga {
             .unwrap_or(3600000);
 
         // Check if it should be updated
-        let manga = if (Utc::now() - chrono::Duration::microseconds(interval_ms)) > updated_at {
+        let manga = if (Utc::now() - chrono::Duration::milliseconds(interval_ms)) > updated_at {
             // Update
             info!("Updating manga with id '{}' [{}]", manga_id, url);
             save_manga(db, Some(manga_id.into()), Url::parse(&url).unwrap()).await?
@@ -245,7 +245,13 @@ impl Manga for MyManga {
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let page = req.page.unwrap_or(0).clamp(0, amount.number_of_pages - 1);
+        let max_page = if amount.number_of_pages == 0 {
+            0
+        } else {
+            amount.number_of_pages - 1
+        };
+
+        let page = req.page.unwrap_or(0).clamp(0, max_page);
 
         // Get items from page
         let items = paginate
@@ -257,7 +263,7 @@ impl Manga for MyManga {
             pagination: Some(PaginateReply {
                 page,
                 per_page,
-                max_page: amount.number_of_pages - 1,
+                max_page,
                 total: amount.number_of_items,
             }),
             items: items.into_iter().map(|manga| manga.into()).collect(),
