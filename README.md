@@ -18,7 +18,7 @@ blah blah blah
 
 ### Releases
 
-Download one of the available executables from [here](/releases/latest) and run it.
+Download one of the available executables from [here](https://github.com/hubble459/rumgap/releases/latest) and run it.
 
 ### Cargo
 
