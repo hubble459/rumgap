@@ -108,7 +108,7 @@ macro_rules! export_service {
         > {
             $server::with_interceptor(
                 $server_handler::default(),
-                $crate::interceptor::auth::logged_in($auth),
+                $crate::interceptor::auth::LoggedInCheck::new($auth),
             )
         }
     };

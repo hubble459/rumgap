@@ -16,6 +16,7 @@ pub struct MyChapter {}
 
 #[tonic::async_trait]
 impl Chapter for MyChapter {
+    /// Get chapter images
     async fn get(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
@@ -39,6 +40,7 @@ impl Chapter for MyChapter {
         }))
     }
 
+    /// Get paginated chapters from a manga
     async fn index(
         &self,
         request: Request<PaginateChapterQuery>,

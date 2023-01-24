@@ -13,6 +13,7 @@ use crate::proto::{
 };
 use crate::util::verify;
 
+/// Get a user by their ID
 #[rustfmt::skip]
 pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<data::user::Full, Status> {
     let following_alias = Alias::new("following");
@@ -33,6 +34,9 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
     Ok(user)
 }
 
+/// Get all following or followers
+/// [following=true] Index Following 
+/// [following=false] Index Followers 
 async fn index(
     request: Request<PaginateQuery>,
     following: bool,
@@ -104,6 +108,7 @@ pub struct MyFriend {}
 
 #[tonic::async_trait]
 impl Friend for MyFriend {
+    /// Get all following from logged in user
     async fn following(
         &self,
         request: Request<PaginateQuery>,
@@ -111,6 +116,7 @@ impl Friend for MyFriend {
         index(request, true).await
     }
 
+    /// Get all followers from logged in user
     async fn followers(
         &self,
         request: Request<PaginateQuery>,
@@ -118,6 +124,7 @@ impl Friend for MyFriend {
         index(request, false).await
     }
 
+    /// Follow a user
     async fn follow(
         &self,
         request: Request<FriendRequest>,
@@ -143,6 +150,7 @@ impl Friend for MyFriend {
         Ok(Response::new(full_user.into()))
     }
 
+    /// Unfollow a user
     async fn unfollow(
         &self,
         request: Request<FriendRequest>,

@@ -9,6 +9,7 @@ lazy_static! {
     static ref ORDER_REGEX: Regex = Regex::new(r"(\w+)(:(ASC|DESC|asc|desc))?").unwrap();
 }
 
+/// Order parser for generating a SeaORM query
 pub fn parse(map: &phf::Map<&'static str, &'static str>, order: &str) -> Result<Vec<(SimpleExpr, Order)>, Status> {
     let capture_list = ORDER_REGEX.captures_iter(order);
 

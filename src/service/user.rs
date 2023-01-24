@@ -40,6 +40,7 @@ pub struct MyUser {}
 
 #[tonic::async_trait]
 impl User for MyUser {
+    /// Get a single user
     async fn get(&self, request: Request<Id>) -> Result<Response<UserFullReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
@@ -47,6 +48,7 @@ impl User for MyUser {
         Ok(Response::new(full_user.into()))
     }
 
+    /// Get paginated users
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
@@ -94,6 +96,7 @@ impl User for MyUser {
         }))
     }
 
+    /// Register a new account
     async fn register(
         &self,
         request: Request<UserRegisterRequest>,
@@ -123,6 +126,7 @@ impl User for MyUser {
         }))
     }
 
+    /// Log in with username/email and password
     async fn login(
         &self,
         request: Request<UserRequest>,

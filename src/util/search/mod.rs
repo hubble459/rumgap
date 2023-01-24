@@ -11,6 +11,7 @@ pub mod reading;
 pub mod parse;
 pub mod date_format;
 
+/// Search parser for generating a SeaORM query
 pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -> Result<SimpleExpr, Status> {
     let with_fields: Vec<&Field> = query.iter().filter(|q| q.name.is_some()).collect();
     // TODO 13/12/2022: Use group_by when stable

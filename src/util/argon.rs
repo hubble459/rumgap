@@ -3,6 +3,7 @@ use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use tonic::Status;
 
+/// Encrypt a password with argon2
 pub fn encrypt(password: &str) -> Result<String, Status> {
     let argon2 = Argon2::default();
 
@@ -15,6 +16,7 @@ pub fn encrypt(password: &str) -> Result<String, Status> {
     Ok(password_hash)
 }
 
+/// Verify a password hash with a plain password
 pub fn verify(hash: &str, password: &str) -> Result<(), Status> {
     let argon2 = Argon2::default();
 

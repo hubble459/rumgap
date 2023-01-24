@@ -61,7 +61,6 @@ impl DateFormat {
         let date_time = NaiveDateTime::from_timestamp_millis(millis);
         // TODO 14/12/2022: proper error
         let date_time = date_time.unwrap();
-        debug!("{}", date_type.to_string());
         Ok(Self(date_time))
     }
 }

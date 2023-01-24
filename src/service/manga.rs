@@ -33,6 +33,7 @@ lazy_static! {
 pub const NEXT_UPDATE_QUERY: &str =
     "(MAX(chapter.posted) + (MAX(chapter.posted) - MIN(chapter.posted)) / NULLIF(COUNT(*) - 1, 0))";
 
+/// Get a "full" manga by it's ID
 #[rustfmt::skip]
 pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<MangaReply, Status> {
     let manga = entity::manga::Entity::find_by_id(manga_id)
@@ -50,6 +51,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<M
     Ok(manga.into())
 }
 
+/// Save/ refresh and get a manga
 pub async fn save_manga(
     db: &DatabaseConnection,
     id: Option<i32>,
@@ -123,6 +125,7 @@ pub struct MyManga {}
 impl Manga for MyManga {
     type CreateManyStream = ResponseStream;
 
+    /// Create one manga
     async fn create(&self, request: Request<MangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
@@ -132,6 +135,7 @@ impl Manga for MyManga {
         Ok(Response::new(save_manga(db, None, url).await?))
     }
 
+    /// Create multiple manga
     async fn create_many(
         &self,
         request: Request<MangasRequest>,
@@ -179,6 +183,7 @@ impl Manga for MyManga {
         ))
     }
 
+    /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
@@ -212,6 +217,7 @@ impl Manga for MyManga {
         Ok(Response::new(manga))
     }
 
+    /// Paginate manga
     async fn index(
         &self,
         request: Request<PaginateSearchQuery>,

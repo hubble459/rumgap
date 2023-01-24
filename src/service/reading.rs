@@ -16,6 +16,7 @@ use crate::proto::{
 use crate::util::search::reading::lucene_filter;
 use crate::{data, util};
 
+/// Get one reading by ID
 #[rustfmt::skip]
 pub async fn get_reading_by_id(db: &DatabaseConnection, user_id: i32, manga_id: i32) -> Result<ReadingReply, Status> {
     let (reading, manga) = entity::reading::Entity::find_by_id((user_id, manga_id))
@@ -53,6 +54,7 @@ pub struct MyReading {}
 
 #[tonic::async_trait]
 impl Reading for MyReading {
+    /// Get one reading from logged in user
     async fn get(&self, request: Request<Id>) -> Result<Response<ReadingReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
@@ -63,6 +65,7 @@ impl Reading for MyReading {
         ))
     }
 
+    /// Paginate reading from logged in user
     async fn index(
         &self,
         request: Request<PaginateSearchQuery>,
@@ -145,6 +148,7 @@ impl Reading for MyReading {
         }))
     }
 
+    /// Edit reading progress
     async fn edit(
         &self,
         request: Request<ReadingPatchRequest>,
@@ -171,6 +175,7 @@ impl Reading for MyReading {
         ))
     }
 
+    /// Add a new manga to reading
     async fn create(
         &self,
         request: Request<ReadingPostRequest>,
@@ -193,6 +198,7 @@ impl Reading for MyReading {
         Ok(Response::new(reading))
     }
 
+    /// Delete a reading index
     async fn delete(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
