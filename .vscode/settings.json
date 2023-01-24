@@ -15,13 +15,16 @@
     "cSpell.words": [
         "ajax",
         "ascii",
+        "Hmac",
         "icontains",
         "isekai",
         "IUAM",
         "kakalot",
+        "lucene",
         "madara",
         "manhua",
         "manhwa",
+        "proto",
         "stkiss",
         "Sussy",
         "weebs",
@@ -43,4 +46,9 @@
     ],
     "discord.enabled": true,
     "vscord.enabled": true,
+    "protoc": {
+        "options": [
+            "--proto_path=protos",
+        ]
+    }
 }

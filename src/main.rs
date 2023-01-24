@@ -1,66 +1,34 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate actix_web;
-#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
 extern crate phf;
-#[macro_use(json)]
-extern crate serde_json;
-
-mod api;
-mod middleware;
-#[cfg(test)]
-mod test;
 
 use std::env;
-use std::time::Duration;
 
-use actix_files::Files as Fs;
-use actix_web::body::{BoxBody, MessageBody};
-use actix_web::dev::Service;
-use actix_web::http::header::{self, HeaderValue};
-use actix_web::middleware::{Compress, Logger, NormalizePath};
-use actix_web::{web, App, HttpServer, ResponseError};
-use derive_more::{Display, Error};
-use futures::FutureExt;
-use listenfd::ListenFd;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
+use tonic::transport::Server;
+use tonic::{Request, Status};
+use tonic_async_interceptor::async_interceptor;
+use tonic_reflection::server::Builder;
 
-#[derive(Debug, Error, Display)]
-#[display(fmt = "owo")]
-struct JsonError(pub actix_web::Error);
+mod data;
+mod interceptor;
+mod service;
+mod util;
 
-impl ResponseError for JsonError {
-    fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
-        let error = &self.0;
-        let mut response = error.error_response();
-        let headers = response.headers_mut();
-        headers.append(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        let status = response.status();
-        response.set_body(BoxBody::new(
-            json!({
-                "error": error.to_string(),
-                "code": status.to_string(),
-            })
-            .to_string(),
-        ))
-    }
+pub mod proto {
+    tonic::include_proto!("rumgap");
 
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        self.0.error_response().status()
-    }
+    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("descriptor");
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
     log4rs::init_file("log4rs.yml", Default::default()).unwrap();
 
@@ -74,63 +42,29 @@ async fn main() -> std::io::Result<()> {
     // Establish connection to database and apply migrations
     let conn = conn_db(&db_url).await.unwrap();
 
-    // create server and try to serve over socket if possible
-    let mut listen_fd = ListenFd::from_env();
-    let mut server = HttpServer::new(move || {
-        App::new()
-            .wrap_fn(|req, srv| {
-                srv.call(req).map(|res| {
-                    res.map(|mut res| {
-                        if !res.status().is_success() {
-                            let headers = res.headers_mut();
-                            headers.append(
-                                header::CONTENT_TYPE,
-                                HeaderValue::from_static("application/json"),
-                            );
-                            let cloned_res = res.request().clone();
-                            return res.map_body(|head, body| {
-                                let bytes = body.try_into_bytes().unwrap();
-                                let mut message = String::from_utf8(bytes.to_vec()).unwrap();
-                                if message.is_empty() {
-                                    message = head.reason().to_string();
-                                }
-                                let code = head.status.as_u16();
-                                if code == 500 {
-                                    error!("{} {:?}", cloned_res.uri().to_string(), message);
-                                }
-                                BoxBody::new(
-                                    json!({
-                                        "error": message,
-                                        "code": code,
-                                    })
-                                    .to_string(),
-                                )
-                            });
-                        }
-                        res
-                    })
-                })
-            })
-            .service(Fs::new("/static", "./static"))
-            .app_data(web::Data::new(conn.clone()))
-            .wrap(Logger::new("%{r}a %r %s %T").log_target("http_log"))
-            .wrap(Compress::default())
-            .wrap(NormalizePath::new(
-                actix_web::middleware::TrailingSlash::Trim,
-            ))
-            // .default_service(web::route().to(not_found))
-            .configure(init_routes)
-    })
-    .keep_alive(Duration::from_secs(75));
+    let addr = server_url.parse()?;
 
-    server = match listen_fd.take_tcp_listener(0)? {
-        Some(listener) => server.listen(listener)?,
-        None => server.bind(&server_url)?,
-    };
+    info!("Running server on {}", addr);
 
-    info!("Starting server at {}", server_url);
+    Server::builder()
+        .layer(tonic::service::interceptor(move |req| {
+            intercept(req, conn.clone())
+        }))
+        .layer(async_interceptor(interceptor::auth::check_auth))
+        .add_service(service::user::server())
+        .add_service(service::friend::server())
+        .add_service(service::manga::server())
+        .add_service(service::chapter::server())
+        .add_service(service::reading::server())
+        .add_service(
+            Builder::configure()
+                .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
+                .build()?,
+        )
+        .serve(addr)
+        .await?;
 
-    server.run().await
+    Ok(())
 }
 
 async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
@@ -143,6 +77,26 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
     Ok(conn)
 }
 
-fn init_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(api::routes());
+fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
+    println!("Intercepting request: {:?}", req);
+
+    req.extensions_mut().insert(conn);
+
+    Ok(req)
 }
+
+
+macro_rules! export_server {
+    ($server:ident, $server_handler:ident) => {
+        pub fn server() -> $server<$server_handler> {
+            $server::new($server_handler::default())
+        }
+    };
+    ($server:ident, $server_handler:ident, auth = $auth:expr) => {
+        pub fn server() -> tonic::service::interceptor::InterceptedService<$server<$server_handler>, $crate::interceptor::auth::LoggedInCheck> {
+            $server::with_interceptor($server_handler::default(), $crate::interceptor::auth::logged_in($auth))
+        }
+    };
+}
+
+pub(crate) use export_server;

@@ -1,3 +1,0 @@
-[submodule "manga_parser"]
-	path = manga_parser
-	url = git@github.com:hubble459/rs-manga-parser.git

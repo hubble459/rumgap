@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                String::from("CREATE EXTENSION fuzzystrmatch;"),
+                String::from("CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"),
             ))
             .await?;
 
@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                String::from("CREATE EXTENSION pg_trgm;"),
+                String::from("CREATE EXTENSION IF NOT EXISTS pg_trgm;"),
             ))
             .await?;
 

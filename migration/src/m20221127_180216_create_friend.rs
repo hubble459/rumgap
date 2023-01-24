@@ -1,6 +1,7 @@
 use sea_orm_migration::prelude::*;
 
-use crate::{m20221127_174334_create_user::User, trigger};
+use crate::m20221127_174334_create_user::User;
+use crate::trigger;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -13,15 +14,9 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Friend::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(Friend::Id)
-                            .integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
                     .col(ColumnDef::new(Friend::UserId).integer().not_null())
                     .col(ColumnDef::new(Friend::FriendId).integer().not_null())
+                    .primary_key(Index::create().col(Friend::UserId).col(Friend::FriendId))
                     .foreign_key(
                         ForeignKey::create()
                             .from(Friend::Table, Friend::UserId)
@@ -56,7 +51,6 @@ impl MigrationTrait for Migration {
 #[derive(Iden)]
 enum Friend {
     Table,
-    Id,
     UserId,
     FriendId,
 }
