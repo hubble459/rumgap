@@ -24,6 +24,8 @@ static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "next" => SearchField::Date(NEXT_UPDATE_QUERY, true),
     "chapter" => SearchField::Number("COUNT(chapter.id)"),
     "chapters" => SearchField::Number("COUNT(chapter.id)"),
+    "progress" => SearchField::Number("reading.progress"),
+    "reading" => SearchField::Number("reading.progress"),
     "*" => SearchField::Text(SELECT_MANGA_ALL),
 };
 

@@ -7,7 +7,6 @@ use self::{parse::Search, field::SearchField};
 
 pub mod field;
 pub mod manga;
-pub mod reading;
 pub mod parse;
 pub mod date_format;
 
@@ -48,7 +47,7 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
     if !without_fields.is_empty() {
         let expr = Expr::cust_with_values(
             &format!(
-                "{} {}",
+                "{} ILIKE {}",
                 all_fields, (0..without_fields.len())
                     .enumerate()
                     .map(|(i, _)| format!("${}", i + 1))
@@ -84,7 +83,7 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
     }
 
     if expressions.is_empty() {
-        return Ok(Expr::val(1).eq(1));
+        return Ok(Expr::cust("true"));
     }
     let first = expressions.first().unwrap().clone();
 

@@ -23,7 +23,7 @@ pub fn sign(id: i32) -> Result<String, jwt::Error> {
 }
 
 /// Logged in User Wrapper
-#[derive(Deref)]
+#[derive(Deref, Clone, Debug)]
 pub struct LoggedInUser(pub entity::user::Model);
 
 bitflags! {

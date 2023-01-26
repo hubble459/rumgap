@@ -5,18 +5,19 @@ use chrono::Utc;
 use futures::Stream;
 use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
-use migration::Expr;
+use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
+use crate::interceptor::auth::LoggedInUser;
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
@@ -35,13 +36,33 @@ pub const NEXT_UPDATE_QUERY: &str =
 
 /// Get a "full" manga by it's ID
 #[rustfmt::skip]
-pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<MangaReply, Status> {
-    let manga = entity::manga::Entity::find_by_id(manga_id)
+pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedInUser>, manga_id: i32) -> Result<MangaReply, Status> {
+    let mut manga = entity::manga::Entity::find_by_id(manga_id)
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
         .column_as(entity::chapter::Column::Posted.max(), "last")
         .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
-        .group_by(entity::manga::Column::Id)
+        .group_by(entity::manga::Column::Id);
+
+    if let Some(logged_in) = logged_in {
+        let user_id = logged_in.id;
+        manga = manga
+            .join(
+            JoinType::LeftJoin,
+            entity::reading::Relation::Manga.def().rev().on_condition(
+                    move |_left, right| {
+                        Expr::tbl(right, entity::reading::Column::UserId)
+                            .eq(user_id)
+                            .into_condition()
+                    },
+                ),
+            )
+            .group_by(entity::reading::Column::MangaId);
+    } else {
+        manga = manga.column_as(Expr::cust("null"), "progress");
+    }
+
+    let manga = manga
         .into_model::<data::manga::Full>()
         .one(db)
         .await
@@ -54,6 +75,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, manga_id: i32) -> Result<M
 /// Save/ refresh and get a manga
 pub async fn save_manga(
     db: &DatabaseConnection,
+    logged_in: Option<&LoggedInUser>,
     id: Option<i32>,
     url: Url,
 ) -> Result<MangaReply, Status> {
@@ -83,16 +105,28 @@ pub async fn save_manga(
     let manga_id = saved.id.unwrap();
 
     if manga.chapters.is_empty() {
-        error!("No chapters found for {} [{}]", manga_id, manga.url.to_string());
+        error!(
+            "No chapters found for {} [{}]",
+            manga_id,
+            manga.url.to_string()
+        );
     } else {
-        // Remove old chapters
-        let res = entity::chapter::Entity::delete_many()
-            .filter(entity::chapter::Column::MangaId.eq(manga_id))
-            .exec(db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
         if id.is_some() {
-            info!("Cleared {} chapter(s)", res.rows_affected);
+            let count_chapters = entity::chapter::Entity::find()
+                .filter(entity::chapter::Column::MangaId.eq(manga_id))
+                .count(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+            if (manga.chapters.len() as u64) < count_chapters {
+                // If there are suddenly less chapters than we have in our database, we reset our chapters
+                // Remove old chapters
+                let res = entity::chapter::Entity::delete_many()
+                    .filter(entity::chapter::Column::MangaId.eq(manga_id))
+                    .exec(db)
+                    .await
+                    .map_err(|e| Status::internal(e.to_string()))?;
+                info!("Cleared {} chapter(s)", res.rows_affected);
+            }
         }
 
         // Add new chapters
@@ -109,13 +143,20 @@ pub async fn save_manga(
         }
         info!("Inserting {} chapter(s)", chapters.len());
         // Insert all in batch
-        entity::chapter::Entity::insert_many(chapters)
+        let res = entity::chapter::Entity::insert_many(chapters)
+            .on_conflict(
+                OnConflict::column(entity::chapter::Column::Url)
+                    .do_nothing()
+                    .to_owned(),
+            )
             .exec_without_returning(db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
+
+        info!("Inserted {} unique chapter(s)", res);
     }
 
-    get_manga_by_id(db, manga_id).await
+    get_manga_by_id(db, logged_in, manga_id).await
 }
 
 #[derive(Debug, Default)]
@@ -128,11 +169,20 @@ impl Manga for MyManga {
     /// Create one manga
     async fn create(&self, request: Request<MangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::permission_denied(
+                    "You can only add a manga if you are logged in",
+                ))?;
         let req = request.get_ref();
 
         let url = Url::parse(&req.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        Ok(Response::new(save_manga(db, None, url).await?))
+        Ok(Response::new(
+            save_manga(db, Some(logged_in), None, url).await?,
+        ))
     }
 
     /// Create multiple manga
@@ -145,6 +195,13 @@ impl Manga for MyManga {
             .get::<DatabaseConnection>()
             .unwrap()
             .clone();
+        let logged_in = request
+            .extensions()
+            .get::<LoggedInUser>()
+            .ok_or(Status::permission_denied(
+                "You can only add a manga if you are logged in",
+            ))?
+            .clone();
         let req = request.get_ref();
         let mut stream =
             Box::pin(tokio_stream::iter(req.urls.clone()).throttle(Duration::from_millis(200)));
@@ -154,11 +211,10 @@ impl Manga for MyManga {
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(url) = stream.next().await {
-                let url =
-                    Url::parse(&url).map_err(|e| Status::invalid_argument(e.to_string()));
+                let url = Url::parse(&url).map_err(|e| Status::invalid_argument(e.to_string()));
 
                 let res: Result<MangaReply, Status> = match url {
-                    Ok(url) => save_manga(&db, None, url).await,
+                    Ok(url) => save_manga(&db, Some(&logged_in), None, url).await,
                     Err(e) => Err(e),
                 };
 
@@ -186,6 +242,7 @@ impl Manga for MyManga {
     /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in = request.extensions().get::<LoggedInUser>();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -209,9 +266,15 @@ impl Manga for MyManga {
         let manga = if (Utc::now() - chrono::Duration::milliseconds(interval_ms)) > updated_at {
             // Update
             info!("Updating manga with id '{}' [{}]", manga_id, url);
-            save_manga(db, Some(manga_id.into()), Url::parse(&url).unwrap()).await?
+            save_manga(
+                db,
+                logged_in,
+                Some(manga_id.into()),
+                Url::parse(&url).unwrap(),
+            )
+            .await?
         } else {
-            get_manga_by_id(db, manga_id).await?
+            get_manga_by_id(db, logged_in, manga_id).await?
         };
 
         Ok(Response::new(manga))
@@ -223,14 +286,34 @@ impl Manga for MyManga {
         request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in = request.extensions().get::<LoggedInUser>().cloned();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let mut paginate = entity::manga::Entity::find()
             .left_join(entity::chapter::Entity)
             .column_as(entity::chapter::Column::Id.count(), "count_chapters")
             .column_as(entity::chapter::Column::Posted.max(), "last")
-            .column_as(Expr::cust(r#"(MAX("chapter"."posted") + (max(chapter.posted) - min(chapter.posted)) / nullif(count(*) - 1, 0))"#), "next")
+            .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
             .group_by(entity::manga::Column::Id);
+
+        if let Some(logged_in) = logged_in {
+            paginate = paginate
+                .join(
+                    JoinType::LeftJoin,
+                    entity::reading::Relation::Manga.def().rev().on_condition(
+                        move |_left, right| {
+                            Expr::tbl(right, entity::reading::Column::UserId)
+                                .eq(logged_in.id)
+                                .into_condition()
+                        },
+                    ),
+                )
+                .column_as(entity::reading::Column::Progress, "progress")
+                .group_by(entity::reading::Column::MangaId)
+                .group_by(entity::reading::Column::UserId);
+        } else {
+            paginate = paginate.column_as(Expr::cust("null"), "progress");
+        }
 
         if let Some(search) = req.search.clone() {
             paginate = paginate.having(lucene_filter(search.into())?);

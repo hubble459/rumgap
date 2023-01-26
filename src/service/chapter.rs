@@ -86,11 +86,13 @@ impl Chapter for MyChapter {
             }),
             items: items
                 .into_iter()
-                .map(|chapter| ChapterReply {
+                .enumerate()
+                .map(|(index, chapter)| ChapterReply {
                     id: chapter.id,
                     manga_id: chapter.manga_id,
                     title: chapter.title,
                     url: chapter.url,
+                    index: index as i64,
                     number: chapter.number,
                     posted: chapter.posted.map(|date| date.timestamp_millis()),
                     created_at: chapter.created_at.timestamp_millis(),

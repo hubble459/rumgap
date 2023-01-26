@@ -35,10 +35,8 @@ service Chapter {
 }
 
 service Reading {
-    rpc Get (Id) returns (ReadingReply);
-    rpc Index (PaginateSearchQuery) returns (ReadingsReply);
-    rpc Edit (ReadingPatchRequest) returns (ReadingReply);
-    rpc Create (ReadingPostRequest) returns (ReadingReply);
+    rpc Edit (ReadingPatchRequest) returns (MangaReply);
+    rpc Create (ReadingPostRequest) returns (MangaReply);
     rpc Delete (Id) returns (Empty);
 }
 

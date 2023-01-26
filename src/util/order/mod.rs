@@ -3,7 +3,6 @@ use regex::Regex;
 use tonic::Status;
 
 pub mod manga;
-pub mod reading;
 
 lazy_static! {
     static ref ORDER_REGEX: Regex = Regex::new(r"(\w+)(:(ASC|DESC|asc|desc))?").unwrap();
