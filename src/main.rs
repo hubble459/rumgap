@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(service::manga::server())
         .add_service(service::chapter::server())
         .add_service(service::reading::server())
+        .add_service(service::search::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)

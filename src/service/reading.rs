@@ -27,7 +27,7 @@ impl Reading for MyReading {
         let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
         let req = request.get_ref();
 
-        let mut reading = entity::reading::Entity::find_by_id((logged_in.id, req.id))
+        let mut reading = entity::reading::Entity::find_by_id((logged_in.id, req.manga_id))
             .one(db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?
