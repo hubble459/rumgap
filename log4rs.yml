@@ -18,10 +18,10 @@ appenders:
         policy:
             trigger:
                 kind: size
-                limit: 30 mb
+                limit: 2 mb
             roller:
                 kind: fixed_window
-                pattern: logs/bot_{}.gz
+                pattern: logs/rumgap_{}.gz
                 count: 5
                 base: 1
 

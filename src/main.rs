@@ -57,12 +57,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             intercept(req, conn.clone())
         }))
         .layer(async_interceptor(interceptor::auth::check_auth))
+        .layer(tonic::service::interceptor(logger))
         .add_service(service::user::server())
         .add_service(service::friend::server())
         .add_service(service::manga::server())
         .add_service(service::chapter::server())
         .add_service(service::reading::server())
         .add_service(service::search::server())
+        .add_service(service::verify::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
@@ -87,10 +89,21 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
 
 /// Add the database to all requests via their extensions
 fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
-    // Log incomming request
-    info!("Intercepting request: {:?}", req);
-
     req.extensions_mut().insert(conn);
+
+    Ok(req)
+}
+
+/// Log the incoming request
+fn logger(req: Request<()>) -> Result<Request<()>, Status> {
+    let logged_in = req.extensions().get::<LoggedInUser>();
+
+    info!(
+        "[{}] ({}): {:?}",
+        req.remote_addr().map_or(String::new(), |ip| ip.to_string()),
+        logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
+        req.metadata()
+    );
 
     Ok(req)
 }
@@ -116,3 +129,5 @@ macro_rules! export_service {
 }
 
 pub(crate) use export_service;
+
+use crate::interceptor::auth::LoggedInUser;

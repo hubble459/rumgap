@@ -1,8 +1,6 @@
 syntax = "proto3";
 package rumgap;
 
-import "paginate.proto";
-
 message SearchRequest {
     string keyword = 1;
     repeated string hostnames = 2;

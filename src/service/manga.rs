@@ -9,8 +9,8 @@ use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
+    IdenStatic, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -29,6 +29,12 @@ type ResponseStream = Pin<Box<dyn Stream<Item = Result<MangaReply, Status>> + Se
 
 lazy_static! {
     pub static ref MANGA_PARSER: MangaParser = MangaParser::new();
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+enum MangaOnlyUrlAndId {
+    Id,
+    Url,
 }
 
 pub const NEXT_UPDATE_QUERY: &str =
@@ -57,6 +63,8 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedI
                     },
                 ),
             )
+            .column_as(entity::reading::Column::Progress, "progress")
+            .group_by(entity::reading::Column::UserId)
             .group_by(entity::reading::Column::MangaId);
     } else {
         manga = manga.column_as(Expr::cust("null"), "progress");
@@ -131,7 +139,7 @@ pub async fn save_manga(
 
         // Add new chapters
         let mut chapters = vec![];
-        for chapter in manga.chapters.iter() {
+        for chapter in manga.chapters.iter().rev() {
             chapters.push(entity::chapter::ActiveModel {
                 manga_id: Set(manga_id),
                 number: Set(chapter.number),
@@ -177,8 +185,21 @@ impl Manga for MyManga {
                     "You can only add a manga if you are logged in",
                 ))?;
         let req = request.get_ref();
+        let url = &req.url;
 
-        let url = Url::parse(&req.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let existing = entity::manga::Entity::find()
+            .filter(entity::manga::Column::Url.eq(url.clone()))
+            .one(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        if existing.is_some() {
+            return Err(Status::already_exists(
+                "Manga with this url already exists!",
+            ));
+        }
+
+        let url = Url::parse(url).map_err(|e| Status::invalid_argument(e.to_string()))?;
 
         Ok(Response::new(
             save_manga(db, Some(logged_in), None, url).await?,
@@ -278,6 +299,63 @@ impl Manga for MyManga {
         };
 
         Ok(Response::new(manga))
+    }
+
+    /// Force update a manga
+    async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in = request.extensions().get::<LoggedInUser>();
+        let req = request.get_ref();
+        let manga_id = req.id;
+
+        let (_id, url): (i32, String) = entity::manga::Entity::find_by_id(manga_id)
+            .select_only()
+            .columns([entity::manga::Column::Id, entity::manga::Column::Url])
+            .into_values::<_, MangaOnlyUrlAndId>()
+            .one(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .ok_or(Status::not_found("Manga not found"))?;
+
+        info!("Updating manga with id '{}' [{}]", manga_id, url);
+        let manga = save_manga(
+            db,
+            logged_in,
+            Some(manga_id.into()),
+            Url::parse(&url).unwrap(),
+        )
+        .await?;
+
+        Ok(Response::new(manga))
+    }
+
+    /// Find or create a manga by URL
+    async fn find_or_create(
+        &self,
+        request: Request<MangaRequest>,
+    ) -> Result<Response<MangaReply>, Status> {
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::permission_denied(
+                    "You can only add a manga if you are logged in",
+                ))?;
+        let req = request.get_ref();
+        let url = &req.url;
+
+        let existing = entity::manga::Entity::find()
+            .filter(entity::manga::Column::Url.eq(url.clone()))
+            .one(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let url = Url::parse(url).map_err(|e| Status::invalid_argument(e.to_string()))?;
+
+        Ok(Response::new(
+            save_manga(db, Some(logged_in), existing.map(|manga| manga.id), url).await?,
+        ))
     }
 
     /// Paginate manga

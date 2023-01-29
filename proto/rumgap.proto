@@ -27,12 +27,15 @@ service Manga {
     rpc Create (MangaRequest) returns (MangaReply);
     rpc CreateMany (MangasRequest) returns (stream MangaReply);
     rpc Get (Id) returns (MangaReply);
+    rpc Update (Id) returns (MangaReply);
     rpc Index (PaginateSearchQuery) returns (MangasReply);
+    rpc FindOrCreate (MangaRequest) returns (MangaReply);
 }
 
 service Chapter {
-    rpc Get (Id) returns (ImagesReply);
+    rpc Get (ChapterRequest) returns (ChapterReply);
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
+    rpc Images (Id) returns (ImagesReply);
 }
 
 service Reading {
@@ -43,6 +46,10 @@ service Reading {
 
 service Search {
     rpc Manga (SearchRequest) returns (SearchReply);
+}
+
+service Verify {
+    rpc Token (Empty) returns (Empty);
 }
 
 message Id {
