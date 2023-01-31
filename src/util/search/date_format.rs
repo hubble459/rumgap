@@ -49,17 +49,12 @@ impl DateFormat {
         let millis = if in_future {
             millis + change
         } else {
-            let millis = millis - change;
-            if millis.is_negative() {
-                millis
-            } else {
-                millis
-            }
+            millis - change
         };
 
         let date_time = NaiveDateTime::from_timestamp_millis(millis);
-        // TODO 14/12/2022: proper error
-        let date_time = date_time.unwrap();
+        let date_time = date_time
+            .ok_or(Status::invalid_argument(format!("'{value}' is not a valid date")))?;
         Ok(Self(date_time))
     }
 }
