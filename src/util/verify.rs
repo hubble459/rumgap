@@ -81,5 +81,5 @@ pub fn is_conflict(err: &DbErr) -> bool {
             }
         }
     }
-    return false;
+    false
 }

@@ -29,7 +29,7 @@ pub fn parse(map: &phf::Map<&'static str, &'static str>, order: &str) -> Result<
             };
             orders.push((Expr::cust(column), order));
         } else {
-            return Err(Status::invalid_argument(format!("Can not sort on {}", name)));
+            return Err(Status::invalid_argument(format!("Can not sort on {name}")));
         }
     }
 

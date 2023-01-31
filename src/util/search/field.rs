@@ -40,20 +40,20 @@ impl SearchField {
 
         match self {
             SearchField::Array(ident) => {
-                expr += &format!("ARRAY_TO_STRING({}, ', ') ILIKE $1", ident);
+                expr += &format!("ARRAY_TO_STRING({ident}, ', ') ILIKE $1");
                 wild = true;
             }
             SearchField::Text(ident) => {
-                expr += &format!("{} ILIKE $1", ident);
+                expr += &format!("{ident} ILIKE $1");
                 wild = true;
             }
             SearchField::Date(ident, future) => {
-                let captures = SEARCH_DATE_REGEX.captures(&value).unwrap();
+                let captures = SEARCH_DATE_REGEX.captures(value).unwrap();
                 let compare: String;
 
                 if let Some(comp_match) = captures.get(1) {
                     let cmp = comp_match.as_str();
-                    if cmp.ends_with("=") {
+                    if cmp.ends_with('=') {
                         compare = cmp.to_owned();
                     } else {
                         compare = cmp.to_owned() + "=";
@@ -65,17 +65,16 @@ impl SearchField {
                 let date = captures.get(2).unwrap().as_str();
                 let date = DateFormat::try_from(date, future)?;
 
-                return Ok(Expr::cust_with_values(&format!("{} {} $1", ident, compare), vec![date.0]));
+                return Ok(Expr::cust_with_values(&format!("{ident} {compare} $1"), vec![date.0]));
             }
             SearchField::Equals(ident) => {
-                expr += &format!("{} = $1", ident);
+                expr += &format!("{ident} = $1");
             }
             SearchField::Number(ident) => {
                 let captures = SEARCH_DATE_REGEX
-                    .captures(&value)
+                    .captures(value)
                     .ok_or(Status::invalid_argument(format!(
-                        "Expected number but got {}",
-                        value
+                        "Expected number but got {value}"
                     )))?;
                 let compare;
 
@@ -88,18 +87,17 @@ impl SearchField {
                 let number = captures.get(2).unwrap().as_str();
 
                 if let Ok(number) = number.parse::<u16>() {
-                    return Ok(Expr::cust_with_values(&format!("{} {} $1", ident, compare), vec![number]));
+                    return Ok(Expr::cust_with_values(&format!("{ident} {compare} $1"), vec![number]));
                 } else {
                     return Err(Status::invalid_argument(format!(
-                        "Expected number but got {}",
-                        value
+                        "Expected number but got {value}"
                     )));
                 }
             }
         }
 
         let value = if wild {
-            format!("%{}%", value)
+            format!("%{value}%")
         } else {
             value.to_string()
         };

@@ -23,14 +23,13 @@ impl DateFormat {
         let captures = DATE_FMT_REGEX
             .captures(value)
             .ok_or(Status::invalid_argument(format!(
-                "Expected date format but got {}",
-                value
+                "Expected date format but got {value}"
             )))?;
 
         let amount = captures.get(1).unwrap().as_str();
         let amount: i64 = amount
             .parse()
-            .map_err(|_| Status::invalid_argument(format!("Expected number but got {}", amount)))?;
+            .map_err(|_| Status::invalid_argument(format!("Expected number but got {amount}")))?;
 
         let date_type = if let Some(date_type) = captures.get(2) {
             date_type.as_str()

@@ -63,7 +63,7 @@ impl Reading for MyReading {
         .await
         .map_err(|e| Status::internal(e.to_string()))?;
 
-        let reading = get_manga_by_id(&db, Some(logged_in), saved.manga_id).await?;
+        let reading = get_manga_by_id(db, Some(logged_in), saved.manga_id).await?;
 
         Ok(Response::new(reading))
     }

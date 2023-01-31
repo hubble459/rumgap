@@ -141,7 +141,7 @@ impl Chapter for MyChapter {
                     manga_id: chapter.manga_id,
                     title: chapter.title,
                     url: chapter.url,
-                    index: (amount.number_of_items as i64 - (page as i64 * per_page as i64) - index as i64) as i64,
+                    index: (amount.number_of_items as i64 - (page as i64 * per_page as i64) - index as i64),
                     number: chapter.number,
                     posted: chapter.posted.map(|date| date.timestamp_millis()),
                     created_at: chapter.created_at.timestamp_millis(),

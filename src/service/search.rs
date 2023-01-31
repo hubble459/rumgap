@@ -84,7 +84,7 @@ impl Search for MySearch {
                         posted: item.posted.map(|date| date.timestamp_millis()),
                         is_reading: existing
                             .map_or(false, |(_id, _url, progress)| progress.is_some()),
-                        manga_id: existing.map(|(id, ..)| id.clone()),
+                        manga_id: existing.map(|(id, ..)| *id),
                     }
                 })
                 .collect(),

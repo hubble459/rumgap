@@ -21,8 +21,7 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
         let name_key = map.get(name);
         if name_key.is_none() {
             return Err(Status::invalid_argument(format!(
-                "Field with name '{}' does not exist",
-                name
+                "Field with name '{name}' does not exist"
             )));
         }
 

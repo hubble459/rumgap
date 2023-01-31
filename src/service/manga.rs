@@ -95,7 +95,7 @@ pub async fn save_manga(
         .map_err(|e| Status::internal(e.to_string()))?;
 
     let saved = entity::manga::ActiveModel {
-        id: id.map_or(NotSet, |id| Set(id)),
+        id: id.map_or(NotSet, Set),
         title: Set(manga.title),
         description: Set(manga.description),
         is_ongoing: Set(manga.is_ongoing),
@@ -290,7 +290,7 @@ impl Manga for MyManga {
             save_manga(
                 db,
                 logged_in,
-                Some(manga_id.into()),
+                Some(manga_id),
                 Url::parse(&url).unwrap(),
             )
             .await?
@@ -321,7 +321,7 @@ impl Manga for MyManga {
         let manga = save_manga(
             db,
             logged_in,
-            Some(manga_id.into()),
+            Some(manga_id),
             Url::parse(&url).unwrap(),
         )
         .await?;

@@ -20,7 +20,7 @@ pub fn encrypt(password: &str) -> Result<String, Status> {
 pub fn verify(hash: &str, password: &str) -> Result<(), Status> {
     let argon2 = Argon2::default();
 
-    let parsed_hash = PasswordHash::new(&hash).map_err(|e| Status::aborted(e.to_string()))?;
+    let parsed_hash = PasswordHash::new(hash).map_err(|e| Status::aborted(e.to_string()))?;
 
     argon2
         .verify_password(password.as_bytes(), &parsed_hash)
