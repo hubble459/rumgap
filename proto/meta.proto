@@ -1,0 +1,7 @@
+syntax = "proto3";
+package rumgap;
+
+message MetaReply {
+    repeated string tags = 1;
+    repeated string hostnames = 2;
+}
