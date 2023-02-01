@@ -54,7 +54,8 @@ service Verify {
 }
 
 service Meta {
-    rpc All (Empty) returns (MetaReply);
+    rpc Hostnames (MetaHostNamesRequest) returns (MetaReply);
+    rpc Genres (MetaGenresRequest) returns (MetaReply);
 }
 
 message Id {
