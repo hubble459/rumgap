@@ -50,7 +50,7 @@ impl Search for MySearch {
                     .def()
                     .rev()
                     .on_condition(move |_left, right| {
-                        Expr::tbl(right, entity::reading::Column::UserId)
+                        Expr::col((right, entity::reading::Column::UserId))
                             .eq(user_id)
                             .into_condition()
                     }),

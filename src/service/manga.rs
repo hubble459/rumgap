@@ -57,7 +57,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedI
             JoinType::LeftJoin,
             entity::reading::Relation::Manga.def().rev().on_condition(
                     move |_left, right| {
-                        Expr::tbl(right, entity::reading::Column::UserId)
+                        Expr::col((right, entity::reading::Column::UserId))
                             .eq(user_id)
                             .into_condition()
                     },
@@ -89,6 +89,8 @@ pub async fn save_manga(
 ) -> Result<MangaReply, Status> {
     info!("Saving manga [{}]", url.to_string());
 
+    // TODO: right single quote and probably other special characters
+    // TODO: should be replaced with normal characters
     let manga = MANGA_PARSER
         .manga(url)
         .await
@@ -380,7 +382,7 @@ impl Manga for MyManga {
                     JoinType::LeftJoin,
                     entity::reading::Relation::Manga.def().rev().on_condition(
                         move |_left, right| {
-                            Expr::tbl(right, entity::reading::Column::UserId)
+                            Expr::col((right, entity::reading::Column::UserId))
                                 .eq(logged_in.id)
                                 .into_condition()
                         },
@@ -402,6 +404,8 @@ impl Manga for MyManga {
             for (column, order) in columns {
                 paginate = paginate.order_by(column, order);
             }
+        } else {
+            paginate = paginate.order_by(entity::manga::Column::Title, migration::Order::Asc);
         }
 
         let paginate = paginate

@@ -44,7 +44,7 @@ async fn get_reply(
                         JoinType::RightJoin,
                         entity::reading::Relation::Manga.def().rev().on_condition(
                             move |_left, right| {
-                                Expr::tbl(right, entity::reading::Column::UserId)
+                                Expr::col((right, entity::reading::Column::UserId))
                                     .eq(logged_in.id)
                                     .into_condition()
                             },
