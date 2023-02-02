@@ -16,6 +16,8 @@ use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
+use crate::interceptor::auth::LoggedInUser;
+
 mod data;
 mod interceptor;
 mod service;
@@ -114,6 +116,8 @@ macro_rules! export_service {
     ($server:ident, $server_handler:ident) => {
         pub fn server() -> $server<$server_handler> {
             $server::new($server_handler::default())
+                .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+                .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
         }
     };
     ($server:ident, $server_handler:ident, auth = $auth:expr) => {
@@ -121,14 +125,15 @@ macro_rules! export_service {
             $server<$server_handler>,
             $crate::interceptor::auth::LoggedInCheck,
         > {
-            $server::with_interceptor(
-                $server_handler::default(),
-                $crate::interceptor::auth::LoggedInCheck::new($auth),
-            )
+            tower::ServiceBuilder::new()
+                .layer(tonic::service::interceptor(crate::interceptor::auth::LoggedInCheck::new(UserPermissions::USER)))
+                .service(
+                    $server::new($server_handler::default())
+                        .send_compressed(tonic::codec::CompressionEncoding::Gzip)
+                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+                )
         }
     };
 }
 
 pub(crate) use export_service;
-
-use crate::interceptor::auth::LoggedInUser;

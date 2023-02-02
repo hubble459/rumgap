@@ -9,7 +9,7 @@ version = "0.1.0"
 members = [".", "migration", "entity"]
 
 [dependencies]
-tonic = { version = "0.8", features = ["tower"] }
+tonic = { version = "0.8", features = ["tower", "gzip"] }
 tonic-reflection = "0.6"
 tower = { version = "0.4" }
 tonic-async-interceptor = "0.1.0"
