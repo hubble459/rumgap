@@ -1,7 +1,7 @@
 use manga_parser::parser::Parser;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, IdenStatic, QuerySelect,
+    DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QuerySelect,
     RelationTrait, Select,
 };
 use tonic::{Request, Response, Status};

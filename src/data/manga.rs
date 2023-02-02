@@ -1,5 +1,5 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::{DeriveColumn, EnumIter, FromQueryResult, IdenStatic};
+use sea_orm::{DeriveColumn, EnumIter, FromQueryResult};
 
 use crate::proto::MangaReply;
 

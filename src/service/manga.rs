@@ -9,8 +9,7 @@ use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
-    IdenStatic, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
