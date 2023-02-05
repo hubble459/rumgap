@@ -28,6 +28,12 @@ impl MigrationTrait for Migration {
                             .string_len(255)
                             .not_null(),
                     )
+                    .col(
+                        ColumnDef::new(User::PreferredHostnames)
+                            .array(ColumnType::String(None))
+                            .default(Expr::cust(r#"'{"mangadex.org","isekaiscan.com","manganato.com"}'"#))
+                            .not_null(),
+                    )
                     .take(),
             )
             .await?;
@@ -53,4 +59,5 @@ pub enum User {
     Username,
     Email,
     PasswordHash,
+    PreferredHostnames,
 }

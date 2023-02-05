@@ -10,7 +10,7 @@ use super::manga::MANGA_PARSER;
 use crate::interceptor::auth::LoggedInUser;
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
-    MetaGenresOption, MetaGenresRequest, MetaHostNamesOption, MetaHostNamesRequest, MetaReply,
+    MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest, MetaReply,
 };
 
 #[derive(Debug, Default)]
@@ -65,7 +65,8 @@ async fn get_reply(
         },
         MetaOption::Online => MetaReply {
             items: MANGA_PARSER
-                .hostnames()
+                .can_search()
+                .unwrap_or_default()
                 .iter()
                 .map(|url| url.to_string())
                 .collect(),
@@ -102,7 +103,7 @@ impl Meta for MyMeta {
 
     async fn hostnames(
         &self,
-        req: Request<MetaHostNamesRequest>,
+        req: Request<MetaHostnamesRequest>,
     ) -> Result<Response<MetaReply>, Status> {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<LoggedInUser>().cloned();
@@ -118,9 +119,9 @@ impl Meta for MyMeta {
                 query,
                 logged_in,
                 match request.option() {
-                    MetaHostNamesOption::HostNamesReading => MetaOption::Reading,
-                    MetaHostNamesOption::HostNamesManga => MetaOption::Manga,
-                    MetaHostNamesOption::HostNamesOnline => MetaOption::Online,
+                    MetaHostnamesOption::HostnamesReading => MetaOption::Reading,
+                    MetaHostnamesOption::HostnamesManga => MetaOption::Manga,
+                    MetaHostnamesOption::HostnamesOnline => MetaOption::Online,
                 },
             )
             .await?,

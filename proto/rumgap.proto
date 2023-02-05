@@ -54,7 +54,7 @@ service Verify {
 }
 
 service Meta {
-    rpc Hostnames (MetaHostNamesRequest) returns (MetaReply);
+    rpc Hostnames (MetaHostnamesRequest) returns (MetaReply);
     rpc Genres (MetaGenresRequest) returns (MetaReply);
 }
 
