@@ -17,6 +17,13 @@ message UserRequest {
     }
 }
 
+message UserUpdateRequest {
+    optional string password = 1;
+    optional string username = 2;
+    optional string email = 3;
+    repeated string preferred_hostnames = 4;
+}
+
 message UserReply {
     int32 id = 1;
     string username = 2;

@@ -1,17 +1,17 @@
 use migration::{Alias, Expr, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QuerySelect, RelationTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
 use crate::data;
-use crate::interceptor::auth::sign;
+use crate::interceptor::auth::{sign, LoggedInUser};
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply, UserRequest,
-    UserTokenReply, UsersReply,
+    Empty, Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply,
+    UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
 use crate::util::{argon, verify};
 
@@ -160,6 +160,67 @@ impl User for MyUser {
             token,
             user: Some(full_user.into()),
         }))
+    }
+
+    /// Get logged in user
+    async fn me(
+        &self,
+        request: Request<Empty>,
+    ) -> Result<Response<UserFullReply>, Status> {
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::unauthenticated(
+                    "Missing bearer token! Log in first",
+                ))?;
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+
+        Ok(Response::new(
+            get_user_by_id(db, logged_in.id).await?.into(),
+        ))
+    }
+
+    /// Update logged in user
+    async fn update(
+        &self,
+        request: Request<UserUpdateRequest>,
+    ) -> Result<Response<UserFullReply>, Status> {
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::unauthenticated(
+                    "Missing bearer token! Log in first",
+                ))?;
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
+
+        let mut active_user = logged_in.0.clone().into_active_model();
+
+        if let Some(username) = &req.username {
+            active_user.username = ActiveValue::Set(verify::username(username)?);
+        }
+        if let Some(email) = &req.email {
+            active_user.email = ActiveValue::Set(verify::email(email)?);
+        }
+        if let Some(password) = &req.password {
+            active_user.password_hash = ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
+        }
+        if !req.preferred_hostnames.is_empty() {
+            active_user.preferred_hostnames = ActiveValue::Set(req.preferred_hostnames.clone());
+        }
+
+        active_user.update(db).await.map_err(|e| {
+            if verify::is_conflict(&e) {
+                return Status::already_exists("Username or email already in use");
+            }
+            Status::internal(e.to_string())
+        })?;
+
+        Ok(Response::new(
+            get_user_by_id(db, logged_in.id).await?.into(),
+        ))
     }
 }
 

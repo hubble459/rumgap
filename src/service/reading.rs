@@ -19,7 +19,7 @@ pub struct MyReading {}
 #[tonic::async_trait]
 impl Reading for MyReading {
     /// Edit reading progress
-    async fn edit(
+    async fn update(
         &self,
         request: Request<ReadingPatchRequest>,
     ) -> Result<Response<MangaReply>, Status> {

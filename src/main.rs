@@ -66,7 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(service::chapter::server())
         .add_service(service::reading::server())
         .add_service(service::search::server())
-        .add_service(service::verify::server())
         .add_service(service::meta::server())
         .add_service(
             Builder::configure()
