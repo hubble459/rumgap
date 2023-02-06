@@ -6,6 +6,8 @@ mod m20221127_180216_create_friend;
 mod m20221130_215742_create_manga;
 mod m20221130_215749_create_chapter;
 mod m20221130_215753_create_reading;
+mod m20230206_144400_create_chapter_offset;
+
 mod trigger;
 
 pub struct Migrator;
@@ -20,6 +22,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20221130_215742_create_manga::Migration),
             Box::new(m20221130_215749_create_chapter::Migration),
             Box::new(m20221130_215753_create_reading::Migration),
+            Box::new(m20230206_144400_create_chapter_offset::Migration),
         ]
     }
 }

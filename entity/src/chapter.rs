@@ -27,12 +27,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Manga,
-    #[sea_orm(
-        belongs_to = "super::reading::Entity",
-        from = "Column::MangaId",
-        to = "super::reading::Column::MangaId",
-    )]
-    Reading,
 }
 
 impl Related<super::manga::Entity> for Entity {
@@ -43,7 +37,21 @@ impl Related<super::manga::Entity> for Entity {
 
 impl Related<super::reading::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Reading.def()
+        super::reading::Relation::Manga.def()
+    }
+
+    fn via() -> Option<RelationDef> {
+        Some(super::reading::Relation::Manga.def().rev())
+    }
+}
+
+impl Related<super::user::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::chapter_offset::Relation::User.def()
+    }
+
+    fn via() -> Option<RelationDef> {
+        Some(super::chapter_offset::Relation::Chapter.def().rev())
     }
 }
 

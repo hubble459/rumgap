@@ -2,13 +2,16 @@ use std::num::TryFromIntError;
 
 use manga_parser::parser::Parser;
 use manga_parser::Url;
+use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    QuerySelect, QueryTrait, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
 use super::manga::MANGA_PARSER;
+use crate::data;
+use crate::interceptor::auth::LoggedInUser;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery,
@@ -50,6 +53,7 @@ impl Chapter for MyChapter {
         request: Request<ChapterRequest>,
     ) -> Result<Response<ChapterReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in = request.extensions().get::<LoggedInUser>();
         let req = request.get_ref();
         let manga_id = req.manga_id;
 
@@ -69,24 +73,33 @@ impl Chapter for MyChapter {
 
         // Get chapter
         let chapter = entity::chapter::Entity::find()
+            .order_by(entity::chapter::Column::Id, migration::Order::Desc)
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
             .offset(offset)
+            .column_as(Expr::cust("null"), "offset")
+            .apply_if(logged_in, |query, logged_in| {
+                let user_id = logged_in.id;
+                query
+                    .join(
+                        JoinType::LeftJoin,
+                        entity::chapter_offset::Relation::Chapter
+                            .def()
+                            .rev()
+                            .on_condition(move |_left, right| {
+                                Expr::col((right, entity::reading::Column::UserId))
+                                    .eq(user_id)
+                                    .into_condition()
+                            }),
+                    )
+                    .column_as(entity::chapter_offset::Column::Offset, "offset")
+            })
+            .into_model::<data::chapter::Full>()
             .one(db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?
             .ok_or(Status::not_found("Chapter not found"))?;
 
-        Ok(Response::new(ChapterReply {
-            id: chapter.id,
-            manga_id: chapter.manga_id,
-            title: chapter.title,
-            url: chapter.url,
-            index: req.index as i64,
-            number: chapter.number,
-            posted: chapter.posted.map(|date| date.timestamp_millis()),
-            created_at: chapter.created_at.timestamp_millis(),
-            updated_at: chapter.updated_at.timestamp_millis(),
-        }))
+        Ok(Response::new(chapter.into_chapter_reply(offset as i64)))
     }
 
     /// Get paginated chapters from a manga
@@ -95,6 +108,7 @@ impl Chapter for MyChapter {
         request: Request<PaginateChapterQuery>,
     ) -> Result<Response<ChaptersReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let logged_in = request.extensions().get::<LoggedInUser>();
         let req = request.get_ref();
         let manga_id = req.id;
         let req = req.paginate_query.clone().unwrap_or_default();
@@ -104,6 +118,24 @@ impl Chapter for MyChapter {
         let paginate = entity::chapter::Entity::find()
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
             .order_by(entity::chapter::Column::Id, migration::Order::Desc)
+            .column_as(Expr::cust("null"), "offset")
+            .apply_if(logged_in, |query, logged_in| {
+                let user_id = logged_in.id;
+                query
+                    .join(
+                        JoinType::LeftJoin,
+                        entity::chapter_offset::Relation::Chapter
+                            .def()
+                            .rev()
+                            .on_condition(move |_left, right| {
+                                Expr::col((right, entity::reading::Column::UserId))
+                                    .eq(user_id)
+                                    .into_condition()
+                            }),
+                    )
+                    .column_as(entity::chapter_offset::Column::Offset, "offset")
+            })
+            .into_model::<data::chapter::Full>()
             .paginate(db, per_page);
 
         // Get max page and total items
@@ -136,16 +168,12 @@ impl Chapter for MyChapter {
             items: items
                 .into_iter()
                 .enumerate()
-                .map(|(index, chapter)| ChapterReply {
-                    id: chapter.id,
-                    manga_id: chapter.manga_id,
-                    title: chapter.title,
-                    url: chapter.url,
-                    index: (amount.number_of_items as i64 - (page as i64 * per_page as i64) - index as i64),
-                    number: chapter.number,
-                    posted: chapter.posted.map(|date| date.timestamp_millis()),
-                    created_at: chapter.created_at.timestamp_millis(),
-                    updated_at: chapter.updated_at.timestamp_millis(),
+                .map(|(index, chapter)| {
+                    chapter.into_chapter_reply(
+                        amount.number_of_items as i64
+                            - (page as i64 * per_page as i64)
+                            - index as i64,
+                    )
                 })
                 .collect(),
         }))

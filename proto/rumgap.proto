@@ -45,6 +45,7 @@ service Reading {
     rpc Update (ReadingPatchRequest) returns (MangaReply);
     rpc Create (ReadingPostRequest) returns (MangaReply);
     rpc Delete (Id) returns (Empty);
+    rpc UpdateChapterOffset (UpdateChapterOffsetRequest) returns (Empty);
 }
 
 service Search {
