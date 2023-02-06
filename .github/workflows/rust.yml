@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Install ProtoC & MUSL Tools & OpenSSL
-      run: sudo apt-get install -y protobuf-compiler musl-tools openssl
+      run: sudo apt-get install -y protobuf-compiler musl-tools openssl libssl-dev
     - uses: actions/checkout@main
     - name: Cache
       uses: actions/cache@v3.2.4
