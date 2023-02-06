@@ -31,7 +31,7 @@ jobs:
     - name: Add Toolchain
       run: rustup target add x86_64-unknown-linux-gnu
     - name: Build
-      run: cargo build --verbose --target x86_64-unknown-linux-gnu
+      run: cargo build --verbose --target x86_64-unknown-linux-gnu --release
     - name: copy file via ssh password
       uses: appleboy/scp-action@master
       with:
