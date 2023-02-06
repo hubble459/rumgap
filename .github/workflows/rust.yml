@@ -14,8 +14,8 @@ jobs:
     environment: main 
     runs-on: ubuntu-latest
     steps:
-    - name: Install ProtoC & OpenSSL
-      run: sudo apt-get install -y protobuf-compiler
+    - name: Install ProtoC & MUSL Tools
+      run: sudo apt-get install -y protobuf-compiler musl-tools
     - uses: actions/checkout@main
     - name: Cache
       uses: actions/cache@v3.2.4
