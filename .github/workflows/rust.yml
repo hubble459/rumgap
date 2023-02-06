@@ -1,0 +1,31 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  HOST: 127.0.0.1
+  PORT: 8000
+  DATABASE_URL: "postgres://postgres:postgres@localhost/rust_manga"
+  MANGA_UPDATE_INTERVAL_MS: 600000
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@main
+    - name: Build
+      run: cargo build --verbose --release
+    - name: copy file via ssh password
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        password: ${{ secrets.PASSWORD }}
+        port: ${{ secrets.PORT }}
+        source: "target/release/rumgap"
+        target: "Programs/rumgap"
