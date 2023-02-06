@@ -31,7 +31,7 @@ jobs:
     - name: Add Toolchain
       run: rustup target add x86_64-unknown-linux-gnu
     - name: Build
-      run: cargo build --verbose --target x86_64-unknown-linux-musl
+      run: cargo build --verbose --target x86_64-unknown-linux-gnu
     - name: copy file via ssh password
       uses: appleboy/scp-action@master
       with:
@@ -39,5 +39,5 @@ jobs:
         username: ${{ secrets.USERNAME }}
         password: ${{ secrets.PASSWORD }}
         port: ${{ secrets.PORT }}
-        source: "target/x86_64-unknown-linux-musl/rumgap"
+        source: "target/x86_64-unknown-linux-gnu/rumgap"
         target: "Programs/rumgap"
