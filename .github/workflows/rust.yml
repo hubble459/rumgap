@@ -8,14 +8,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  PKG_CONFIG_SYSROOT_DIR: /
 
 jobs:
   deploy:
     environment: main 
     runs-on: ubuntu-latest
     steps:
-    - name: Install ProtoC & MUSL Tools
-      run: sudo apt-get install -y protobuf-compiler musl-tools
+    - name: Install ProtoC & MUSL Tools & OpenSSL
+      run: sudo apt-get install -y protobuf-compiler musl-tools openssl
     - uses: actions/checkout@main
     - name: Cache
       uses: actions/cache@v3.2.4
