@@ -13,7 +13,7 @@ env:
 jobs:
   deploy:
     environment: main 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Install ProtoC & MUSL Tools & OpenSSL
       run: sudo apt-get install -y protobuf-compiler musl-tools openssl pkg-config libssl-dev
@@ -28,6 +28,8 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Rust Nightly
+      run: rustup default nightly
     - name: Build
       run: cargo build --verbose --release
     - name: copy file via ssh password
