@@ -28,10 +28,8 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Add Toolchain
-      run: rustup target add x86_64-unknown-linux-gnu
     - name: Build
-      run: cargo build --verbose --target x86_64-unknown-linux-gnu --release
+      run: cargo build --verbose --release
     - name: copy file via ssh password
       uses: appleboy/scp-action@master
       with:
@@ -39,7 +37,7 @@ jobs:
         username: ${{ secrets.USERNAME }}
         password: ${{ secrets.PASSWORD }}
         port: ${{ secrets.PORT }}
-        source: "target/x86_64-unknown-linux-gnu/release/rumgap"
+        source: "target/release/rumgap"
         target: "Programs/rumgap"
         strip_components: 3
 
