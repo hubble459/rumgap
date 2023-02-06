@@ -39,5 +39,7 @@ jobs:
         username: ${{ secrets.USERNAME }}
         password: ${{ secrets.PASSWORD }}
         port: ${{ secrets.PORT }}
-        source: "target/x86_64-unknown-linux-gnu/rumgap"
+        source: "target/x86_64-unknown-linux-gnu/release/rumgap"
         target: "Programs/rumgap"
+        strip_components: 3
+
