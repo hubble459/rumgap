@@ -8,10 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  HOST: 127.0.0.1
-  PORT: 8000
-  DATABASE_URL: "postgres://postgres:postgres@localhost/rust_manga"
-  MANGA_UPDATE_INTERVAL_MS: 600000
 
 jobs:
   build:
