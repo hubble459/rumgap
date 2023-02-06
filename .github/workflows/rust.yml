@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Install ProtoC & OpenSSL
-      run: sudo apt-get install -y protobuf-compiler openssl
+      run: sudo apt-get install -y protobuf-compiler
     - uses: actions/checkout@main
     - name: Cache
       uses: actions/cache@v3.2.4
@@ -28,7 +28,7 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
-      run: cargo build --verbose --release
+      run: cargo build --verbose --target x86_64-unknown-linux-musl
     - name: copy file via ssh password
       uses: appleboy/scp-action@master
       with:
@@ -36,5 +36,5 @@ jobs:
         username: ${{ secrets.USERNAME }}
         password: ${{ secrets.PASSWORD }}
         port: ${{ secrets.PORT }}
-        source: "target/release/rumgap"
+        source: "target/x86_64-unknown-linux-musl/rumgap"
         target: "Programs/rumgap"
