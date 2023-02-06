@@ -13,9 +13,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Install ProtoC
+      run: apt-get install protobuf-compiler
     - uses: actions/checkout@main
     - name: Build
       run: cargo build --verbose --release
+    - name: Cache
+      uses: actions/cache@v3.2.4
+      with:
+        # A list of files, directories, and wildcard patterns to cache and restore
+        path: target
+        # An explicit key for restoring and saving the cache
+        key: cargo-${{ hashFiles('Cargo.lock') }}
     - name: copy file via ssh password
       uses: appleboy/scp-action@master
       with:
