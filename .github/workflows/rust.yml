@@ -3,43 +3,39 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
-  CARGO_TERM_COLOR: always
-  PKG_CONFIG_SYSROOT_DIR: /
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  deploy:
+  push_to_registry:
+    name: Push Docker image to Docker Hub
     environment: main 
     runs-on: ubuntu-latest
     steps:
-    - name: Install ProtoC & MUSL Tools & OpenSSL
-      run: sudo apt-get install -y protobuf-compiler musl-tools openssl pkg-config libssl-dev
-    - uses: actions/checkout@main
-    - name: Cache
-      uses: actions/cache@v3.2.4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Rust Nightly
-      run: rustup default nightly
-    - name: Build
-      run: cargo build --verbose --release
-    - name: copy file via ssh password
-      uses: appleboy/scp-action@master
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        password: ${{ secrets.PASSWORD }}
-        port: ${{ secrets.PORT }}
-        source: "target/release/rumgap"
-        target: "Programs/rumgap"
-        strip_components: 3
+      - name: Check out the repo
+        uses: actions/checkout@v3
 
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
