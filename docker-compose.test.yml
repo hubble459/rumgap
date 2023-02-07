@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   rumgap:
-    image: ghcr.io/hubble459/rumgap:main
+    build: .
     working_dir: /usr/local/bin
     restart: unless-stopped
     environment:

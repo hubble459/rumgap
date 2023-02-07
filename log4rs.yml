@@ -26,20 +26,20 @@ appenders:
                 base: 1
 
 root:
-    level: trace
+    level: debug
     appenders:
         - log_file
         - stdout
 
 loggers:
     rumgap:
-        level: trace
+        level: debug
         appenders:
             - log_file
             - stdout
         additive: false
     http_log:
-        level: trace
+        level: debug
         appenders:
             - log_file
             - stdout_ext

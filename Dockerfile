@@ -43,6 +43,8 @@ FROM debian:bullseye AS runtime
 COPY --from=builder /usr/src/rumgap/target/release/rumgap /usr/local/bin
 COPY log4rs.yml /usr/local/bin
 
+RUN apt-get update && apt-get install -y ca-certificates openssl libssl-dev && rm -rf /var/lib/apt/lists/*
+
 ENV HOST 0.0.0.0
 ENV PORT 80
 ENV DATABASE_URL "postgres://postgres:postgres@postgres/postgres"

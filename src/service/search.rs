@@ -69,6 +69,8 @@ impl Search for MySearch {
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
+        info!("whut {:?} {:?}", req.keyword.clone(), req.hostnames.clone());
+
         Ok(Response::new(SearchReply {
             items: search_results
                 .into_iter()
