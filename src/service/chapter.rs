@@ -73,7 +73,7 @@ impl Chapter for MyChapter {
 
         // Get chapter
         let chapter = entity::chapter::Entity::find()
-            .order_by(entity::chapter::Column::Id, migration::Order::Desc)
+            // .order_by(entity::chapter::Column::Id, migration::Order::Desc)
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
             .offset(offset)
             .column_as(Expr::cust("null"), "offset")
