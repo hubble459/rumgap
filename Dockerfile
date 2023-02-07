@@ -1,6 +1,6 @@
 ################
 ##### Builder
-FROM rust:alpine as builder
+FROM rust:slim-bullseye as builder
 
 ENV PROJECT /usr/src/rumgap
 
@@ -21,7 +21,7 @@ COPY migration/src $PROJECT/migration/src/
 WORKDIR $PROJECT/
 
 # Install build dependencies
-RUN apk add musl-dev pkgconf libressl-dev protoc
+RUN apt-get update && apt-get install -y pkg-config libssl-dev openssl protobuf-compiler
 
 # This is a dummy build to get the dependencies cached.
 RUN cargo build --release
@@ -37,7 +37,7 @@ RUN cargo build --release
 
 ################
 ##### Runtime
-FROM alpine:latest AS runtime 
+FROM debian:bullseye AS runtime 
 
 # Copy application binary from builder image
 COPY --from=builder /usr/src/rumgap/target/release/rumgap /usr/local/bin

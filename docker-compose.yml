@@ -4,9 +4,9 @@ services:
     image: postgres:14.1-alpine
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=rust_manga
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rust_manga
     ports:
       - '5432:5432'
     volumes:

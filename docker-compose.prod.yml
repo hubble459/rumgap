@@ -1,9 +1,22 @@
 version: '3.8'
 services:
   rumgap:
-    build: .
+    image: ghcr.io/hubble459/rumgap:main
+    working_dir: /usr/local/bin
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db/rust_manga
+      HOST: 0.0.0.0
+      PORT: 8000
+      MANGA_UPDATE_INTERVAL_MS: 600000
+      DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
+      RUST_LOG: trace 
+
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '8000:8000'
+    command: ["rumgap"]
   db:
     image: postgres:14.1-alpine
     restart: unless-stopped
@@ -15,6 +28,11 @@ services:
       - '5432:5432'
     volumes:
       - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U postgres -d rust_manga'"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
 volumes:
   db:
     driver: local
