@@ -12,7 +12,7 @@ appenders:
 
     log_file:
         kind: rolling_file
-        path: "log/log.log"
+        path: "logs/log.log"
         encoder:
             pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}"
         policy:
@@ -26,12 +26,18 @@ appenders:
                 base: 1
 
 root:
-    level: info
+    level: warn
     appenders:
         - log_file
         - stdout
 
 loggers:
+    manga_parser:
+        level: debug
+        appenders:
+            - log_file
+            - stdout_ext
+        additive: false
     rumgap:
         level: debug
         appenders:

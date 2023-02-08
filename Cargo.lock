@@ -614,7 +614,7 @@ dependencies = [
 [[package]]
 name = "crabquery"
 version = "0.1.9"
-source = "git+https://github.com/hubble459/crabquery.git#a7c018d6411d00a6d317fe0f7018ff4b4a73b4a5"
+source = "git+https://github.com/hubble459/crabquery.git#12403656ecfc5fca9093e4be6b911186499d74ef"
 dependencies = [
  "html5ever",
  "lazy_static",
@@ -1604,7 +1604,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 [[package]]
 name = "manga-parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/rs-manga-parser#3aece8127dd223229918f197be093df918e6fba5"
+source = "git+https://github.com/hubble459/rs-manga-parser#50232efd9f1cbefb589f65b170343e7dcbcac111"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1985,7 +1985,7 @@ dependencies = [
 [[package]]
 name = "parser_macro_derive"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/rs-manga-parser#3aece8127dd223229918f197be093df918e6fba5"
+source = "git+https://github.com/hubble459/rs-manga-parser#50232efd9f1cbefb589f65b170343e7dcbcac111"
 dependencies = [
  "quote",
  "syn",

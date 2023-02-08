@@ -42,6 +42,8 @@ impl Chapter for MyChapter {
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
+        debug!("{} images found in {}", images.len(), chapter.url);
+
         Ok(Response::new(ImagesReply {
             items: images.into_iter().map(|url| url.to_string()).collect(),
         }))
