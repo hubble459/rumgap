@@ -1,9 +1,12 @@
+use std::time::Duration;
+
 use manga_parser::parser::Parser;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter,
-    QuerySelect, RelationTrait,
+    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
+    RelationTrait,
 };
+use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
 use super::manga::MANGA_PARSER;
@@ -32,10 +35,13 @@ impl Search for MySearch {
         let logged_in = request.extensions().get::<LoggedInUser>();
         let req = request.get_ref();
 
-        let search_results = MANGA_PARSER
-            .search(req.keyword.clone(), req.hostnames.clone())
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let search_results = timeout(
+            Duration::from_secs(5),
+            MANGA_PARSER.search(req.keyword.clone(), req.hostnames.clone()),
+        )
+        .await
+        .map_err(|e| Status::deadline_exceeded(e.to_string()))?
+        .map_err(|e| Status::internal(e.to_string()))?;
 
         let urls: Vec<String> = search_results
             .iter()

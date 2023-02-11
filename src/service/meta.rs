@@ -162,7 +162,8 @@ impl Meta for MyMeta {
 
         let stats: (i64, i64, i64) = entity::reading::Entity::find()
             .filter(entity::reading::Column::UserId.eq(user_id))
-            .left_join(entity::chapter::Entity)
+            .left_join(entity::manga::Entity)
+            .join(JoinType::LeftJoin, entity::manga::Relation::Chapter.def())
             .select_only()
             .column_as(
                 Expr::cust("COUNT(DISTINCT reading.manga_id)"),
