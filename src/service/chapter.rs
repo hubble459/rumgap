@@ -79,6 +79,7 @@ impl Chapter for MyChapter {
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
             .offset(offset)
             .column_as(Expr::cust("null"), "offset")
+            .column_as(Expr::cust("null"), "page")
             .apply_if(logged_in, |query, logged_in| {
                 let user_id = logged_in.id;
                 query
@@ -94,6 +95,7 @@ impl Chapter for MyChapter {
                             }),
                     )
                     .column_as(entity::chapter_offset::Column::Offset, "offset")
+                    .column_as(entity::chapter_offset::Column::Page, "page")
             })
             .into_model::<data::chapter::Full>()
             .one(db)
@@ -121,6 +123,7 @@ impl Chapter for MyChapter {
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
             .order_by(entity::chapter::Column::Id, migration::Order::Desc)
             .column_as(Expr::cust("null"), "offset")
+            .column_as(Expr::cust("null"), "page")
             .apply_if(logged_in, |query, logged_in| {
                 let user_id = logged_in.id;
                 query
@@ -136,6 +139,7 @@ impl Chapter for MyChapter {
                             }),
                     )
                     .column_as(entity::chapter_offset::Column::Offset, "offset")
+                    .column_as(entity::chapter_offset::Column::Page, "page")
             })
             .into_model::<data::chapter::Full>()
             .paginate(db, per_page);

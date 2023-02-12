@@ -12,6 +12,7 @@ pub struct Model {
     pub offset: i32,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    pub page: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

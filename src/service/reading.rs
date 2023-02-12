@@ -102,7 +102,8 @@ impl Reading for MyReading {
         // Save offset
         if let Some(model) = model {
             let mut model = model.into_active_model();
-            model.offset = ActiveValue::Set(req.offset);
+            model.offset = ActiveValue::Set(req.pixels);
+            model.page = ActiveValue::Set(req.page);
 
             model
                 .update(db)
@@ -112,7 +113,8 @@ impl Reading for MyReading {
             entity::chapter_offset::ActiveModel {
                 user_id: ActiveValue::Set(logged_in.id),
                 chapter_id: ActiveValue::Set(req.chapter_id),
-                offset: ActiveValue::Set(req.offset),
+                offset: ActiveValue::Set(req.pixels),
+                page: ActiveValue::Set(req.page),
                 ..Default::default()
             }
             .insert(db)

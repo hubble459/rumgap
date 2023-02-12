@@ -1,7 +1,7 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::FromQueryResult;
 
-use crate::proto::ChapterReply;
+use crate::proto::{ChapterReply, ChapterOffset};
 
 #[derive(Debug, FromQueryResult)]
 pub struct Full {
@@ -16,6 +16,7 @@ pub struct Full {
 
     // special
     pub offset: Option<i32>,
+    pub page: Option<i32>,
 }
 
 impl Full {
@@ -28,7 +29,7 @@ impl Full {
             index,
             number: self.number,
             posted: self.posted.map(|date| date.timestamp_millis()),
-            offset: self.offset,
+            offset: self.offset.map(|offset| ChapterOffset { pixels: offset, page: self.page.unwrap() }),
             created_at: self.created_at.timestamp_millis(),
             updated_at: self.updated_at.timestamp_millis(),
         }
