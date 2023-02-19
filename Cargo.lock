@@ -1672,7 +1672,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 [[package]]
 name = "manga-parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/rs-manga-parser#998e2f2eddca4d87578226cca9c212eb2f6c43c6"
+source = "git+https://github.com/hubble459/rs-manga-parser#53a8529f1117aa91b6d65146e9535da1d4cfb238"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "parser_macro_derive"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/rs-manga-parser#998e2f2eddca4d87578226cca9c212eb2f6c43c6"
+source = "git+https://github.com/hubble459/rs-manga-parser#53a8529f1117aa91b6d65146e9535da1d4cfb238"
 dependencies = [
  "quote",
  "syn",

@@ -9,7 +9,8 @@ use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -42,34 +43,32 @@ pub const NEXT_UPDATE_QUERY: &str =
 /// Get a "full" manga by it's ID
 #[rustfmt::skip]
 pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedInUser>, manga_id: i32) -> Result<MangaReply, Status> {
-    let mut manga = entity::manga::Entity::find_by_id(manga_id)
+    use entity::chapter::Column as ChapterColumn;
+
+    let manga = entity::manga::Entity::find_by_id(manga_id)
         .left_join(entity::chapter::Entity)
-        .column_as(entity::chapter::Column::Id.count(), "count_chapters")
-        .column_as(entity::chapter::Column::Posted.max(), "last")
+        .column_as(ChapterColumn::Id.count(), "count_chapters")
+        .column_as(ChapterColumn::Posted.max(), "last")
         .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
-        .group_by(entity::manga::Column::Id);
-
-    if let Some(logged_in) = logged_in {
-        let user_id = logged_in.id;
-        manga = manga
-            .join(
-            JoinType::LeftJoin,
-            entity::reading::Relation::Manga.def().rev().on_condition(
-                    move |_left, right| {
-                        Expr::col((right, entity::reading::Column::UserId))
-                            .eq(user_id)
-                            .into_condition()
-                    },
-                ),
-            )
-            .column_as(entity::reading::Column::Progress, "progress")
-            .group_by(entity::reading::Column::UserId)
-            .group_by(entity::reading::Column::MangaId);
-    } else {
-        manga = manga.column_as(Expr::cust("null"), "progress");
-    }
-
-    let manga = manga
+        .group_by(entity::manga::Column::Id)
+        .column_as(Expr::cust("null"), "progress")
+        .apply_if(logged_in, |query, logged_in| {
+            let user_id = logged_in.id;
+            query
+                .join(
+                JoinType::LeftJoin,
+                entity::reading::Relation::Manga.def().rev().on_condition(
+                        move |_left, right| {
+                            Expr::col((right, entity::reading::Column::UserId))
+                                .eq(user_id)
+                                .into_condition()
+                        },
+                    ),
+                )
+                .column_as(entity::reading::Column::Progress, "progress")
+                .group_by(entity::reading::Column::UserId)
+                .group_by(entity::reading::Column::MangaId)
+        })
         .into_model::<data::manga::Full>()
         .one(db)
         .await
@@ -288,13 +287,7 @@ impl Manga for MyManga {
         let manga = if (Utc::now() - chrono::Duration::milliseconds(interval_ms)) > updated_at {
             // Update
             info!("Updating manga with id '{}' [{}]", manga_id, url);
-            save_manga(
-                db,
-                logged_in,
-                Some(manga_id),
-                Url::parse(&url).unwrap(),
-            )
-            .await?
+            save_manga(db, logged_in, Some(manga_id), Url::parse(&url).unwrap()).await?
         } else {
             get_manga_by_id(db, logged_in, manga_id).await?
         };
@@ -319,13 +312,7 @@ impl Manga for MyManga {
             .ok_or(Status::not_found("Manga not found"))?;
 
         info!("Updating manga with id '{}' [{}]", manga_id, url);
-        let manga = save_manga(
-            db,
-            logged_in,
-            Some(manga_id),
-            Url::parse(&url).unwrap(),
-        )
-        .await?;
+        let manga = save_manga(db, logged_in, Some(manga_id), Url::parse(&url).unwrap()).await?;
 
         Ok(Response::new(manga))
     }
@@ -373,29 +360,30 @@ impl Manga for MyManga {
             .column_as(entity::chapter::Column::Id.count(), "count_chapters")
             .column_as(entity::chapter::Column::Posted.max(), "last")
             .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
-            .group_by(entity::manga::Column::Id);
-
-        if let Some(logged_in) = logged_in {
-            paginate = paginate
-                .join(
-                    JoinType::LeftJoin,
-                    entity::reading::Relation::Manga.def().rev().on_condition(
-                        move |_left, right| {
-                            Expr::col((right, entity::reading::Column::UserId))
-                                .eq(logged_in.id)
-                                .into_condition()
-                        },
-                    ),
-                )
-                .column_as(entity::reading::Column::Progress, "progress")
-                .group_by(entity::reading::Column::MangaId)
-                .group_by(entity::reading::Column::UserId);
-        } else {
-            paginate = paginate.column_as(Expr::cust("null"), "progress");
-        }
+            .group_by(entity::manga::Column::Id)
+            .column_as(Expr::cust("null"), "progress")
+            .apply_if(logged_in, |query, logged_in| {
+                let user_id = logged_in.id;
+                query
+                    .join(
+                        JoinType::LeftJoin,
+                        entity::reading::Relation::Manga.def().rev().on_condition(
+                            move |_left, right| {
+                                Expr::col((right, entity::reading::Column::UserId))
+                                    .eq(user_id)
+                                    .into_condition()
+                            },
+                        ),
+                    )
+                    .column_as(entity::reading::Column::Progress, "progress")
+                    .group_by(entity::reading::Column::MangaId)
+                    .group_by(entity::reading::Column::UserId)
+            });
 
         if let Some(search) = req.search.clone() {
-            paginate = paginate.having(lucene_filter(search.into())?);
+            if !search.is_empty() {
+                paginate = paginate.having(lucene_filter(search.into())?);
+            }
         }
 
         if let Some(order) = req.order.clone() {

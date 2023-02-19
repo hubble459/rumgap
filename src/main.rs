@@ -17,6 +17,7 @@ use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
 use crate::interceptor::auth::LoggedInUser;
+use crate::util::updater;
 
 mod data;
 mod interceptor;
@@ -53,6 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = server_url.parse()?;
 
     info!("Running server on {}", addr);
+
+    // Start updater
+    let cloned_conn = conn.clone();
+    tokio::spawn(async move {
+        updater::watch_updates(&cloned_conn).await;
+    });
 
     Server::builder()
         .layer(tonic::service::interceptor(move |req| {
@@ -101,10 +108,9 @@ fn logger(req: Request<()>) -> Result<Request<()>, Status> {
     let logged_in = req.extensions().get::<LoggedInUser>();
 
     info!(
-        "[{}] ({}): {:?}",
+        "[{}] ({})",
         req.remote_addr().map_or(String::new(), |ip| ip.to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
-        req.metadata()
     );
 
     Ok(req)
