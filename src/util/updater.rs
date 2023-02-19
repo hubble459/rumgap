@@ -1,11 +1,17 @@
 use chrono::Utc;
 use fcm::{Client, MessageBuilder, NotificationBuilder};
 use manga_parser::Url;
-use migration::Expr;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use migration::{Expr, JoinType};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait,
+};
 use tokio::time::{self, Duration};
 
-use crate::service::manga::save_manga;
+use crate::{
+    data,
+    service::manga::{index_manga, save_manga},
+};
 
 pub async fn watch_updates(db: &DatabaseConnection) {
     let interval_ms: u64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
@@ -24,7 +30,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
             "[Auto Update] Found {} manga that should be updated",
             update_list.len()
         );
-        for (manga, users) in update_list {
+        for manga in update_list {
             info!("[Auto Update] Automatically updating {}", manga.url);
             let url = Url::parse(&manga.url);
             match url {
@@ -32,15 +38,20 @@ pub async fn watch_updates(db: &DatabaseConnection) {
                     let saved = save_manga(db, None, Some(manga.id), url).await;
                     match saved {
                         Ok(saved) => {
-                            let ids: Vec<String> =
-                                users.into_iter().flat_map(|user| user.device_ids).collect();
+                            if saved.count_chapters != manga.count_chapters {
+                                let readers = get_readers(db, manga.id).await;
+                                let ids: Vec<String> = readers
+                                    .into_iter()
+                                    .flat_map(|user| user.device_ids)
+                                    .collect();
 
-                            info!(
-                                "[Auto Update] Successfully updated {}",
-                                saved.url.to_string()
-                            );
-                            if !ids.is_empty() {
-                                send_notification(&manga, ids.as_slice()).await;
+                                info!(
+                                    "[Auto Update] Successfully updated {}",
+                                    saved.url.to_string()
+                                );
+                                if !ids.is_empty() {
+                                    send_notification(&manga, ids.as_slice()).await;
+                                }
                             }
                         }
                         Err(e) => {
@@ -54,9 +65,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
     }
 }
 
-async fn collect_priority_manga(
-    db: &DatabaseConnection,
-) -> Vec<(entity::manga::Model, Vec<entity::user::Model>)> {
+async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Full> {
     // select 10 manga sorted by highest reading count
     // select only ones that havent been reloaded for at least "MANGA_UPDATE_INTERVAL_MS" * 2 milliseconds
     let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
@@ -74,15 +83,18 @@ async fn collect_priority_manga(
 
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(interval_ms));
 
-    let priority = manga::Entity::find()
-        .find_with_related(entity::user::Entity)
+    let priority = index_manga(None)
+        .join(
+            JoinType::LeftJoin,
+            entity::reading::Relation::Manga.def().rev(),
+        )
         .column_as(reading::Column::MangaId.count(), "count_reading")
         .group_by(manga::Column::Id)
-        .group_by(user::Column::Id)
         .filter(manga::Column::UpdatedAt.lte(date_time))
         .limit(limit)
         .order_by_desc(reading::Column::MangaId.count())
         .having(Expr::cust("COUNT(reading.manga_id) > 0"))
+        .into_model::<data::manga::Full>()
         .all(db)
         .await
         .unwrap();
@@ -90,7 +102,18 @@ async fn collect_priority_manga(
     priority
 }
 
-async fn send_notification(manga: &entity::manga::Model, ids: &[String]) {
+async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user::Model> {
+    entity::manga::Entity::find_by_id(manga_id)
+        .find_with_related(entity::user::Entity)
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .flat_map(|(_, users)| users)
+        .collect()
+}
+
+async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
     info!("Sending notifications to {} users", ids.len());
 
     let notification_tag = manga.id.to_string();
