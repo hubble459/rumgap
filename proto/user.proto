@@ -9,6 +9,10 @@ message UserRegisterRequest {
     string email = 3;
 }
 
+message DeviceTokenRequest {
+    string token = 1;
+}
+
 message UserRequest {
     string password = 1;
     oneof identifier {
@@ -22,6 +26,7 @@ message UserUpdateRequest {
     optional string username = 2;
     optional string email = 3;
     repeated string preferred_hostnames = 4;
+    repeated string device_ids = 5;
 }
 
 message UserReply {
@@ -30,8 +35,9 @@ message UserReply {
     string email = 3;
     int32 permissions = 4;
     repeated string preferred_hostnames = 5;
-    int64 created_at = 6;
-    int64 updated_at = 7;
+    repeated string device_ids = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
 }
 
 message UserFullReply {
@@ -40,10 +46,11 @@ message UserFullReply {
     string email = 3;
     int32 permissions = 4;
     repeated string preferred_hostnames = 5;
-    int64 count_following = 6;
-    int64 count_followers = 7;
-    int64 created_at = 8;
-    int64 updated_at = 9;
+    repeated string device_ids = 6;
+    int64 count_following = 7;
+    int64 count_followers = 8;
+    int64 created_at = 9;
+    int64 updated_at = 10;
 }
 
 message UserTokenReply {

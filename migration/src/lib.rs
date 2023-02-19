@@ -8,6 +8,7 @@ mod m20221130_215749_create_chapter;
 mod m20221130_215753_create_reading;
 mod m20230206_144400_create_chapter_offset;
 mod m20230212_132547_add_page_column_to_chapter_offset;
+mod m20230219_170615_add_device_ids_column_to_user;
 
 mod trigger;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20221130_215753_create_reading::Migration),
             Box::new(m20230206_144400_create_chapter_offset::Migration),
             Box::new(m20230212_132547_add_page_column_to_chapter_offset::Migration),
+            Box::new(m20230219_170615_add_device_ids_column_to_user::Migration),
         ]
     }
 }

@@ -97,6 +97,7 @@ async fn index(
                 email: user.email,
                 permissions: user.permissions as i32,
                 preferred_hostnames: user.preferred_hostnames,
+                device_ids: user.device_ids,
                 created_at: user.created_at.timestamp_millis(),
                 updated_at: user.updated_at.timestamp_millis(),
             })

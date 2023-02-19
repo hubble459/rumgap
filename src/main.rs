@@ -131,11 +131,13 @@ macro_rules! export_service {
             $crate::interceptor::auth::LoggedInCheck,
         > {
             tower::ServiceBuilder::new()
-                .layer(tonic::service::interceptor(crate::interceptor::auth::LoggedInCheck::new(UserPermissions::USER)))
+                .layer(tonic::service::interceptor(
+                    crate::interceptor::auth::LoggedInCheck::new(UserPermissions::USER),
+                ))
                 .service(
                     $server::new($server_handler::default())
                         .send_compressed(tonic::codec::CompressionEncoding::Gzip)
-                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
                 )
         }
     };

@@ -17,6 +17,8 @@ service User {
     rpc Index (PaginateQuery) returns (UsersReply);
     rpc Me (Empty) returns (UserFullReply);
     rpc Update (UserUpdateRequest) returns (UserFullReply);
+    rpc AddDeviceToken (DeviceTokenRequest) returns (Empty);
+    rpc RemoveDeviceToken (DeviceTokenRequest) returns (Empty);
 }
 
 service Friend {

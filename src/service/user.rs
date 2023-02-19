@@ -10,8 +10,8 @@ use crate::interceptor::auth::{sign, LoggedInUser};
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    Empty, Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply,
-    UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
+    DeviceTokenRequest, Empty, Id, PaginateQuery, PaginateReply, UserFullReply,
+    UserRegisterRequest, UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
 use crate::util::{argon, verify};
 
@@ -90,6 +90,7 @@ impl User for MyUser {
                     email: user.email,
                     permissions: user.permissions as i32,
                     preferred_hostnames: user.preferred_hostnames,
+                    device_ids: user.device_ids,
                     created_at: user.created_at.timestamp_millis(),
                     updated_at: user.updated_at.timestamp_millis(),
                 })
@@ -163,10 +164,7 @@ impl User for MyUser {
     }
 
     /// Get logged in user
-    async fn me(
-        &self,
-        request: Request<Empty>,
-    ) -> Result<Response<UserFullReply>, Status> {
+    async fn me(&self, request: Request<Empty>) -> Result<Response<UserFullReply>, Status> {
         let logged_in =
             request
                 .extensions()
@@ -205,10 +203,14 @@ impl User for MyUser {
             active_user.email = ActiveValue::Set(verify::email(email)?);
         }
         if let Some(password) = &req.password {
-            active_user.password_hash = ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
+            active_user.password_hash =
+                ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
         }
         if !req.preferred_hostnames.is_empty() {
             active_user.preferred_hostnames = ActiveValue::Set(req.preferred_hostnames.clone());
+        }
+        if !req.device_ids.is_empty() {
+            active_user.device_ids = ActiveValue::Set(req.device_ids.clone());
         }
 
         active_user.update(db).await.map_err(|e| {
@@ -221,6 +223,71 @@ impl User for MyUser {
         Ok(Response::new(
             get_user_by_id(db, logged_in.id).await?.into(),
         ))
+    }
+
+    async fn add_device_token(
+        &self,
+        request: Request<DeviceTokenRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::unauthenticated(
+                    "Missing bearer token! Log in first",
+                ))?;
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
+
+        let mut device_ids = logged_in.device_ids.clone();
+
+        if let Some(_pos) = device_ids.iter().position(|token| token == &req.token) {
+            // Already exists
+            // TODO: Should it throw a 409?
+        } else {
+            device_ids.push(req.token.clone());
+            let mut active_user = logged_in.0.clone().into_active_model();
+            active_user.device_ids = ActiveValue::Set(device_ids);
+    
+            active_user
+                .update(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+        }
+
+        Ok(Response::new(Empty::default()))
+    }
+
+    async fn remove_device_token(
+        &self,
+        request: Request<DeviceTokenRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        let logged_in =
+            request
+                .extensions()
+                .get::<LoggedInUser>()
+                .ok_or(Status::unauthenticated(
+                    "Missing bearer token! Log in first",
+                ))?;
+        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let req = request.get_ref();
+
+        let mut device_ids = logged_in.device_ids.clone();
+            
+        if let Some(pos) = device_ids.iter().position(|token| token == &req.token) {
+            device_ids.remove(pos);
+            let mut active_user = logged_in.0.clone().into_active_model();
+            active_user.device_ids = ActiveValue::Set(device_ids);
+    
+            active_user
+                .update(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+        } else {
+            // TODO: Should it throw a 404?
+        }
+
+        Ok(Response::new(Empty::default()))
     }
 }
 
