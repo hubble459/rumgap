@@ -14,10 +14,10 @@ use crate::{
 };
 
 pub async fn watch_updates(db: &DatabaseConnection) {
-    let interval_ms: u64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
-        .unwrap_or("3600000".to_string())
+    let interval_ms: u64 = std::env::var("MANGA_AUTO_UPDATE_INTERVAL_MS")
+        .unwrap_or("14400000".to_string())
         .parse()
-        .unwrap_or(3600000);
+        .unwrap_or(14400000);
 
     let mut interval = time::interval(Duration::from_millis(interval_ms));
 
@@ -67,21 +67,19 @@ pub async fn watch_updates(db: &DatabaseConnection) {
 
 async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Full> {
     // select 10 manga sorted by highest reading count
-    // select only ones that havent been reloaded for at least "MANGA_UPDATE_INTERVAL_MS" * 2 milliseconds
-    let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
-        .unwrap_or("3600000".to_string())
+    // select only ones that havent been reloaded for at least "MANGA_AUTO_UPDATE_MIN_INTERVAL" milliseconds
+    let min_interval: i64 = std::env::var("MANGA_AUTO_UPDATE_MIN_INTERVAL_MS")
+        .unwrap_or("28800000".to_string())
         .parse()
-        .unwrap_or(3600000);
+        .unwrap_or(28800000);
     let limit: u64 = std::env::var("MANGA_AUTO_UPDATE_MAX")
         .unwrap_or("10".to_string())
         .parse()
         .unwrap_or(10);
 
-    let interval_ms = interval_ms * 2;
+    use entity::{manga, reading};
 
-    use entity::{manga, reading, user};
-
-    let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(interval_ms));
+    let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
 
     let priority = index_manga(None)
         .join(
@@ -93,6 +91,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
         .filter(manga::Column::UpdatedAt.lte(date_time))
         .limit(limit)
         .order_by_desc(reading::Column::MangaId.count())
+        .order_by_asc(manga::Column::UpdatedAt)
         .having(Expr::cust("COUNT(reading.manga_id) > 0"))
         .into_model::<data::manga::Full>()
         .all(db)
@@ -114,23 +113,26 @@ async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user
 }
 
 async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
-    info!("Sending notifications to {} users", ids.len());
+    let fcm_token = std::env::var("FCM_LEGACY_API_KEY").ok();
 
-    let notification_tag = manga.id.to_string();
+    if let Some(fcm_token) = fcm_token {
+        info!("Sending notifications to {} users", ids.len());
+        let notification_tag = manga.id.to_string();
+        let client = Client::new();
 
-    let client = Client::new();
-    let fcm_token = dotenvy::var("FCM_LEGACY_API_KEY").expect("Missing FCM token");
+        let mut notification_builder = NotificationBuilder::new();
+        notification_builder.title("Manga Updated!");
+        notification_builder.body(&manga.title);
+        notification_builder.tag(&notification_tag);
 
-    let mut notification_builder = NotificationBuilder::new();
-    notification_builder.title("Manga Updated!");
-    notification_builder.body(&manga.title);
-    notification_builder.tag(&notification_tag);
+        notification_builder.icon("https://cdn.discordapp.com/attachments/1013449250102857729/1076924437280067705/v2-84ce3eaa59c7a6f6fd8b8e23c7431c48_b.jpg");
 
-    notification_builder.icon("https://cdn.discordapp.com/attachments/1013449250102857729/1076924437280067705/v2-84ce3eaa59c7a6f6fd8b8e23c7431c48_b.jpg");
+        let mut builder = MessageBuilder::new_multi(&fcm_token, ids);
+        builder.notification(notification_builder.finalize());
 
-    let mut builder = MessageBuilder::new_multi(&fcm_token, ids);
-    builder.notification(notification_builder.finalize());
-
-    let response = client.send(builder.finalize()).await.unwrap();
-    println!("Sent: {:?}", response);
+        let response = client.send(builder.finalize()).await.unwrap();
+        info!("Sent: {:?}", response);
+    } else {
+        info!("Missing FCM_LEGACY_API_KEY so not sending notifications");
+    }
 }
