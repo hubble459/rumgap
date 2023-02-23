@@ -81,13 +81,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
 
     use entity::{manga, reading};
 
-<<<<<<< HEAD
-    use entity::{manga, reading};
-
-    let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(interval_ms));
-=======
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
->>>>>>> 9b67cc6080493444618998ab3dc9c4f2883f26c8
 
     let priority = index_manga(None)
         .join(
