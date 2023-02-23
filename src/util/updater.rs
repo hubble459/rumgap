@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use fcm::{Client, MessageBuilder, NotificationBuilder};
 use manga_parser::Url;
@@ -79,7 +81,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
 
     let interval_ms = interval_ms * 2;
 
-    use entity::{manga, reading, user};
+    use entity::{manga, reading};
 
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(interval_ms));
 
@@ -125,11 +127,15 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
     notification_builder.title("Manga Updated!");
     notification_builder.body(&manga.title);
     notification_builder.tag(&notification_tag);
+    notification_builder.click_action("MANGA_UPDATED");
 
     notification_builder.icon("https://cdn.discordapp.com/attachments/1013449250102857729/1076924437280067705/v2-84ce3eaa59c7a6f6fd8b8e23c7431c48_b.jpg");
 
     let mut builder = MessageBuilder::new_multi(&fcm_token, ids);
     builder.notification(notification_builder.finalize());
+    let mut data = HashMap::new();
+    data.insert("manga_id", manga.id.to_string());
+    builder.data(&data).unwrap();
 
     let response = client.send(builder.finalize()).await.unwrap();
     println!("Sent: {:?}", response);
