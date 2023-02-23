@@ -50,5 +50,9 @@
         "options": [
             "--proto_path=protos",
         ]
-    }
+    },
+    "files.associations": {
+        "*.env*": "dotenv"
+    },
+    "dotenv.enableAutocloaking": true
 }
