@@ -3,7 +3,7 @@ use tonic::Status;
 
 use super::field::SearchField;
 use super::parse::Search;
-use crate::service::manga::NEXT_UPDATE_QUERY;
+use crate::service::v1::manga::NEXT_UPDATE_QUERY;
 
 const SELECT_MANGA_ALL: &str = r#"
 ARRAY_TO_STRING(manga.genres, ', ')     || ' ' ||

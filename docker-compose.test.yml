@@ -9,7 +9,7 @@ services:
       PORT: 8000
       MANGA_UPDATE_INTERVAL_MS: 600000
       DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
-      RUST_LOG: trace 
+      RUST_LOG: trace
 
     depends_on:
       db:

@@ -1,5 +1,5 @@
 syntax = "proto3";
-package rumgap;
+package rumgap.v1;
 
 message ReadingPostRequest {
     int32 manga_id = 1;

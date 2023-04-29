@@ -1,14 +1,15 @@
 syntax = "proto3";
-package rumgap;
 
-import "user.proto";
-import "friend.proto";
-import "manga.proto";
-import "chapter.proto";
-import "reading.proto";
-import "search.proto";
-import "paginate.proto";
-import "meta.proto";
+package rumgap.v1;
+
+import "rumgap/v1/user.proto";
+import "rumgap/v1/friend.proto";
+import "rumgap/v1/manga.proto";
+import "rumgap/v1/chapter.proto";
+import "rumgap/v1/reading.proto";
+import "rumgap/v1/search.proto";
+import "rumgap/v1/paginate.proto";
+import "rumgap/v1/meta.proto";
 
 service User {
     rpc Register (UserRegisterRequest) returns (UserTokenReply);

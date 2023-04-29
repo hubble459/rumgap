@@ -9,7 +9,7 @@ fn main() -> io::Result<()> {
 
     tonic_build::configure()
         .file_descriptor_set_path(descriptor_path)
-        .compile(&["proto/rumgap.proto"], &["proto/"])?;
+        .compile(&["proto/rumgap/v1/rumgap.proto"], &["proto"])?;
 
     #[cfg(windows)]
     {

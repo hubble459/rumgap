@@ -26,7 +26,7 @@ mod util;
 
 /// Load all ProtoBuf files
 pub mod proto {
-    tonic::include_proto!("rumgap");
+    tonic::include_proto!("rumgap.v1");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("descriptor");
 }
@@ -67,13 +67,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
         .layer(async_interceptor(interceptor::auth::check_auth))
         .layer(tonic::service::interceptor(logger))
-        .add_service(service::user::server())
-        .add_service(service::friend::server())
-        .add_service(service::manga::server())
-        .add_service(service::chapter::server())
-        .add_service(service::reading::server())
-        .add_service(service::search::server())
-        .add_service(service::meta::server())
+        .add_service(service::v1::user::server())
+        .add_service(service::v1::friend::server())
+        .add_service(service::v1::manga::server())
+        .add_service(service::v1::chapter::server())
+        .add_service(service::v1::reading::server())
+        .add_service(service::v1::search::server())
+        .add_service(service::v1::meta::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)

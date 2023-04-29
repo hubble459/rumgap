@@ -1,5 +1,6 @@
 syntax = "proto3";
-package rumgap;
+
+package rumgap.v1;
 
 message SearchRequest {
     string keyword = 1;

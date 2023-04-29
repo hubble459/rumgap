@@ -1,7 +1,7 @@
 use migration::{Order, SimpleExpr};
 use tonic::Status;
 
-use crate::service::manga::NEXT_UPDATE_QUERY;
+use crate::service::v1::manga::NEXT_UPDATE_QUERY;
 
 static ORDER_FIELD: phf::Map<&'static str, &'static str> = phf_map! {
     "title" => "manga.title",
