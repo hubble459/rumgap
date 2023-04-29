@@ -1,17 +1,20 @@
-use migration::{SimpleExpr, Expr};
+use migration::{Expr, SimpleExpr};
 use tonic::Status;
 
+use self::field::SearchField;
+use self::parse::Search;
 use super::search::parse::Field;
 
-use self::{parse::Search, field::SearchField};
-
+pub mod date_format;
 pub mod field;
 pub mod manga;
 pub mod parse;
-pub mod date_format;
 
 /// Search parser for generating a SeaORM query
-pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -> Result<SimpleExpr, Status> {
+pub fn lucene_filter(
+    map: &phf::Map<&'static str, SearchField>,
+    query: Search,
+) -> Result<SimpleExpr, Status> {
     let with_fields: Vec<&Field> = query.iter().filter(|q| q.name.is_some()).collect();
     // TODO 13/12/2022: Use group_by when stable
 
@@ -47,7 +50,8 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
         let expr = Expr::cust_with_values(
             &format!(
                 "{} ILIKE {}",
-                all_fields, (0..without_fields.len())
+                all_fields,
+                (0..without_fields.len())
                     .enumerate()
                     .map(|(i, _)| format!("${}", i + 1))
                     .collect::<Vec<String>>()
@@ -69,7 +73,8 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
         let expr = Expr::cust_with_values(
             &format!(
                 "NOT {} {}",
-                all_fields, (0..exclude_fields.len())
+                all_fields,
+                (0..exclude_fields.len())
                     .enumerate()
                     .map(|(i, _)| format!("${}", i + 1))
                     .collect::<Vec<String>>()

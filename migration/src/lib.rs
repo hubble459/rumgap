@@ -1,5 +1,7 @@
 pub use sea_orm_migration::prelude::*;
 
+mod extension;
+
 mod m20221127_174330_create_triggers;
 mod m20221127_174334_create_user;
 mod m20221127_180216_create_friend;
@@ -9,8 +11,6 @@ mod m20221130_215753_create_reading;
 mod m20230206_144400_create_chapter_offset;
 mod m20230212_132547_add_page_column_to_chapter_offset;
 mod m20230219_170615_add_device_ids_column_to_user;
-
-mod trigger;
 
 pub struct Migrator;
 

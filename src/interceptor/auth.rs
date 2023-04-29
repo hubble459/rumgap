@@ -95,9 +95,7 @@ pub struct LoggedInCheck {
 impl LoggedInCheck {
     /// Create a new instance which checks for the specified perms
     pub fn new(perms: UserPermissions) -> Self {
-        Self {
-            perms,
-        }
+        Self { perms }
     }
 }
 
@@ -106,7 +104,7 @@ impl Interceptor for LoggedInCheck {
     /// When a request is made
     /// will check if user is logged in
     /// and has enough permissions to make the request
-    /// 
+    ///
     /// If the user is not logged in or is missing permissions
     /// an error will be returned (Status)
     fn call(&mut self, req: tonic::Request<()>) -> Result<tonic::Request<()>, Status> {
@@ -117,9 +115,11 @@ impl Interceptor for LoggedInCheck {
                 if user.has_permission(self.perms) {
                     Ok(req)
                 } else {
-                    Err(Status::permission_denied("You are missing permissions to make this call"))
+                    Err(Status::permission_denied(
+                        "You are missing permissions to make this call",
+                    ))
                 }
-            },
+            }
             None => Err(Status::unauthenticated(
                 "You need to be logged in to make this request!",
             )),

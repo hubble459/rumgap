@@ -167,7 +167,7 @@ pub async fn save_manga(
     get_manga_by_id(db, logged_in, manga_id).await
 }
 
-pub fn index_manga(logged_in: Option<LoggedInUser>) -> Select<entity::manga::Entity>{
+pub fn index_manga(logged_in: Option<LoggedInUser>) -> Select<entity::manga::Entity> {
     entity::manga::Entity::find()
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")

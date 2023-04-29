@@ -248,7 +248,7 @@ impl User for MyUser {
             device_ids.push(req.token.clone());
             let mut active_user = logged_in.0.clone().into_active_model();
             active_user.device_ids = ActiveValue::Set(device_ids);
-    
+
             active_user
                 .update(db)
                 .await
@@ -273,12 +273,12 @@ impl User for MyUser {
         let req = request.get_ref();
 
         let mut device_ids = logged_in.device_ids.clone();
-            
+
         if let Some(pos) = device_ids.iter().position(|token| token == &req.token) {
             device_ids.remove(pos);
             let mut active_user = logged_in.0.clone().into_active_model();
             active_user.device_ids = ActiveValue::Set(device_ids);
-    
+
             active_user
                 .update(db)
                 .await

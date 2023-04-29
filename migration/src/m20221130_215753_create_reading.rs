@@ -1,6 +1,8 @@
 use sea_orm_migration::prelude::*;
 
-use crate::{trigger, m20221130_215742_create_manga::Manga, m20221127_174334_create_user::User};
+use crate::extension::timestamps::TimestampExt;
+use crate::m20221127_174334_create_user::User;
+use crate::m20221130_215742_create_manga::Manga;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -16,7 +18,12 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Reading::UserId).integer().not_null())
                     .col(ColumnDef::new(Reading::MangaId).integer().not_null())
                     .primary_key(Index::create().col(Reading::UserId).col(Reading::MangaId))
-                    .col(ColumnDef::new(Reading::Progress).integer().not_null().default(0))
+                    .col(
+                        ColumnDef::new(Reading::Progress)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .from(Reading::Table, Reading::MangaId)
@@ -31,18 +38,16 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
-                    .to_owned(),
+                    .take(),
             )
             .await?;
 
-        trigger::add_date_triggers(manager, Reading::Table.to_string()).await
+        manager.timestamps(Reading::Table).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        trigger::drop_date_triggers(manager, Reading::Table.to_string()).await?;
-
         manager
-            .drop_table(Table::drop().table(Reading::Table).to_owned())
+            .drop_table(Table::drop().table(Reading::Table).take())
             .await
     }
 }

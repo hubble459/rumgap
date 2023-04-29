@@ -10,10 +10,8 @@ use sea_orm::{
 };
 use tokio::time::{self, Duration};
 
-use crate::{
-    data,
-    service::manga::{index_manga, save_manga},
-};
+use crate::data;
+use crate::service::manga::{index_manga, save_manga};
 
 pub async fn watch_updates(db: &DatabaseConnection) {
     let interval_ms: u64 = std::env::var("MANGA_AUTO_UPDATE_INTERVAL_MS")
@@ -83,7 +81,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
 
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
 
-    let priority = index_manga(None)
+    index_manga(None)
         .join(
             JoinType::LeftJoin,
             entity::reading::Relation::Manga.def().rev(),
@@ -98,9 +96,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
         .into_model::<data::manga::Full>()
         .all(db)
         .await
-        .unwrap();
-
-    priority
+        .unwrap()
 }
 
 async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user::Model> {

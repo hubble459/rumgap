@@ -35,8 +35,8 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
 }
 
 /// Get all following or followers
-/// [following=true] Index Following 
-/// [following=false] Index Followers 
+/// [following=true] Index Following
+/// [following=false] Index Followers
 async fn index(
     request: Request<PaginateQuery>,
     following: bool,

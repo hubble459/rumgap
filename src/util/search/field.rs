@@ -65,17 +65,21 @@ impl SearchField {
                 let date = captures.get(2).unwrap().as_str();
                 let date = DateFormat::try_from(date, future)?;
 
-                return Ok(Expr::cust_with_values(&format!("{ident} {compare} $1"), vec![date.0]));
+                return Ok(Expr::cust_with_values(
+                    &format!("{ident} {compare} $1"),
+                    vec![date.0],
+                ));
             }
             SearchField::Equals(ident) => {
                 expr += &format!("{ident} = $1");
             }
             SearchField::Number(ident) => {
-                let captures = SEARCH_DATE_REGEX
-                    .captures(value)
-                    .ok_or(Status::invalid_argument(format!(
-                        "Expected number but got {value}"
-                    )))?;
+                let captures =
+                    SEARCH_DATE_REGEX
+                        .captures(value)
+                        .ok_or(Status::invalid_argument(format!(
+                            "Expected number but got {value}"
+                        )))?;
                 let compare;
 
                 if let Some(comp_match) = captures.get(1) {
@@ -87,7 +91,10 @@ impl SearchField {
                 let number = captures.get(2).unwrap().as_str();
 
                 if let Ok(number) = number.parse::<u16>() {
-                    return Ok(Expr::cust_with_values(&format!("{ident} {compare} $1"), vec![number]));
+                    return Ok(Expr::cust_with_values(
+                        &format!("{ident} {compare} $1"),
+                        vec![number],
+                    ));
                 } else {
                     return Err(Status::invalid_argument(format!(
                         "Expected number but got {value}"

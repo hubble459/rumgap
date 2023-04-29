@@ -1,8 +1,8 @@
 use sea_orm_migration::prelude::*;
 
+use crate::extension::timestamps::TimestampExt;
 use crate::m20221127_174334_create_user::User;
 use crate::m20221130_215749_create_chapter::Chapter;
-use crate::trigger;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -46,18 +46,16 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
-                    .to_owned(),
+                    .take(),
             )
             .await?;
 
-        trigger::add_date_triggers(manager, ChapterOffset::Table.to_string()).await
+        manager.timestamps(ChapterOffset::Table).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        trigger::drop_date_triggers(manager, ChapterOffset::Table.to_string()).await?;
-
         manager
-            .drop_table(Table::drop().table(ChapterOffset::Table).to_owned())
+            .drop_table(Table::drop().table(ChapterOffset::Table).take())
             .await
     }
 }

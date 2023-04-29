@@ -26,6 +26,7 @@ impl Related<super::manga::Entity> for Entity {
     fn to() -> RelationDef {
         super::reading::Relation::Manga.def()
     }
+
     fn via() -> Option<RelationDef> {
         Some(super::reading::Relation::User.def().rev())
     }
@@ -35,6 +36,7 @@ impl Related<super::chapter::Entity> for Entity {
     fn to() -> RelationDef {
         super::chapter_offset::Relation::Chapter.def()
     }
+
     fn via() -> Option<RelationDef> {
         Some(super::chapter_offset::Relation::User.def().rev())
     }

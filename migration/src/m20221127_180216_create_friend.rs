@@ -1,7 +1,7 @@
 use sea_orm_migration::prelude::*;
 
+use crate::extension::timestamps::TimestampExt;
 use crate::m20221127_174334_create_user::User;
-use crate::trigger;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -31,18 +31,16 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
-                    .to_owned(),
+                    .take(),
             )
             .await?;
 
-        trigger::add_date_triggers(manager, Friend::Table.to_string()).await
+        manager.timestamps(Friend::Table).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        trigger::drop_date_triggers(manager, Friend::Table.to_string()).await?;
-
         manager
-            .drop_table(Table::drop().table(Friend::Table).to_owned())
+            .drop_table(Table::drop().table(Friend::Table).take())
             .await
     }
 }

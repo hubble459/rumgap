@@ -40,6 +40,7 @@ impl Related<super::user::Entity> for Entity {
     fn to() -> RelationDef {
         super::chapter_offset::Relation::User.def()
     }
+
     fn via() -> Option<RelationDef> {
         Some(super::chapter_offset::Relation::Chapter.def().rev())
     }

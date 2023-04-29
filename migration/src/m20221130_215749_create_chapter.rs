@@ -1,6 +1,7 @@
 use sea_orm_migration::prelude::*;
 
-use crate::{trigger, m20221130_215742_create_manga::Manga};
+use crate::extension::timestamps::TimestampExt;
+use crate::m20221130_215742_create_manga::Manga;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -37,18 +38,16 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
-                    .to_owned(),
+                    .take(),
             )
             .await?;
 
-        trigger::add_date_triggers(manager, Chapter::Table.to_string()).await
+        manager.timestamps(Chapter::Table).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        trigger::drop_date_triggers(manager, Chapter::Table.to_string()).await?;
-
         manager
-            .drop_table(Table::drop().table(Chapter::Table).to_owned())
+            .drop_table(Table::drop().table(Chapter::Table).take())
             .await
     }
 }

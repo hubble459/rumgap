@@ -54,5 +54,8 @@
     "files.associations": {
         "*.env*": "dotenv"
     },
-    "dotenv.enableAutocloaking": true
+    "dotenv.enableAutocloaking": true,
+    "rust-analyzer.rustfmt.extraArgs": [
+        "+nightly"
+    ]
 }
