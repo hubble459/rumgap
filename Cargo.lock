@@ -2708,6 +2708,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hmac",
+ "hyper",
  "jwt",
  "lazy_static",
  "listenfd",

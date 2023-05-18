@@ -9,6 +9,7 @@ extern crate phf;
 
 use std::env;
 
+use hyper::Uri;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
 use tonic::transport::Server;
@@ -16,6 +17,7 @@ use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
+use crate::interceptor::logger::LoggerLayer;
 use crate::util::updater;
 
 mod data;
@@ -62,9 +64,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .layer(tonic::service::interceptor(move |req| {
-            intercept(req, conn.clone())
+            inject_db(req, conn.clone())
         }))
         .layer(async_interceptor(interceptor::auth::check_auth))
+        .layer(tower::ServiceBuilder::new().layer(LoggerLayer::default()))
         .layer(tonic::service::interceptor(logger))
         .add_service(service::v1::user::server())
         .add_service(service::v1::friend::server())
@@ -96,7 +99,7 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
 }
 
 /// Add the database to all requests via their extensions
-fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
+fn inject_db(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
     req.extensions_mut().insert(conn);
 
     Ok(req)
@@ -105,10 +108,12 @@ fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 /// Log the incoming request
 fn logger(req: Request<()>) -> Result<Request<()>, Status> {
     let logged_in = req.extensions().get::<entity::user::Model>();
+    let target_uri = req.extensions().get::<Uri>();
 
     info!(
-        "[{}] ({})",
-        req.remote_addr().map_or(String::new(), |ip| ip.to_string()),
+        "[{}] -> [{:?}] ({})",
+        req.remote_addr().map_or(String::from("unknown"), |ip| ip.to_string()),
+        target_uri.map_or(String::from("unknown"), |uri| uri.path().to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
     );
 
