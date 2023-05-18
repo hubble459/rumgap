@@ -7,7 +7,6 @@ use sea_orm::{
 use tonic::{Request, Response, Status};
 
 use super::manga::MANGA_PARSER;
-use crate::interceptor::auth::LoggedInUser;
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
     Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest,
@@ -31,7 +30,7 @@ enum MetaOption {
 async fn get_reply(
     db: &DatabaseConnection,
     query: Select<entity::manga::Entity>,
-    logged_in: Option<LoggedInUser>,
+    logged_in: Option<entity::user::Model>,
     meta_option: MetaOption,
 ) -> Result<MetaReply, Status> {
     let reply = match meta_option {
@@ -88,7 +87,7 @@ enum StatsCount {
 impl Meta for MyMeta {
     async fn genres(&self, req: Request<MetaGenresRequest>) -> Result<Response<MetaReply>, Status> {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = req.extensions().get::<LoggedInUser>().cloned();
+        let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
         let query = entity::manga::Entity::find().select_only().column_as(
             Expr::cust("distinct unnest(manga.genres)"),
@@ -114,7 +113,7 @@ impl Meta for MyMeta {
         req: Request<MetaHostnamesRequest>,
     ) -> Result<Response<MetaReply>, Status> {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = req.extensions().get::<LoggedInUser>().cloned();
+        let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
         let query = entity::manga::Entity::find().select_only().column_as(
             Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"),
@@ -137,12 +136,12 @@ impl Meta for MyMeta {
     }
 
     async fn stats(&self, req: Request<Empty>) -> Result<Response<StatsReply>, Status> {
-        let logged_in = req
-            .extensions()
-            .get::<LoggedInUser>()
-            .ok_or(Status::unauthenticated(
-                "Missing bearer token! Log in first",
-            ))?;
+        let logged_in =
+            req.extensions()
+                .get::<entity::user::Model>()
+                .ok_or(Status::unauthenticated(
+                    "Missing bearer token! Log in first",
+                ))?;
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
 
         let user_id = logged_in.id;

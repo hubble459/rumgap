@@ -11,7 +11,6 @@ use tonic::{Request, Response, Status};
 
 use super::manga::MANGA_PARSER;
 use crate::data;
-use crate::interceptor::auth::LoggedInUser;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery,
@@ -55,7 +54,7 @@ impl Chapter for MyChapter {
         request: Request<ChapterRequest>,
     ) -> Result<Response<ChapterReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.manga_id;
 
@@ -112,7 +111,7 @@ impl Chapter for MyChapter {
         request: Request<PaginateChapterQuery>,
     ) -> Result<Response<ChaptersReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
         let req = req.paginate_query.clone().unwrap_or_default();

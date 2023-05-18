@@ -3,7 +3,7 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel
 use tonic::{Request, Response, Status};
 
 use super::manga::get_manga_by_id;
-use crate::interceptor::auth::{LoggedInUser, UserPermissions};
+use crate::interceptor::auth::UserPermissions;
 use crate::proto::reading_server::{Reading, ReadingServer};
 use crate::proto::{
     Empty, Id, MangaReply, ReadingPatchRequest, ReadingPostRequest, UpdateChapterOffsetRequest,
@@ -20,7 +20,7 @@ impl Reading for MyReading {
         request: Request<ReadingPatchRequest>,
     ) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
+        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
         let req = request.get_ref();
 
         let mut reading = entity::reading::Entity::find_by_id((logged_in.id, req.manga_id))
@@ -47,7 +47,7 @@ impl Reading for MyReading {
         request: Request<ReadingPostRequest>,
     ) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
+        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
         let req = request.get_ref();
 
         let saved = entity::reading::ActiveModel {
@@ -67,7 +67,7 @@ impl Reading for MyReading {
     /// Delete a reading index
     async fn delete(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
+        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
         let req = request.get_ref();
 
         // Delete reading
@@ -90,7 +90,7 @@ impl Reading for MyReading {
         request: Request<UpdateChapterOffsetRequest>,
     ) -> Result<Response<Empty>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().unwrap();
+        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
         let req = request.get_ref();
 
         // Find offset or create new

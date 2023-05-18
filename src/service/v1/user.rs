@@ -1,12 +1,12 @@
 use migration::{Alias, Expr, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, IntoActiveModel,
 };
 use tonic::{Request, Response, Status};
 
 use crate::data;
-use crate::interceptor::auth::{sign, LoggedInUser};
+use crate::interceptor::auth::sign;
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
@@ -36,7 +36,7 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
 }
 
 #[derive(Debug, Default)]
-pub struct MyUser {}
+pub struct MyUser;
 
 #[tonic::async_trait]
 impl User for MyUser {
@@ -168,7 +168,7 @@ impl User for MyUser {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::unauthenticated(
                     "Missing bearer token! Log in first",
                 ))?;
@@ -187,14 +187,14 @@ impl User for MyUser {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::unauthenticated(
                     "Missing bearer token! Log in first",
                 ))?;
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
 
-        let mut active_user = logged_in.0.clone().into_active_model();
+        let mut active_user = logged_in.clone().into_active_model();
 
         if let Some(username) = &req.username {
             active_user.username = ActiveValue::Set(verify::username(username)?);
@@ -232,7 +232,7 @@ impl User for MyUser {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::unauthenticated(
                     "Missing bearer token! Log in first",
                 ))?;
@@ -246,7 +246,7 @@ impl User for MyUser {
             // TODO: Should it throw a 409?
         } else {
             device_ids.push(req.token.clone());
-            let mut active_user = logged_in.0.clone().into_active_model();
+            let mut active_user = logged_in.clone().into_active_model();
             active_user.device_ids = ActiveValue::Set(device_ids);
 
             active_user
@@ -265,7 +265,7 @@ impl User for MyUser {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::unauthenticated(
                     "Missing bearer token! Log in first",
                 ))?;
@@ -276,7 +276,7 @@ impl User for MyUser {
 
         if let Some(pos) = device_ids.iter().position(|token| token == &req.token) {
             device_ids.remove(pos);
-            let mut active_user = logged_in.0.clone().into_active_model();
+            let mut active_user = logged_in.clone().into_active_model();
             active_user.device_ids = ActiveValue::Set(device_ids);
 
             active_user

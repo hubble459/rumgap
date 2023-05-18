@@ -16,7 +16,6 @@ use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
-use crate::interceptor::auth::LoggedInUser;
 use crate::util::updater;
 
 mod data;
@@ -105,7 +104,7 @@ fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 
 /// Log the incoming request
 fn logger(req: Request<()>) -> Result<Request<()>, Status> {
-    let logged_in = req.extensions().get::<LoggedInUser>();
+    let logged_in = req.extensions().get::<entity::user::Model>();
 
     info!(
         "[{}] ({})",

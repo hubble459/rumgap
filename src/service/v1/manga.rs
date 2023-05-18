@@ -17,7 +17,6 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
-use crate::interceptor::auth::LoggedInUser;
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
@@ -42,7 +41,7 @@ pub const NEXT_UPDATE_QUERY: &str =
 
 /// Get a "full" manga by it's ID
 #[rustfmt::skip]
-pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedInUser>, manga_id: i32) -> Result<MangaReply, Status> {
+pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity::user::Model>, manga_id: i32) -> Result<MangaReply, Status> {
     use entity::chapter::Column as ChapterColumn;
 
     let manga = entity::manga::Entity::find_by_id(manga_id)
@@ -81,7 +80,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedI
 /// Save/ refresh and get a manga
 pub async fn save_manga(
     db: &DatabaseConnection,
-    logged_in: Option<&LoggedInUser>,
+    logged_in: Option<&entity::user::Model>,
     id: Option<i32>,
     url: Url,
 ) -> Result<MangaReply, Status> {
@@ -167,7 +166,7 @@ pub async fn save_manga(
     get_manga_by_id(db, logged_in, manga_id).await
 }
 
-pub fn index_manga(logged_in: Option<LoggedInUser>) -> Select<entity::manga::Entity> {
+pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::manga::Entity> {
     entity::manga::Entity::find()
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
@@ -207,7 +206,7 @@ impl Manga for MyManga {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::permission_denied(
                     "You can only add a manga if you are logged in",
                 ))?;
@@ -245,7 +244,7 @@ impl Manga for MyManga {
             .clone();
         let logged_in = request
             .extensions()
-            .get::<LoggedInUser>()
+            .get::<entity::user::Model>()
             .ok_or(Status::permission_denied(
                 "You can only add a manga if you are logged in",
             ))?
@@ -290,7 +289,7 @@ impl Manga for MyManga {
     /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -325,7 +324,7 @@ impl Manga for MyManga {
     /// Force update a manga
     async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -353,7 +352,7 @@ impl Manga for MyManga {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::permission_denied(
                     "You can only add a manga if you are logged in",
                 ))?;
@@ -379,7 +378,7 @@ impl Manga for MyManga {
         request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().cloned();
+        let logged_in = request.extensions().get::<entity::user::Model>().cloned();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let mut paginate = index_manga(logged_in);

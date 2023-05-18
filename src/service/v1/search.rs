@@ -10,7 +10,6 @@ use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
 use super::manga::MANGA_PARSER;
-use crate::interceptor::auth::LoggedInUser;
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 
@@ -32,7 +31,7 @@ impl Search for MySearch {
         request: Request<SearchRequest>,
     ) -> Result<Response<SearchReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
 
         let search_results = timeout(
