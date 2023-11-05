@@ -10,10 +10,10 @@ use crate::proto::{
 };
 
 #[derive(Debug, Default)]
-pub struct MyReading {}
+pub struct ReadingController;
 
 #[tonic::async_trait]
-impl Reading for MyReading {
+impl Reading for ReadingController {
     /// Edit reading progress
     async fn update(
         &self,
@@ -126,4 +126,4 @@ impl Reading for MyReading {
     }
 }
 
-crate::export_service!(ReadingServer, MyReading, auth = UserPermissions::USER);
+crate::export_service!(ReadingServer, ReadingController, auth = UserPermissions::USER);

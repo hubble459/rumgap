@@ -13,6 +13,7 @@ use crate::proto::{
     DeviceTokenRequest, Empty, Id, PaginateQuery, PaginateReply, UserFullReply,
     UserRegisterRequest, UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
+use crate::util::auth::Authorize;
 use crate::util::{argon, verify};
 
 #[rustfmt::skip]
@@ -36,10 +37,10 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
 }
 
 #[derive(Debug, Default)]
-pub struct MyUser;
+pub struct UserController;
 
 #[tonic::async_trait]
-impl User for MyUser {
+impl User for UserController {
     /// Get a single user
     async fn get(&self, request: Request<Id>) -> Result<Response<UserFullReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
@@ -165,13 +166,7 @@ impl User for MyUser {
 
     /// Get logged in user
     async fn me(&self, request: Request<Empty>) -> Result<Response<UserFullReply>, Status> {
-        let logged_in =
-            request
-                .extensions()
-                .get::<entity::user::Model>()
-                .ok_or(Status::unauthenticated(
-                    "Missing bearer token! Log in first",
-                ))?;
+        let logged_in = request.authorize()?;
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
 
         Ok(Response::new(
@@ -184,13 +179,7 @@ impl User for MyUser {
         &self,
         request: Request<UserUpdateRequest>,
     ) -> Result<Response<UserFullReply>, Status> {
-        let logged_in =
-            request
-                .extensions()
-                .get::<entity::user::Model>()
-                .ok_or(Status::unauthenticated(
-                    "Missing bearer token! Log in first",
-                ))?;
+        let logged_in = request.authorize()?;
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
 
@@ -229,13 +218,7 @@ impl User for MyUser {
         &self,
         request: Request<DeviceTokenRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let logged_in =
-            request
-                .extensions()
-                .get::<entity::user::Model>()
-                .ok_or(Status::unauthenticated(
-                    "Missing bearer token! Log in first",
-                ))?;
+        let logged_in = request.authorize()?;
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
 
@@ -262,13 +245,7 @@ impl User for MyUser {
         &self,
         request: Request<DeviceTokenRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let logged_in =
-            request
-                .extensions()
-                .get::<entity::user::Model>()
-                .ok_or(Status::unauthenticated(
-                    "Missing bearer token! Log in first",
-                ))?;
+        let logged_in = request.authorize()?;
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
         let req = request.get_ref();
 
@@ -291,4 +268,4 @@ impl User for MyUser {
     }
 }
 
-crate::export_service!(UserServer, MyUser);
+crate::export_service!(UserServer, UserController);

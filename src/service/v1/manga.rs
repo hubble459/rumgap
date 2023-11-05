@@ -190,10 +190,10 @@ pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::man
 }
 
 #[derive(Debug, Default)]
-pub struct MyManga {}
+pub struct MangaController;
 
 #[tonic::async_trait]
-impl Manga for MyManga {
+impl Manga for MangaController {
     type CreateManyStream = ResponseStream;
 
     /// Create one manga
@@ -430,4 +430,4 @@ impl Manga for MyManga {
     }
 }
 
-crate::export_service!(MangaServer, MyManga);
+crate::export_service!(MangaServer, MangaController);

@@ -14,7 +14,7 @@ use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 
 #[derive(Debug, Default)]
-pub struct MySearch {}
+pub struct SearchController;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum QueryAs {
@@ -24,7 +24,7 @@ enum QueryAs {
 }
 
 #[tonic::async_trait]
-impl Search for MySearch {
+impl Search for SearchController {
     /// Edit reading progress
     async fn manga(
         &self,
@@ -99,4 +99,4 @@ impl Search for MySearch {
     }
 }
 
-crate::export_service!(SearchServer, MySearch);
+crate::export_service!(SearchServer, SearchController);

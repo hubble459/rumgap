@@ -17,10 +17,10 @@ use crate::proto::{
 };
 
 #[derive(Debug, Default)]
-pub struct MyChapter {}
+pub struct ChapterController;
 
 #[tonic::async_trait]
-impl Chapter for MyChapter {
+impl Chapter for ChapterController {
     /// Get chapter images
     async fn images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
@@ -184,4 +184,4 @@ impl Chapter for MyChapter {
     }
 }
 
-crate::export_service!(ChapterServer, MyChapter);
+crate::export_service!(ChapterServer, ChapterController);

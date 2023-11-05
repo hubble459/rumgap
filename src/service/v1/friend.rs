@@ -106,10 +106,10 @@ async fn index(
 }
 
 #[derive(Debug, Default)]
-pub struct MyFriend {}
+pub struct FriendController;
 
 #[tonic::async_trait]
-impl Friend for MyFriend {
+impl Friend for FriendController {
     /// Get all following from logged in user
     async fn following(
         &self,
@@ -175,4 +175,4 @@ impl Friend for MyFriend {
     }
 }
 
-crate::export_service!(FriendServer, MyFriend, auth = UserPermissions::USER);
+crate::export_service!(FriendServer, FriendController, auth = UserPermissions::USER);

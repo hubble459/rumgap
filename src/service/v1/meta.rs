@@ -12,9 +12,10 @@ use crate::proto::{
     MetaReply, StatsReply,
 };
 use crate::MANGA_PARSER;
+use crate::util::auth::Authorize;
 
 #[derive(Debug, Default)]
-pub struct MyMeta {}
+pub struct MetaController;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum QueryAs {
@@ -83,7 +84,7 @@ enum StatsCount {
 }
 
 #[tonic::async_trait]
-impl Meta for MyMeta {
+impl Meta for MetaController {
     async fn genres(&self, req: Request<MetaGenresRequest>) -> Result<Response<MetaReply>, Status> {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
@@ -135,12 +136,7 @@ impl Meta for MyMeta {
     }
 
     async fn stats(&self, req: Request<Empty>) -> Result<Response<StatsReply>, Status> {
-        let logged_in =
-            req.extensions()
-                .get::<entity::user::Model>()
-                .ok_or(Status::unauthenticated(
-                    "Missing bearer token! Log in first",
-                ))?;
+        let logged_in = req.authorize()?;
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
 
         let user_id = logged_in.id;
@@ -190,4 +186,4 @@ impl Meta for MyMeta {
     }
 }
 
-crate::export_service!(MetaServer, MyMeta);
+crate::export_service!(MetaServer, MetaController);
