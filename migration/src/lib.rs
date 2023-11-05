@@ -1,7 +1,6 @@
 pub use sea_orm_migration::prelude::*;
 
 mod extension;
-
 mod m20221127_174330_create_triggers;
 mod m20221127_174334_create_user;
 mod m20221127_180216_create_friend;

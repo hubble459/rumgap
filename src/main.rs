@@ -12,7 +12,7 @@ use std::env;
 use hyper::Uri;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
@@ -48,11 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = env::var("HOST").unwrap_or(String::from("127.0.0.1"));
     let port = env::var("PORT").unwrap_or(String::from("8000"));
     let server_url = format!("{host}:{port}");
+    let addr = server_url.parse()?;
 
     // Establish connection to database and apply migrations
     let conn = conn_db(&db_url).await.unwrap();
 
-    let addr = server_url.parse()?;
 
     info!("Running server on {}", addr);
 
@@ -62,7 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         updater::watch_updates(&cloned_conn).await;
     });
 
+    let tls = setup_tls();
+
     Server::builder()
+        .tls_config(tls)?
         .layer(tonic::service::interceptor(move |req| {
             inject_db(req, conn.clone())
         }))
@@ -85,6 +88,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+fn setup_tls() -> ServerTlsConfig {
+    let cert = include_str!("tls/server-cert.pem");
+    let key = include_str!("tls/server-key.pem");
+    let server_identity = Identity::from_pem(cert, key);
+
+    ServerTlsConfig::new().identity(server_identity)
 }
 
 /// Make a connection to the database and run migrations
@@ -112,7 +123,8 @@ fn logger(req: Request<()>) -> Result<Request<()>, Status> {
 
     info!(
         "[{}] -> [{:?}] ({})",
-        req.remote_addr().map_or(String::from("unknown"), |ip| ip.to_string()),
+        req.remote_addr()
+            .map_or(String::from("unknown"), |ip| ip.to_string()),
         target_uri.map_or(String::from("unknown"), |uri| uri.path().to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
     );

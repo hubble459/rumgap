@@ -6,10 +6,19 @@ publish = false
 version = "0.1.0"
 
 [workspace]
+resolver = "2"
 members = [".", "migration", "entity"]
 
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies, but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
 [dependencies]
-tonic = { version = "0.9", features = ["gzip"] }
+tonic = { version = "0.9", features = ["gzip", "tls"] }
 tonic-reflection = "0.9"
 tower = { version = "0.4" }
 tonic-async-interceptor = { git = "https://github.com/abhizer/tonic-async-interceptor" }
