@@ -1,4 +1,4 @@
-use manga_parser::parser::Parser;
+use manga_parser::scraper::MangaSearcher;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
@@ -6,12 +6,12 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
-use super::manga::MANGA_PARSER;
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
     Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest,
     MetaReply, StatsReply,
 };
+use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
 pub struct MyMeta {}
@@ -65,8 +65,7 @@ async fn get_reply(
         },
         MetaOption::Online => MetaReply {
             items: MANGA_PARSER
-                .can_search()
-                .unwrap_or_default()
+                .searchable_hostnames()
                 .iter()
                 .map(|url| url.to_string())
                 .collect(),

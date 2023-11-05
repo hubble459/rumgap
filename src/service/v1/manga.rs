@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use futures::Stream;
-use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
+use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -22,13 +22,9 @@ use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
 };
 use crate::util::search::manga::lucene_filter;
-use crate::{data, util};
+use crate::{data, util, MANGA_PARSER};
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<MangaReply, Status>> + Send>>;
-
-lazy_static! {
-    pub static ref MANGA_PARSER: MangaParser = MangaParser::new();
-}
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum MangaOnlyUrlAndId {
@@ -88,8 +84,8 @@ pub async fn save_manga(
 
     // TODO: right single quote and probably other special characters
     // TODO: should be replaced with normal characters
-    let manga = MANGA_PARSER
-        .manga(url)
+    let manga: manga_parser::model::Manga = MANGA_PARSER
+        .manga(&url)
         .await
         .map_err(|e| Status::internal(e.to_string()))?;
 
@@ -98,10 +94,10 @@ pub async fn save_manga(
         title: Set(manga.title),
         description: Set(manga.description),
         is_ongoing: Set(manga.is_ongoing),
-        cover: Set(manga.cover.map(|url| url.to_string())),
+        cover: Set(manga.cover_url.map(|url| url.to_string())),
         url: Set(manga.url.to_string()),
         authors: Set(manga.authors),
-        alt_titles: Set(manga.alt_titles),
+        alt_titles: Set(manga.alternative_titles),
         genres: Set(manga.genres),
         ..Default::default()
     }
@@ -144,7 +140,7 @@ pub async fn save_manga(
                 number: Set(chapter.number),
                 url: Set(chapter.url.to_string()),
                 title: Set(chapter.title.clone()),
-                posted: Set(chapter.posted.map(|date| date.into())),
+                posted: Set(chapter.date.map(|date| date.into())),
                 ..Default::default()
             });
         }

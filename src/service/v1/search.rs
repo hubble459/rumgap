@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use manga_parser::parser::Parser;
+use manga_parser::scraper::MangaSearcher;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
@@ -9,7 +9,7 @@ use sea_orm::{
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
-use super::manga::MANGA_PARSER;
+use crate::MANGA_PARSER;
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 
@@ -36,7 +36,7 @@ impl Search for MySearch {
 
         let search_results = timeout(
             Duration::from_secs(5),
-            MANGA_PARSER.search(req.keyword.clone(), req.hostnames.clone()),
+            MANGA_PARSER.search(&req.keyword, req.hostnames.as_slice()),
         )
         .await
         .map_err(|e| Status::deadline_exceeded(e.to_string()))?
@@ -87,7 +87,7 @@ impl Search for MySearch {
                     SearchManga {
                         url: item.url.to_string(),
                         title: item.title,
-                        cover: item.cover.map(|cover| cover.to_string()),
+                        cover: item.cover_url.map(|cover| cover.to_string()),
                         posted: item.posted.map(|date| date.timestamp_millis()),
                         is_reading: existing
                             .map_or(false, |(_id, _url, progress)| progress.is_some()),

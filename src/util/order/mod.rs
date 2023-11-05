@@ -30,7 +30,7 @@ pub fn parse(
             } else {
                 Order::Asc
             };
-            orders.push((Expr::cust(column), order));
+            orders.push((Expr::cust(*column), order));
         } else {
             return Err(Status::invalid_argument(format!("Can not sort on {name}")));
         }

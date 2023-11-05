@@ -1,5 +1,6 @@
 pub use sea_orm_migration::prelude::*;
 
+#[allow(hidden_glob_reexports)]
 mod extension;
 mod m20221127_174330_create_triggers;
 mod m20221127_174334_create_user;

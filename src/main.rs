@@ -10,6 +10,7 @@ extern crate phf;
 use std::env;
 
 use hyper::Uri;
+use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
 use tonic::transport::{Identity, Server, ServerTlsConfig};
@@ -24,6 +25,10 @@ mod data;
 mod interceptor;
 mod service;
 mod util;
+
+lazy_static! {
+    static ref MANGA_PARSER: ScraperManager = manga_parser::scraper::scraper_manager::ScraperManager::default();
+}
 
 /// Load all ProtoBuf files
 pub mod proto {
@@ -52,7 +57,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Establish connection to database and apply migrations
     let conn = conn_db(&db_url).await.unwrap();
-
 
     info!("Running server on {}", addr);
 

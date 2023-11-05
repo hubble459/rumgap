@@ -1,7 +1,7 @@
 use std::num::TryFromIntError;
 
-use manga_parser::parser::Parser;
 use manga_parser::Url;
+use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
@@ -9,8 +9,7 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
-use super::manga::MANGA_PARSER;
-use crate::data;
+use crate::{data, MANGA_PARSER};
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery,
@@ -37,7 +36,7 @@ impl Chapter for MyChapter {
 
         // Get images
         let images = MANGA_PARSER
-            .images(&Url::parse(&chapter.url).unwrap())
+            .chapter_images(&Url::parse(&chapter.url).unwrap())
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
