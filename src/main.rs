@@ -12,7 +12,7 @@ use std::env;
 use hyper::Uri;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{Database, DatabaseConnection, ConnectOptions};
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
@@ -47,6 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
     log4rs::init_file("log4rs.yml", Default::default()).ok();
 
+    println!("{}", String::from_utf8(proto::FILE_DESCRIPTOR_SET.to_vec()).unwrap());
+
     // Get env vars
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file");
@@ -66,10 +68,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         updater::watch_updates(&cloned_conn).await;
     });
 
-    let tls = setup_tls();
+    // let tls = setup_tls();
 
     Server::builder()
-        .tls_config(tls)?
+        // .tls_config(tls)?
         .layer(tonic::service::interceptor(move |req| {
             inject_db(req, conn.clone())
         }))

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::{env, io};
 
 #[cfg(windows)]
@@ -7,9 +7,15 @@ use winres::WindowsResource;
 fn main() -> io::Result<()> {
     let descriptor_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("descriptor.bin");
 
+    let protos = glob::glob("./proto/rumgap/**/*.proto")
+        .unwrap()
+        .collect::<Result<Vec<PathBuf>, glob::GlobError>>()
+        .unwrap();
+
     tonic_build::configure()
         .file_descriptor_set_path(descriptor_path)
-        .compile(&["proto/rumgap/v1/rumgap.proto"], &["proto"])?;
+        .build_client(false)
+        .compile(protos.as_slice(), &["proto"])?;
 
     #[cfg(windows)]
     {

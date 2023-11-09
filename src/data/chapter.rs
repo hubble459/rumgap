@@ -1,4 +1,5 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTime;
 use sea_orm::FromQueryResult;
 
 use crate::proto::{ChapterOffset, ChapterReply};
@@ -11,8 +12,8 @@ pub struct Full {
     pub title: String,
     pub number: f32,
     pub posted: Option<DateTimeWithTimeZone>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
 
     // special
     pub offset: Option<i32>,

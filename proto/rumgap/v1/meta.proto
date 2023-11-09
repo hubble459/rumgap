@@ -6,11 +6,11 @@ message MetaReply {
 }
 
 message MetaHostnamesRequest {
-    optional MetaHostnamesOption option = 1;
+    MetaHostnamesOption option = 1;
 }
 
 message MetaGenresRequest {
-    optional MetaGenresOption option = 1;
+    MetaGenresOption option = 1;
 }
 
 message StatsReply {

@@ -1,4 +1,4 @@
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTime;
 use sea_orm::FromQueryResult;
 
 use crate::proto::UserFullReply;
@@ -17,8 +17,8 @@ pub struct Full {
     // pub count_planned: i64,
     // pub count_completed: i64,
     // pub count_dropped: i64,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 impl From<Full> for UserFullReply {

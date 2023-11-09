@@ -53,6 +53,7 @@ fcm = "0.9.2"
 hyper = { version = "0.14" }
 
 [build-dependencies]
+glob = "0.3.1"
 tonic-build = "0.10"
 
 [target.'cfg(windows)'.build-dependencies]

@@ -1,0 +1,20 @@
+title_selector: "div.post-title h1"
+description_selector: "div.summary__content"
+cover_url_selector: "div.summary_image img"
+status_selector: "div.post-status div.summary-content"
+authors_selector: "div.author-content a"
+genres_selector: "div.genres-content a"
+alternative_titles_selector: div.summary-heading:has('h5:icontains("alternative")') + div
+
+chapter_external_selectors:
+  - id: script:icontains('mangaid')
+    regex: var mangaID = '(\d+)';
+    url: /ajax-list-chapter?mangaID={id}
+
+chapters_selector: "li.wp-manga-chapter"
+chapter_number_selector: "span.chapter-number"
+chapter_title_selector: "a"
+chapter_date_selector: "span i"
+chapter_href_selector: "a"
+date_formats: 
+  - "yyyy-MM-dd"
