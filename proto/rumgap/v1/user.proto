@@ -22,9 +22,9 @@ message UserRequest {
 }
 
 message UserUpdateRequest {
-    string password = 1;
-    string username = 2;
-    string email = 3;
+    optional string password = 1;
+    optional string username = 2;
+    optional string email = 3;
     repeated string preferred_hostnames = 4;
     repeated string device_ids = 5;
 }

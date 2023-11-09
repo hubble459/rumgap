@@ -15,6 +15,7 @@ fn main() -> io::Result<()> {
     tonic_build::configure()
         .file_descriptor_set_path(descriptor_path)
         .build_client(false)
+        .protoc_arg("--experimental_allow_proto3_optional")
         .compile(protos.as_slice(), &["proto"])?;
 
     #[cfg(windows)]

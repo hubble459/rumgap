@@ -2,15 +2,15 @@ syntax = "proto3";
 package rumgap.v1;
 
 message PaginateQuery {
-    uint64 per_page = 1;
-    uint64 page = 2;
+    optional uint64 per_page = 1;
+    optional uint64 page = 2;
 }
 
 message PaginateSearchQuery {
-    uint64 per_page = 1;
-    uint64 page = 2;
-    string search = 3;
-    string order = 4;
+    optional uint64 per_page = 1;
+    optional uint64 page = 2;
+    optional string search = 3;
+    optional string order = 4;
 }
 
 message PaginateReply {

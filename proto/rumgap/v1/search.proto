@@ -8,11 +8,11 @@ message SearchRequest {
 }
 
 message SearchManga {
-    int32 manga_id = 1;
+    optional int32 manga_id = 1;
     string title = 2;
     string url = 3;
-    int64 posted = 4;
-    string cover = 5;
+    optional int64 posted = 4;
+    optional string cover = 5;
     bool is_reading = 6;
 
 }
