@@ -12,8 +12,8 @@ use std::env;
 use hyper::Uri;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
-use sea_orm::{Database, DatabaseConnection, ConnectOptions};
-use tonic::transport::{Identity, Server, ServerTlsConfig};
+use sea_orm::{Database, DatabaseConnection};
+use tonic::transport::Server;
 use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
@@ -27,7 +27,8 @@ mod service;
 mod util;
 
 lazy_static! {
-    static ref MANGA_PARSER: ScraperManager = manga_parser::scraper::scraper_manager::ScraperManager::default();
+    static ref MANGA_PARSER: ScraperManager =
+        manga_parser::scraper::scraper_manager::ScraperManager::default();
 }
 
 /// Load all ProtoBuf files
@@ -46,8 +47,6 @@ pub mod proto {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
     log4rs::init_file("log4rs.yml", Default::default()).ok();
-
-    println!("{}", String::from_utf8(proto::FILE_DESCRIPTOR_SET.to_vec()).unwrap());
 
     // Get env vars
     dotenvy::dotenv().ok();
@@ -68,10 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         updater::watch_updates(&cloned_conn).await;
     });
 
-    // let tls = setup_tls();
-
     Server::builder()
-        // .tls_config(tls)?
         .layer(tonic::service::interceptor(move |req| {
             inject_db(req, conn.clone())
         }))
@@ -94,14 +90,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
-}
-
-fn setup_tls() -> ServerTlsConfig {
-    let cert = include_str!("tls/server-cert.pem");
-    let key = include_str!("tls/server-key.pem");
-    let server_identity = Identity::from_pem(cert, key);
-
-    ServerTlsConfig::new().identity(server_identity)
 }
 
 /// Make a connection to the database and run migrations
