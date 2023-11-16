@@ -4,6 +4,7 @@ use std::time::Duration;
 use chrono::Utc;
 use futures::Stream;
 use manga_parser::Url;
+use manga_parser::error::ScrapeError;
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
@@ -82,12 +83,18 @@ pub async fn save_manga(
 ) -> Result<MangaReply, Status> {
     info!("Saving manga [{}]", url.to_string());
 
-    // TODO: right single quote and probably other special characters
+    // TODO: backtick and probably other special characters
     // TODO: should be replaced with normal characters
     let manga: manga_parser::model::Manga = MANGA_PARSER
         .manga(&url)
         .await
-        .map_err(|e| Status::internal(e.to_string()))?;
+        .map_err(|e| {
+            if let ScrapeError::WebsiteNotSupported(e) = e {
+                Status::unavailable(e.to_string())
+            } else {
+                Status::internal(e.to_string())
+            }
+        })?;
 
     let saved = entity::manga::ActiveModel {
         id: id.map_or(NotSet, Set),

@@ -50,7 +50,7 @@ futures-util = {version = "0"}
 # manga-parser = { git = "https://github.com/hubble459/rs-manga-parser" }
 manga_parser = { path = "../manga_parser" }
 fcm = "0"
-hyper = { version = "1" }
+hyper = { version = "0" }
 
 [build-dependencies]
 glob = "0"

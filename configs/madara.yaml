@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../schema/config.schema.yaml
 name: madara
 
 accept:
@@ -52,13 +53,13 @@ manga:
             - src
     number: span.chapter-number
     date:
-      - selector: span.chapter-release-date span a
+      - span.chapter-release-date i
+      - selector: span.chapter-release-date a
         options:
           text_selection:
             type: attributes
             attributes:
               - title
-      - span i
 
     fetch_external:
       - id: script:icontains('mangaid')

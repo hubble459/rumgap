@@ -1,0 +1,8 @@
+type: object
+required:
+  - selectors
+properties:
+  selectors:
+    type: array
+    items:
+      $ref: "string_selector.schema.yaml"

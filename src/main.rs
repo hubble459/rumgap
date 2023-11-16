@@ -19,7 +19,6 @@ use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
 use crate::interceptor::logger::LoggerLayer;
-use crate::util::updater;
 
 mod data;
 mod interceptor;
@@ -62,10 +61,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Running server on {}", addr);
 
     // Start updater
-    // let cloned_conn = conn.clone();
-    // tokio::spawn(async move {
-    //     updater::watch_updates(&cloned_conn).await;
-    // });
+    let cloned_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::util::updater::watch_updates(&cloned_conn).await;
+    });
 
     Server::builder()
         .layer(tonic::service::interceptor(move |req| {

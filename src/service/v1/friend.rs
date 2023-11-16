@@ -6,7 +6,7 @@ use sea_orm::{
 use tonic::{Request, Response, Status};
 
 use crate::data;
-use crate::interceptor::auth::{UserPermissions};
+use crate::interceptor::auth::UserPermissions;
 use crate::proto::friend_server::{Friend, FriendServer};
 use crate::proto::{
     FriendRequest, PaginateQuery, PaginateReply, UserFullReply, UserReply, UsersReply,

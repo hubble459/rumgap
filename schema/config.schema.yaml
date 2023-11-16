@@ -1,0 +1,144 @@
+$id: config.schema.yaml
+title: Manga Scraper
+description: A manga scraper configuration
+type: object
+required:
+  - name
+  - accept
+  - manga
+properties:
+  name:
+    type: string
+  accept:
+    type: object
+    properties:
+      selectors:
+        type: array
+        items:
+          type: string
+      hostnames:
+        type: array
+        items:
+          type: string
+  manga:
+    $ref: "#/$defs/manga"
+  search:
+    $ref: "#/$defs/search"
+  images:
+    type: object
+    properties:
+      image_selector:
+        $ref: array_selector.schema.yaml
+      fetch_external:
+        $ref: "#/$defs/fetch_external"
+  date_formats:
+    type: array
+    description: Date formats the website uses based on https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+    uniqueItems: true
+    items:
+      type: string
+$defs:
+  manga:
+    description: Scraper queries for a manga homepage
+    type: object
+    required:
+      - title
+      - description
+      - chapter
+    properties:
+      title:
+        $ref: string_selector.schema.yaml
+      description:
+        $ref: string_selector.schema.yaml
+      cover_url:
+        $ref: string_selector.schema.yaml
+      status:
+        $ref: string_selector.schema.yaml
+      authors:
+        $ref: array_selector.schema.yaml
+      genres:
+        $ref: array_selector.schema.yaml
+      alt_titles:
+        $ref: array_selector.schema.yaml
+      chapter:
+        $ref: "#/$defs/chapter"
+  chapter:
+    type: object
+    required:
+      - base
+      - url
+      - title
+    properties:
+      base:
+        $ref: string_selector.schema.yaml
+      title:
+        $ref: string_selector.schema.yaml
+      number:
+        $ref: string_selector.schema.yaml
+      date:
+        $ref: string_selector.schema.yaml
+      url:
+        $ref: string_selector.schema.yaml
+      fetch_external:
+        $ref: "#/$defs/fetch_external"
+  fetch_external:
+    type: array
+    items:
+      type: object
+      properties:
+        id:
+          $ref: string_selector.schema.yaml
+        regex:
+          type: string
+          description:
+            Regex should return a group called id which is used in
+            the url
+        url:
+          type: string
+          description:
+            URL where chapters are hosted. Will replace {id} with id
+            found from regex
+        method:
+          default: get
+          enum:
+            - get
+            - post
+  search:
+    type: object
+    required:
+      - search_url
+      - selectors
+    properties:
+      search_url:
+        type: string
+        examples:
+          - '"{host}/search?q={query}"'
+      query_format:
+        type: object
+        required:
+          - replace_regex
+          - replace_with
+        properties:
+          replace_regex:
+            type: string
+            description: Replace
+          replace_with:
+            type: string
+            description: Replace what regex matched with this string
+      selectors:
+        type: object
+        required:
+          - base
+          - url
+          - title
+        properties:
+          base:
+            $ref: string_selector.schema.yaml
+          url:
+            $ref: string_selector.schema.yaml
+          title:
+            $ref: string_selector.schema.yaml
+          cover_url:
+            $ref: string_selector.schema.yaml
+          posted:
+            $ref: string_selector.schema.yaml
