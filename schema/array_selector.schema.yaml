@@ -1,0 +1,86 @@
+$id: array_selector.schema.yaml
+title: Array Selector
+description: Select a list of elements and extract their texts in an array
+oneOf:
+  - type: array
+    minItems: 1
+    items:
+      anyOf:
+        - $ref: "#/$defs/selector"
+        - type: string
+  - $ref: "#/$defs/selector"
+  - type: string
+    description: Query selector
+
+$defs:
+  selector:
+    type: object
+    required:
+      - selector
+    properties:
+      selector:
+        type: string
+        description: Query selector
+      options:
+        type: object
+        properties:
+          cleanup:
+            description: Cleanup text that has been scraped with regexps
+            type: array
+            items:
+              type: object
+              required:
+                - replace_regex
+                - replace_with
+              properties:
+                replace_regex:
+                  type: string
+                  description: Replace what matches with this regex
+                  default: \s\s+
+                replace_with:
+                  type: string
+                  description: Replace matched parts with this string
+                  default: "' '"
+          fix_capitalization:
+            description: Fix bad capitalization
+            default: sentence
+            enum:
+              - title
+              - skip
+          text_selection:
+            description: Determine how text should be selected
+            oneOf:
+              - type: object
+                required:
+                  - type
+                properties:
+                  type:
+                    const: own-text
+              - type: object
+                required:
+                  - type
+                  - join_with
+                properties:
+                  type:
+                    const: all-text
+                  join_with:
+                    type: string
+                    description: When more than one element is found, this determines how the strings should be joined
+              - type: object
+                required:
+                  - type
+                  - attributes
+                properties:
+                  type:
+                    const: attributes
+                  attributes:
+                    type: array
+                    description: attribute
+                    items:
+                      type: string
+                      examples:
+                        - data-src
+                        - src
+          text_split_regex:
+            type: ['string', 'null']
+            description: Should strings be split to become an array

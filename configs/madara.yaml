@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../schema/config.schema.yaml
+name: madara
+
+accept:
+  selectors:
+    - '[href*=madara]'
+    - '[content*=madara]'
+    - 'script#madara-core-js'
+    - '[src*=madara]'
+    - body.wp-manga-template-default
+  hostnames:
+    - isekaiscan.top
+
+manga:
+  title:
+    - selector: div.post-title h1
+      options:
+        fix_capitalization: title
+    - selector: div#manga-title h1
+      options:
+        text_selection:
+          type: own-text
+        fix_capitalization: title
+  description:
+    - div.summary__content
+    - 'h5:contains(Summary) + div p'
+  cover_url:
+    selector: div.summary_image img
+    options:
+      text_selection:
+        type: attributes
+        attributes:
+          - data-src
+          - src
+
+  status:
+    - div.post-status div + div div.summary-content
+    - div.post-status div.summary-content
+  authors: div.author-content a
+  genres: div.genres-content a
+  alt_titles: div.summary-heading:has('h5:icontains("alternative")') + div
+
+  chapter:
+    base: li.wp-manga-chapter
+    title: a
+    url:
+      selector: a
+      options:
+        text_selection:
+          type: attributes
+          attributes:
+            - href
+            - src
+    number: span.chapter-number
+    date:
+      - span.chapter-release-date i
+      - selector: span.chapter-release-date a
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - title
+
+    fetch_external:
+      - id: script:icontains('mangaid')
+        regex: var mangaID = '(?<id>\d+)';
+        url: /ajax-list-chapter?mangaID={id}
+      - id:
+          selector: 'link[rel=canonical][href*=mangasushi], link[rel=canonical][href*=manga68]'
+          options:
+            text_selection:
+              type: attributes
+              attributes:
+                - href
+        regex: /manga/(?<id>[^/]+)/
+        url: https://{host}/manga/{id}/ajax/chapters/
+        method: post
+images:
+  image_selector:
+    - selector: img.wp-manga-chapter-img
+      options:
+        text_selection:
+          type: attributes
+          attributes:
+            - data-src
+            - src
+        text_split_regex: null
+    - selector: p#arraydata
+      options:
+        text_split_regex: ','
+
+search:
+  search_url: "{host}/search?q={query}"
+  selectors:
+    base: "li"
+    url: "a"
+    title: "a"
+
+date_formats:
+  - "%e %B، %Y"
+  - "%b-%d-%H:%M"

@@ -1,2 +1,2 @@
 #!/bin/sh
-sea-orm-cli generate entity --with-serde both -o ./entity/src --lib
+sea-orm-cli generate entity -o ./entity/src --lib

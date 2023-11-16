@@ -2,3 +2,4 @@
 .env
 /logs/*
 !/logs/.gitkeep
+/http-cacache

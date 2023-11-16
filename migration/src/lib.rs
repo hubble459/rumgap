@@ -1,7 +1,7 @@
 pub use sea_orm_migration::prelude::*;
 
+#[allow(hidden_glob_reexports)]
 mod extension;
-
 mod m20221127_174330_create_triggers;
 mod m20221127_174334_create_user;
 mod m20221127_180216_create_friend;
@@ -11,6 +11,8 @@ mod m20221130_215753_create_reading;
 mod m20230206_144400_create_chapter_offset;
 mod m20230212_132547_add_page_column_to_chapter_offset;
 mod m20230219_170615_add_device_ids_column_to_user;
+mod m20231116_195236_fix_timestamps;
+
 
 pub struct Migrator;
 
@@ -27,6 +29,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230206_144400_create_chapter_offset::Migration),
             Box::new(m20230212_132547_add_page_column_to_chapter_offset::Migration),
             Box::new(m20230219_170615_add_device_ids_column_to_user::Migration),
+            Box::new(m20231116_195236_fix_timestamps::Migration),
         ]
     }
 }

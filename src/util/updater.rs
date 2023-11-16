@@ -11,7 +11,7 @@ use sea_orm::{
 use tokio::time::{self, Duration};
 
 use crate::data;
-use crate::service::manga::{index_manga, save_manga};
+use crate::service::v1::manga::{index_manga, save_manga};
 
 pub async fn watch_updates(db: &DatabaseConnection) {
     let interval_ms: u64 = std::env::var("MANGA_AUTO_UPDATE_INTERVAL_MS")

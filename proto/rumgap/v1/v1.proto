@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package rumgap.v1;
+
+import "rumgap/v1/user.proto";
+import "rumgap/v1/friend.proto";
+import "rumgap/v1/manga.proto";
+import "rumgap/v1/chapter.proto";
+import "rumgap/v1/reading.proto";
+import "rumgap/v1/search.proto";
+import "rumgap/v1/paginate.proto";
+import "rumgap/v1/meta.proto";
+
+service User {
+    rpc Register (UserRegisterRequest) returns (UserTokenReply);
+    rpc Login (UserRequest) returns (UserTokenReply);
+    rpc Get (Id) returns (UserFullReply);
+    rpc Index (PaginateQuery) returns (UsersReply);
+    rpc Me (Empty) returns (UserFullReply);
+    rpc Update (UserUpdateRequest) returns (UserFullReply);
+    rpc AddDeviceToken (DeviceTokenRequest) returns (Empty);
+    rpc RemoveDeviceToken (DeviceTokenRequest) returns (Empty);
+}
+
+service Friend {
+    rpc Follow (FriendRequest) returns (UserFullReply);
+    rpc Unfollow (FriendRequest) returns (UserFullReply);
+    rpc Following (PaginateQuery) returns (UsersReply);
+    rpc Followers (PaginateQuery) returns (UsersReply);
+}
+
+service Manga {
+    rpc Create (MangaRequest) returns (MangaReply);
+    rpc CreateMany (MangasRequest) returns (stream MangaReply);
+    rpc Get (Id) returns (MangaReply);
+    rpc Update (Id) returns (MangaReply);
+    rpc Index (PaginateSearchQuery) returns (MangasReply);
+    rpc FindOrCreate (MangaRequest) returns (MangaReply);
+}
+
+service Chapter {
+    rpc Get (ChapterRequest) returns (ChapterReply);
+    rpc Index (PaginateChapterQuery) returns (ChaptersReply);
+    rpc Images (Id) returns (ImagesReply);
+}
+
+service Reading {
+    rpc Update (ReadingPatchRequest) returns (MangaReply);
+    rpc Create (ReadingPostRequest) returns (MangaReply);
+    rpc Delete (Id) returns (Empty);
+    rpc UpdateChapterOffset (UpdateChapterOffsetRequest) returns (Empty);
+}
+
+service Search {
+    rpc Manga (SearchRequest) returns (SearchReply);
+}
+
+service Meta {
+    rpc Hostnames (MetaHostnamesRequest) returns (MetaReply);
+    rpc Genres (MetaGenresRequest) returns (MetaReply);
+    rpc Stats (Empty) returns (StatsReply);
+}
+
+message Id {
+    int32 id = 1;
+}
+
+message Empty {
+}

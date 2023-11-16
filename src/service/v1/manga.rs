@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use futures::Stream;
-use manga_parser::parser::{MangaParser, Parser};
 use manga_parser::Url;
+use manga_parser::error::ScrapeError;
+use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -17,19 +18,14 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
-use crate::interceptor::auth::LoggedInUser;
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
 };
 use crate::util::search::manga::lucene_filter;
-use crate::{data, util};
+use crate::{data, util, MANGA_PARSER};
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<MangaReply, Status>> + Send>>;
-
-lazy_static! {
-    pub static ref MANGA_PARSER: MangaParser = MangaParser::new();
-}
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum MangaOnlyUrlAndId {
@@ -42,7 +38,7 @@ pub const NEXT_UPDATE_QUERY: &str =
 
 /// Get a "full" manga by it's ID
 #[rustfmt::skip]
-pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedInUser>, manga_id: i32) -> Result<MangaReply, Status> {
+pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity::user::Model>, manga_id: i32) -> Result<MangaReply, Status> {
     use entity::chapter::Column as ChapterColumn;
 
     let manga = entity::manga::Entity::find_by_id(manga_id)
@@ -81,28 +77,34 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&LoggedI
 /// Save/ refresh and get a manga
 pub async fn save_manga(
     db: &DatabaseConnection,
-    logged_in: Option<&LoggedInUser>,
+    logged_in: Option<&entity::user::Model>,
     id: Option<i32>,
     url: Url,
 ) -> Result<MangaReply, Status> {
     info!("Saving manga [{}]", url.to_string());
 
-    // TODO: right single quote and probably other special characters
+    // TODO: backtick and probably other special characters
     // TODO: should be replaced with normal characters
-    let manga = MANGA_PARSER
-        .manga(url)
+    let manga: manga_parser::model::Manga = MANGA_PARSER
+        .manga(&url)
         .await
-        .map_err(|e| Status::internal(e.to_string()))?;
+        .map_err(|e| {
+            if let ScrapeError::WebsiteNotSupported(e) = e {
+                Status::unavailable(e.to_string())
+            } else {
+                Status::internal(e.to_string())
+            }
+        })?;
 
     let saved = entity::manga::ActiveModel {
         id: id.map_or(NotSet, Set),
         title: Set(manga.title),
         description: Set(manga.description),
         is_ongoing: Set(manga.is_ongoing),
-        cover: Set(manga.cover.map(|url| url.to_string())),
+        cover: Set(manga.cover_url.map(|url| url.to_string())),
         url: Set(manga.url.to_string()),
         authors: Set(manga.authors),
-        alt_titles: Set(manga.alt_titles),
+        alt_titles: Set(manga.alternative_titles),
         genres: Set(manga.genres),
         ..Default::default()
     }
@@ -145,7 +147,7 @@ pub async fn save_manga(
                 number: Set(chapter.number),
                 url: Set(chapter.url.to_string()),
                 title: Set(chapter.title.clone()),
-                posted: Set(chapter.posted.map(|date| date.into())),
+                posted: Set(chapter.date.map(|date| date.into())),
                 ..Default::default()
             });
         }
@@ -167,7 +169,7 @@ pub async fn save_manga(
     get_manga_by_id(db, logged_in, manga_id).await
 }
 
-pub fn index_manga(logged_in: Option<LoggedInUser>) -> Select<entity::manga::Entity> {
+pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::manga::Entity> {
     entity::manga::Entity::find()
         .left_join(entity::chapter::Entity)
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
@@ -195,10 +197,10 @@ pub fn index_manga(logged_in: Option<LoggedInUser>) -> Select<entity::manga::Ent
 }
 
 #[derive(Debug, Default)]
-pub struct MyManga {}
+pub struct MangaController;
 
 #[tonic::async_trait]
-impl Manga for MyManga {
+impl Manga for MangaController {
     type CreateManyStream = ResponseStream;
 
     /// Create one manga
@@ -207,7 +209,7 @@ impl Manga for MyManga {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::permission_denied(
                     "You can only add a manga if you are logged in",
                 ))?;
@@ -245,7 +247,7 @@ impl Manga for MyManga {
             .clone();
         let logged_in = request
             .extensions()
-            .get::<LoggedInUser>()
+            .get::<entity::user::Model>()
             .ok_or(Status::permission_denied(
                 "You can only add a manga if you are logged in",
             ))?
@@ -290,7 +292,7 @@ impl Manga for MyManga {
     /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -325,7 +327,7 @@ impl Manga for MyManga {
     /// Force update a manga
     async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>();
+        let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -353,7 +355,7 @@ impl Manga for MyManga {
         let logged_in =
             request
                 .extensions()
-                .get::<LoggedInUser>()
+                .get::<entity::user::Model>()
                 .ok_or(Status::permission_denied(
                     "You can only add a manga if you are logged in",
                 ))?;
@@ -379,7 +381,7 @@ impl Manga for MyManga {
         request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
         let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<LoggedInUser>().cloned();
+        let logged_in = request.extensions().get::<entity::user::Model>().cloned();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let mut paginate = index_manga(logged_in);
@@ -435,4 +437,4 @@ impl Manga for MyManga {
     }
 }
 
-crate::export_service!(MangaServer, MyManga);
+crate::export_service!(MangaServer, MangaController);

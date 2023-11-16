@@ -1,0 +1,17 @@
+syntax = "proto3";
+package rumgap.v1;
+
+message ReadingPostRequest {
+    int32 manga_id = 1;
+}
+
+message ReadingPatchRequest {
+    int32 manga_id = 1;
+    int32 progress = 2;
+}
+
+message UpdateChapterOffsetRequest {
+    int32 chapter_id = 1;
+    int32 pixels = 2;
+    int32 page = 3;
+}

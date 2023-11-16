@@ -1,4 +1,3 @@
-use derive_more::Deref;
 use hmac::{Hmac, Mac};
 use jwt::{SignWithKey, VerifyWithKey};
 use sea_orm::{DatabaseConnection, EntityTrait};
@@ -8,7 +7,12 @@ use tonic::service::Interceptor;
 use tonic::{Request, Status};
 
 lazy_static! {
-    static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(b"bUHhhHH#!bU@NkNUnK12").unwrap();
+    static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(
+        std::env::var("JWT_SECRET")
+            .unwrap_or("bUHhhHH#!bU@NkNUnK12".to_string())
+            .as_bytes()
+    )
+    .unwrap();
 }
 
 /// JWT Token
@@ -22,9 +26,16 @@ pub fn sign(id: i32) -> Result<String, jwt::Error> {
     Token { id }.sign_with_key(&SECRET_KEY.clone())
 }
 
-/// Logged in User Wrapper
-#[derive(Deref, Clone, Debug)]
-pub struct LoggedInUser(pub entity::user::Model);
+trait UserHasPermissions {
+    /// Returns true if the user has permissions
+    fn has_permission(&self, permission: UserPermissions) -> bool;
+}
+
+impl UserHasPermissions for entity::user::Model {
+    fn has_permission(&self, permission: UserPermissions) -> bool {
+        (UserPermissions::from_bits(self.permissions as u32).unwrap() & permission) == permission
+    }
+}
 
 bitflags! {
     /// User Permission Bit Flags
@@ -33,14 +44,6 @@ bitflags! {
         const USER = 0b00000001;
         const MOD = 0b00000010;
         const ADMIN = 0b00000100;
-    }
-}
-
-/// Implementation for the User wrapper
-impl LoggedInUser {
-    /// Returns true if the user has permissions
-    pub fn has_permission(&self, permission: UserPermissions) -> bool {
-        (UserPermissions::from_bits(self.0.permissions as u32).unwrap() & permission) == permission
     }
 }
 
@@ -75,7 +78,7 @@ pub async fn check_auth(mut req: Request<()>) -> Result<Request<()>, Status> {
                 ))?;
 
             // Store the logged in user in the request extensions
-            req.extensions_mut().insert(LoggedInUser(user));
+            req.extensions_mut().insert(user);
         } else {
             // "authorization" header was set but the token is invalid
             return Err(Status::unauthenticated("Bearer token is invalid"));
@@ -108,7 +111,7 @@ impl Interceptor for LoggedInCheck {
     /// If the user is not logged in or is missing permissions
     /// an error will be returned (Status)
     fn call(&mut self, req: tonic::Request<()>) -> Result<tonic::Request<()>, Status> {
-        let user = req.extensions().get::<LoggedInUser>();
+        let user = req.extensions().get::<entity::user::Model>();
 
         match user {
             Some(user) => {

@@ -1,4 +1,4 @@
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::{DateTime, DateTimeWithTimeZone};
 use sea_orm::{DeriveColumn, EnumIter, FromQueryResult};
 
 use crate::proto::MangaReply;
@@ -21,8 +21,8 @@ pub struct Full {
     pub genres: Vec<String>,
     pub authors: Vec<String>,
     pub alt_titles: Vec<String>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
     // special
     pub count_chapters: i64,
     pub next: Option<DateTimeWithTimeZone>,

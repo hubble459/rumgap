@@ -9,10 +9,24 @@ appenders:
         encoder:
             pattern: "{d(%Y-%m-%d %H:%M:%S)} | \e[1;32m{({l}):5.5}\e[0m | {m}{n}"
 
-
-    log_file:
+    log_rumgap:
         kind: rolling_file
-        path: "logs/log.log"
+        path: "logs/rumgap.log"
+        encoder:
+            pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}"
+        policy:
+            trigger:
+                kind: size
+                limit: 2 mb
+            roller:
+                kind: fixed_window
+                pattern: logs/rumgap_{}.gz
+                count: 5
+                base: 1
+
+    log_manga_parser:
+        kind: rolling_file
+        path: "logs/manga_parser.log"
         encoder:
             pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}"
         policy:
@@ -28,26 +42,33 @@ appenders:
 root:
     level: warn
     appenders:
-        - log_file
+        - log_rumgap
         - stdout
 
 loggers:
     manga_parser:
         level: debug
         appenders:
-            - log_file
-            - stdout_ext
+            - log_manga_parser
+            - stdout
         additive: false
     rumgap:
         level: debug
         appenders:
-            - log_file
+            - log_rumgap
             - stdout
         additive: false
     http_log:
         level: debug
         appenders:
-            - log_file
+            - log_rumgap
             - stdout_ext
         additive: false
+    sqlx:
+        level: debug
+        appenders:
+            - log_rumgap
+            - stdout_ext
+        additive: false
+
 

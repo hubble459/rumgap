@@ -9,6 +9,8 @@ extern crate phf;
 
 use std::env;
 
+use hyper::Uri;
+use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
 use tonic::transport::Server;
@@ -16,17 +18,21 @@ use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
-use crate::interceptor::auth::LoggedInUser;
-use crate::util::updater;
+use crate::interceptor::logger::LoggerLayer;
 
 mod data;
 mod interceptor;
 mod service;
 mod util;
 
+lazy_static! {
+    static ref MANGA_PARSER: ScraperManager =
+        manga_parser::scraper::scraper_manager::ScraperManager::default();
+}
+
 /// Load all ProtoBuf files
 pub mod proto {
-    tonic::include_proto!("rumgap");
+    tonic::include_proto!("rumgap.v1");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("descriptor");
 }
@@ -47,33 +53,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = env::var("HOST").unwrap_or(String::from("127.0.0.1"));
     let port = env::var("PORT").unwrap_or(String::from("8000"));
     let server_url = format!("{host}:{port}");
+    let addr = server_url.parse()?;
 
     // Establish connection to database and apply migrations
     let conn = conn_db(&db_url).await.unwrap();
-
-    let addr = server_url.parse()?;
 
     info!("Running server on {}", addr);
 
     // Start updater
     let cloned_conn = conn.clone();
     tokio::spawn(async move {
-        updater::watch_updates(&cloned_conn).await;
+        crate::util::updater::watch_updates(&cloned_conn).await;
     });
 
     Server::builder()
         .layer(tonic::service::interceptor(move |req| {
-            intercept(req, conn.clone())
+            inject_db(req, conn.clone())
         }))
         .layer(async_interceptor(interceptor::auth::check_auth))
+        .layer(tower::ServiceBuilder::new().layer(LoggerLayer::default()))
         .layer(tonic::service::interceptor(logger))
-        .add_service(service::user::server())
-        .add_service(service::friend::server())
-        .add_service(service::manga::server())
-        .add_service(service::chapter::server())
-        .add_service(service::reading::server())
-        .add_service(service::search::server())
-        .add_service(service::meta::server())
+        .add_service(service::v1::user::server())
+        .add_service(service::v1::friend::server())
+        .add_service(service::v1::manga::server())
+        .add_service(service::v1::chapter::server())
+        .add_service(service::v1::reading::server())
+        .add_service(service::v1::search::server())
+        .add_service(service::v1::meta::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
@@ -97,7 +103,7 @@ async fn conn_db(db_url: &str) -> Result<DatabaseConnection, DbErr> {
 }
 
 /// Add the database to all requests via their extensions
-fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
+fn inject_db(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<()>, Status> {
     req.extensions_mut().insert(conn);
 
     Ok(req)
@@ -105,11 +111,14 @@ fn intercept(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 
 /// Log the incoming request
 fn logger(req: Request<()>) -> Result<Request<()>, Status> {
-    let logged_in = req.extensions().get::<LoggedInUser>();
+    let logged_in = req.extensions().get::<entity::user::Model>();
+    let target_uri = req.extensions().get::<Uri>();
 
     info!(
-        "[{}] ({})",
-        req.remote_addr().map_or(String::new(), |ip| ip.to_string()),
+        "[{}] -> [{:?}] ({})",
+        req.remote_addr()
+            .map_or(String::from("unknown"), |ip| ip.to_string()),
+        target_uri.map_or(String::from("unknown"), |uri| uri.path().to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
     );
 
