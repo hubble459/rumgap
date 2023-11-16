@@ -759,6 +759,7 @@ dependencies = [
 [[package]]
 name = "cloudflare-bypasser"
 version = "0.2.0"
+source = "git+https://github.com/hubble459/cloudflare-bypasser.git#cf0a67ff25f9968299dd0b82875e718b7f80335a"
 dependencies = [
  "base64 0.11.0",
  "fake-useragent",
@@ -2453,6 +2454,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
+source = "git+https://github.com/hubble459/manga_parser#070d96ecf4fb9fa9499dad0864b85a2fed44a455"
 dependencies = [
  "anyhow",
  "async-trait",
