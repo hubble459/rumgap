@@ -1,6 +1,6 @@
 ################
 ##### Builder
-FROM rust:slim-bullseye as builder
+FROM rust:slim-bullseye AS builder
 
 ENV PROJECT /usr/src/rumgap
 
