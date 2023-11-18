@@ -25,12 +25,12 @@ manga:
       options:
         text_selection:
           type: all-text
-          join_with: '\n'
+          join_with: ' '
     - selector: h5:contains(Summary) + div p
       options:
         text_selection:
           type: all-text
-          join_with: '\n'
+          join_with: ' '
   cover_url:
     selector: div.summary_image img
     options:
