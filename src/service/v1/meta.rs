@@ -1,4 +1,4 @@
-use manga_parser::scraper::MangaSearcher;
+use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
