@@ -1,8 +1,8 @@
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
-    RelationTrait, Select,
+    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait, Select,
 };
 use tonic::{Request, Response, Status};
 
@@ -11,8 +11,8 @@ use crate::proto::{
     Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest,
     MetaReply, StatsReply,
 };
-use crate::MANGA_PARSER;
 use crate::util::auth::Authorize;
+use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
 pub struct MetaController;
@@ -89,11 +89,11 @@ impl Meta for MetaController {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
-        let query = entity::manga::Entity::find().select_only().column_as(
-            Expr::cust("distinct unnest(manga.genres)"),
-            QueryAs::Strings,
-        );
-
+        let distinct_genres = Expr::cust("distinct unnest(manga.genres)");
+        let query = entity::manga::Entity::find()
+            .select_only()
+            .column_as(distinct_genres.clone(), QueryAs::Strings)
+            .order_by_desc(distinct_genres);
         Ok(Response::new(
             get_reply(
                 db,
@@ -115,10 +115,11 @@ impl Meta for MetaController {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
-        let query = entity::manga::Entity::find().select_only().column_as(
-            Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"),
-            QueryAs::Strings,
-        );
+        let distinct_urls = Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]");
+        let query = entity::manga::Entity::find()
+            .select_only()
+            .column_as(distinct_urls.clone(), QueryAs::Strings)
+            .order_by_desc(distinct_urls);
 
         Ok(Response::new(
             get_reply(
