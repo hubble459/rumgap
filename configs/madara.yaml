@@ -1,4 +1,3 @@
-# yaml-language-server: $schema=../schema/config.schema.yaml
 name: madara
 
 accept:
@@ -22,8 +21,16 @@ manga:
           type: own-text
         fix_capitalization: title
   description:
-    - div.summary__content
-    - 'h5:contains(Summary) + div p'
+    - selector: div.summary__content
+      options:
+        text_selection:
+          type: all-text
+          join_with: '\n'
+    - selector: h5:contains(Summary) + div p
+      options:
+        text_selection:
+          type: all-text
+          join_with: '\n'
   cover_url:
     selector: div.summary_image img
     options:
@@ -90,12 +97,39 @@ images:
         text_split_regex: ','
 
 search:
-  search_url: "{host}/search?q={query}"
-  selectors:
-    base: "li"
-    url: "a"
-    title: "a"
+  - hostnames:
+      - isekaiscan.top
+    search_url: "{hostname}/search?s={query}"
+    query_format:
+      - replace_regex: '\+'
+        replace_with: '%2B'
+      - replace_regex: ' '
+        replace_with: '+'
+    selectors:
+      base: ".c-tabs-item__content"
+      url:
+        selector: a
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - href
+              - src
+      title:
+        selector: h3 a
+        options:
+          fix_capitalization: title
+      cover_url:
+        selector: img
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - data-src
+              - src
+      posted: div.post-on span
 
 date_formats:
+  - "%b %e, %R"
   - "%e %B، %Y"
   - "%b-%d-%H:%M"

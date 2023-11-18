@@ -85,6 +85,10 @@ $defs:
     type: array
     items:
       type: object
+      required:
+        - id
+        - regex
+        - url
       properties:
         id:
           $ref: string_selector.schema.yaml
@@ -104,41 +108,38 @@ $defs:
             - get
             - post
   search:
-    type: object
-    required:
-      - search_url
-      - selectors
-    properties:
-      search_url:
-        type: string
-        examples:
-          - '"{host}/search?q={query}"'
-      query_format:
-        type: object
-        required:
-          - replace_regex
-          - replace_with
-        properties:
-          replace_regex:
+    type: array
+    items:
+      type: object
+      required:
+        - hostnames
+        - search_url
+        - selectors
+      properties:
+        hostnames:
+          type: array
+          items:
             type: string
-            description: Replace
-          replace_with:
-            type: string
-            description: Replace what regex matched with this string
-      selectors:
-        type: object
-        required:
-          - base
-          - url
-          - title
-        properties:
-          base:
-            $ref: string_selector.schema.yaml
-          url:
-            $ref: string_selector.schema.yaml
-          title:
-            $ref: string_selector.schema.yaml
-          cover_url:
-            $ref: string_selector.schema.yaml
-          posted:
-            $ref: string_selector.schema.yaml
+        search_url:
+          type: string
+          examples:
+            - '"{host}/search?q={query}"'
+        query_format:
+          $ref: 'string_selector.schema.yaml#$defs/cleanup'
+        selectors:
+          type: object
+          required:
+            - base
+            - url
+            - title
+          properties:
+            base:
+              $ref: string_selector.schema.yaml
+            url:
+              $ref: string_selector.schema.yaml
+            title:
+              $ref: string_selector.schema.yaml
+            cover_url:
+              $ref: string_selector.schema.yaml
+            posted:
+              $ref: string_selector.schema.yaml

@@ -13,6 +13,23 @@ oneOf:
     description: Query selector
 
 $defs:
+  cleanup:
+    description: Cleanup text that has been scraped with regexps
+    type: array
+    items:
+      type: object
+      required:
+        - replace_regex
+        - replace_with
+      properties:
+        replace_regex:
+          type: string
+          description: Replace what matches with this regex
+          default: \s\s+
+        replace_with:
+          type: string
+          description: Replace matched parts with this string
+          default: "' '"
   selector:
     type: object
     required:
@@ -25,22 +42,7 @@ $defs:
         type: object
         properties:
           cleanup:
-            description: Cleanup text that has been scraped with regexps
-            type: array
-            items:
-              type: object
-              required:
-                - replace_regex
-                - replace_with
-              properties:
-                replace_regex:
-                  type: string
-                  description: Replace what matches with this regex
-                  default: \s\s+
-                replace_with:
-                  type: string
-                  description: Replace matched parts with this string
-                  default: "' '"
+            $ref: "#/$defs/cleanup"
           fix_capitalization:
             description: Fix bad capitalization
             default: sentence
