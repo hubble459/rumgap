@@ -1,8 +1,12 @@
 use std::task::{Context, Poll};
 
 use hyper::Body;
+use prost::Message;
 use tonic::body::BoxBody;
+use tonic::Status;
 use tower::{Layer, Service};
+
+use crate::proto::ScrapeError;
 
 #[derive(Debug, Clone, Default)]
 pub struct LoggerLayer;
@@ -44,7 +48,20 @@ where
         req.extensions_mut().insert(target);
 
         Box::pin(async move {
-            inner.call(req).await
+            let response = inner.call(req).await;
+
+            if let Ok(response) = &response {
+                let grpc_status = Status::from_header_map(response.headers());
+                if let Some(grpc_status) = grpc_status {
+                    error!("Response error: {:#?}", grpc_status);
+                    let details = grpc_status.details();
+                    if !details.is_empty() {
+                        error!("Response error details: {:#?}", ScrapeError::decode(details).ok());
+                    }
+                }
+            }
+
+            response
         })
     }
 }

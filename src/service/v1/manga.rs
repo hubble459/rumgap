@@ -1,13 +1,11 @@
 use std::pin::Pin;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use futures::Stream;
-use manga_parser::error::ScrapeError;
 use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
-use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
@@ -22,6 +20,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
 };
+use crate::util::scrape_error_proto::StatusWrapper;
 use crate::util::search::manga::lucene_filter;
 use crate::{data, util, MANGA_PARSER};
 
@@ -85,13 +84,10 @@ pub async fn save_manga(
 
     // TODO: backtick and probably other special characters
     // TODO: should be replaced with normal characters
-    let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(|e| {
-        if let ScrapeError::WebsiteNotSupported(e) = e {
-            Status::unavailable(e.to_string())
-        } else {
-            Status::internal(e.to_string())
-        }
-    })?;
+    let manga: manga_parser::model::Manga = MANGA_PARSER
+        .manga(&url)
+        .await
+        .map_err(StatusWrapper::from)?;
 
     let saved = entity::manga::ActiveModel {
         id: id.map_or(NotSet, Set),
@@ -304,7 +300,7 @@ impl Manga for MangaController {
         let req = request.get_ref();
         let manga_id = req.id;
 
-        let (url, updated_at): (String, DateTimeWithTimeZone) =
+        let (url, updated_at): (String, NaiveDateTime) =
             entity::manga::Entity::find_by_id(manga_id)
                 .select_only()
                 .column(entity::manga::Column::Url)
@@ -321,7 +317,9 @@ impl Manga for MangaController {
             .unwrap_or(3600000);
 
         // Check if it should be updated
-        let manga = if (Utc::now() - chrono::Duration::milliseconds(interval_ms)) > updated_at {
+        let manga = if (Utc::now().naive_utc() - chrono::Duration::milliseconds(interval_ms))
+            > updated_at
+        {
             // Update
             info!("Updating manga with id '{}' [{}]", manga_id, url);
             save_manga(db, logged_in, Some(manga_id), Url::parse(&url).unwrap()).await?

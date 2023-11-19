@@ -23,6 +23,7 @@ tonic-reflection = "0.10"
 tower = { version = "0.4" }
 tonic-async-interceptor = "0.10"
 prost = "0.12"
+prost-types = "0.12"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1"
 migration = { path = "migration" }
@@ -48,6 +49,7 @@ derive_more = "0"
 futures = { version = "0" }
 futures-util = { version = "0" }
 manga_parser = { git = "https://github.com/hubble459/manga_parser" }
+# manga_parser = { path = "../manga_parser" }
 fcm = "0"
 hyper = { version = "0" }
 

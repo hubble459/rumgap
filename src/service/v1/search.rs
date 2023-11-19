@@ -12,6 +12,7 @@ use tonic::{Request, Response, Status};
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 use crate::MANGA_PARSER;
+use crate::util::scrape_error_proto::StatusWrapper;
 
 #[derive(Debug, Default)]
 pub struct SearchController;
@@ -40,7 +41,7 @@ impl Search for SearchController {
         )
         .await
         .map_err(|e| Status::deadline_exceeded(e.to_string()))?
-        .map_err(|e| Status::internal(e.to_string()))?;
+        .map_err(StatusWrapper::from)?;
 
         let urls: Vec<String> = search_results
             .iter()

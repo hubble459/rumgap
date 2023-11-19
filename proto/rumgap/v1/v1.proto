@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package rumgap.v1;
 
+import "google/protobuf/any.proto";
+
 import "rumgap/v1/user.proto";
 import "rumgap/v1/friend.proto";
 import "rumgap/v1/manga.proto";
@@ -66,4 +68,10 @@ message Id {
 }
 
 message Empty {
+}
+
+message DetailedError {
+    int32 status = 1;
+    string message = 2;
+    repeated google.protobuf.Any details = 3;
 }

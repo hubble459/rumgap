@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package rumgap.v1;
+
+enum ScrapeErrorType {
+    Unknown = 0;
+    ReqwestError = 1;
+    ReqwestMiddlewareError = 2;
+    IoError = 3;
+    ConfigError = 4;
+    ConfigDeserializeError = 5;
+    WebScrapingError = 6;
+    NotAValidURL = 7;
+    SelectorError = 8;
+    WebsiteNotSupported = 9;
+    SearchNotSupported = 10;
+    MultipleScrapingErrors = 11;
+    CloudflareIUAM = 12;
+}
+
+message ScrapeError {
+    ScrapeErrorType type = 1;
+    string message = 2;
+}
+
