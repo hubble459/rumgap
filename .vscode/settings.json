@@ -57,5 +57,8 @@
     "dotenv.enableAutocloaking": true,
     "rust-analyzer.rustfmt.extraArgs": [
         "+nightly"
-    ]
+    ],
+    "yaml.schemas": {
+        "file:///home/quentin/Programming/rumgap/schema/config.schema.yaml": "file:///home/quentin/Programming/rumgap/configs/mangakakalot.yaml"
+    }
 }

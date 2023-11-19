@@ -89,11 +89,10 @@ impl Meta for MetaController {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
-        let distinct_genres = Expr::cust("distinct unnest(manga.genres)");
         let query = entity::manga::Entity::find()
             .select_only()
-            .column_as(distinct_genres.clone(), QueryAs::Strings)
-            .order_by_desc(distinct_genres);
+            .column_as(Expr::cust("distinct unnest(manga.genres)"), QueryAs::Strings)
+            .order_by_asc(Expr::cust("unnest(manga.genres)"));
         Ok(Response::new(
             get_reply(
                 db,
@@ -115,11 +114,10 @@ impl Meta for MetaController {
         let db = req.extensions().get::<DatabaseConnection>().unwrap();
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
-        let distinct_urls = Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]");
         let query = entity::manga::Entity::find()
             .select_only()
-            .column_as(distinct_urls.clone(), QueryAs::Strings)
-            .order_by_desc(distinct_urls);
+            .column_as(Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"), QueryAs::Strings)
+            .order_by_asc(Expr::cust("(regexp_matches(manga.url, '://([^/]+)'))[1]"));
 
         Ok(Response::new(
             get_reply(

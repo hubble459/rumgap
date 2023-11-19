@@ -9,9 +9,9 @@ use sea_orm::{
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
-use crate::MANGA_PARSER;
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
+use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
 pub struct SearchController;
@@ -73,8 +73,6 @@ impl Search for SearchController {
             .all(db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
-
-        info!("whut {:?} {:?}", req.keyword.clone(), req.hostnames.clone());
 
         Ok(Response::new(SearchReply {
             items: search_results

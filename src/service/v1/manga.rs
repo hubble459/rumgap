@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use futures::Stream;
-use manga_parser::Url;
 use manga_parser::error::ScrapeError;
 use manga_parser::scraper::MangaScraper;
+use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -85,16 +85,13 @@ pub async fn save_manga(
 
     // TODO: backtick and probably other special characters
     // TODO: should be replaced with normal characters
-    let manga: manga_parser::model::Manga = MANGA_PARSER
-        .manga(&url)
-        .await
-        .map_err(|e| {
-            if let ScrapeError::WebsiteNotSupported(e) = e {
-                Status::unavailable(e.to_string())
-            } else {
-                Status::internal(e.to_string())
-            }
-        })?;
+    let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(|e| {
+        if let ScrapeError::WebsiteNotSupported(e) = e {
+            Status::unavailable(e.to_string())
+        } else {
+            Status::internal(e.to_string())
+        }
+    })?;
 
     let saved = entity::manga::ActiveModel {
         id: id.map_or(NotSet, Set),
@@ -121,22 +118,33 @@ pub async fn save_manga(
             manga.url.to_string()
         );
     } else {
-        if id.is_some() {
-            let count_chapters = entity::chapter::Entity::find()
-                .filter(entity::chapter::Column::MangaId.eq(manga_id))
-                .count(db)
-                .await
-                .map_err(|e| Status::internal(e.to_string()))?;
-            if (manga.chapters.len() as u64) < count_chapters {
-                // If there are suddenly less chapters than we have in our database, we reset our chapters
-                // Remove old chapters
-                let res = entity::chapter::Entity::delete_many()
+        // TODO 19/11/2023: Reload all chapters with correct dates
+        // TODO 19/11/2023: Reset this when all chapters are reloaded
+        if false {
+            if id.is_some() {
+                let count_chapters = entity::chapter::Entity::find()
                     .filter(entity::chapter::Column::MangaId.eq(manga_id))
-                    .exec(db)
+                    .count(db)
                     .await
                     .map_err(|e| Status::internal(e.to_string()))?;
-                info!("Cleared {} chapter(s)", res.rows_affected);
+                if (manga.chapters.len() as u64) < count_chapters {
+                    // If there are suddenly less chapters than we have in our database, we reset our chapters
+                    // Remove old chapters
+                    let res = entity::chapter::Entity::delete_many()
+                        .filter(entity::chapter::Column::MangaId.eq(manga_id))
+                        .exec(db)
+                        .await
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                    info!("Cleared {} chapter(s)", res.rows_affected);
+                }
             }
+        } else {
+            let res = entity::chapter::Entity::delete_many()
+                .filter(entity::chapter::Column::MangaId.eq(manga_id))
+                .exec(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+            info!("Cleared {} chapter(s)", res.rows_affected);
         }
 
         // Add new chapters

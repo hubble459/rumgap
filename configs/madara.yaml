@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../schema/config.schema.yaml
 name: madara
 
 accept:
