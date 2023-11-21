@@ -16,6 +16,7 @@ static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "title" => SearchField::Text("ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title"),
     "description" => SearchField::Text("manga.description"),
     "url" => SearchField::Equals("manga.url"),
+    "host" => SearchField::Text("manga.url"),
     "genres" => SearchField::Array("manga.genres"),
     "genre" => SearchField::Array("manga.genres"),
     "authors" => SearchField::Array("manga.authors"),
