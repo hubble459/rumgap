@@ -1,11 +1,12 @@
 use hmac::{Hmac, Mac};
 use jwt::{SignWithKey, VerifyWithKey};
-use sea_orm::{EntityTrait};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tonic::service::Interceptor;
 use tonic::{Request, Status};
 
+use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 
 lazy_static! {
@@ -113,7 +114,7 @@ impl Interceptor for LoggedInCheck {
     /// If the user is not logged in or is missing permissions
     /// an error will be returned (Status)
     fn call(&mut self, req: tonic::Request<()>) -> Result<tonic::Request<()>, Status> {
-        let user = req.extensions().get::<entity::user::Model>();
+        let user = req.authorize().ok();
 
         match user {
             Some(user) => {

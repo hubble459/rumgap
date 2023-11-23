@@ -9,7 +9,8 @@ use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select,
+    IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait, Select,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -20,6 +21,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
 };
+use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
 use crate::util::search::manga::lucene_filter;
@@ -297,7 +299,7 @@ impl Manga for MangaController {
     /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.extensions().get::<entity::user::Model>();
+        let logged_in = request.authorize().ok();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -334,7 +336,7 @@ impl Manga for MangaController {
     /// Force update a manga
     async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.extensions().get::<entity::user::Model>();
+        let logged_in = request.authorize().ok();
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -388,7 +390,7 @@ impl Manga for MangaController {
         request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.extensions().get::<entity::user::Model>().cloned();
+        let logged_in = request.authorize().ok().cloned();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let mut paginate = index_manga(logged_in);
@@ -443,11 +445,35 @@ impl Manga for MangaController {
         }))
     }
 
-    async fn similar(
-        &self,
-        _request: Request<Id>,
-    ) -> Result<Response<MangasReply>, Status> {
-        todo!()
+    async fn similar(&self, request: Request<Id>) -> Result<Response<MangasReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize().ok().cloned();
+
+        let id = request.get_ref().id;
+        let manga_title: String = entity::manga::Entity::find_by_id(id)
+            .select_only()
+            .column(entity::manga::Column::Title)
+            .into_tuple()
+            .one(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .ok_or(Status::not_found("Manga not found"))?;
+
+        let similar = index_manga(logged_in)
+            .filter(
+                entity::manga::Column::Id
+                    .ne(id)
+                    .and(entity::manga::Column::Title.into_expr().modulo(manga_title)),
+            )
+            .into_model::<data::manga::Full>()
+            .all(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(MangasReply {
+            pagination: None,
+            items: similar.into_iter().map(|manga| manga.into()).collect(),
+        }))
     }
 }
 

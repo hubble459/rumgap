@@ -9,7 +9,9 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
+use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
+use crate::util::scrape_error_proto::StatusWrapper;
 use crate::{data, MANGA_PARSER};
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
@@ -39,7 +41,7 @@ impl Chapter for ChapterController {
         let images = MANGA_PARSER
             .chapter_images(&Url::parse(&chapter.url).unwrap())
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(StatusWrapper::from)?;
 
         debug!("{} images found in {}", images.len(), chapter.url);
 
@@ -54,7 +56,7 @@ impl Chapter for ChapterController {
         request: Request<ChapterRequest>,
     ) -> Result<Response<ChapterReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.extensions().get::<entity::user::Model>();
+        let logged_in = request.authorize().ok();
         let req = request.get_ref();
         let manga_id = req.manga_id;
 
@@ -111,7 +113,7 @@ impl Chapter for ChapterController {
         request: Request<PaginateChapterQuery>,
     ) -> Result<Response<ChaptersReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.extensions().get::<entity::user::Model>();
+        let logged_in = request.authorize().ok();
         let req = request.get_ref();
         let manga_id = req.id;
         let req = req.paginate_query.clone().unwrap_or_default();

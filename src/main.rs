@@ -19,6 +19,7 @@ use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
 use crate::interceptor::logger::LoggerLayer;
+use crate::util::auth::Authorize;
 
 mod data;
 mod interceptor;
@@ -111,7 +112,7 @@ fn inject_db(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 
 /// Log the incoming request
 fn logger(req: Request<()>) -> Result<Request<()>, Status> {
-    let logged_in = req.extensions().get::<entity::user::Model>();
+    let logged_in = req.authorize().ok();
     let target_uri = req.extensions().get::<Uri>();
 
     info!(
