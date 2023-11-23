@@ -8,8 +8,7 @@ use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
-    IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
     RelationTrait, Select,
 };
 use tokio::sync::mpsc;
