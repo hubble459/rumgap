@@ -445,7 +445,7 @@ impl Manga for MangaController {
 
     async fn similar(
         &self,
-        request: Request<Id>,
+        _request: Request<Id>,
     ) -> Result<Response<MangasReply>, Status> {
         todo!()
     }

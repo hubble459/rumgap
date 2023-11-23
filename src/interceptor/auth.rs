@@ -1,6 +1,6 @@
 use hmac::{Hmac, Mac};
 use jwt::{SignWithKey, VerifyWithKey};
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{EntityTrait};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tonic::service::Interceptor;

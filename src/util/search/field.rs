@@ -66,7 +66,7 @@ impl SearchField {
                 let date = DateFormat::try_from(date, future)?;
 
                 return Ok(Expr::cust_with_values(
-                    &format!("{ident} {compare} $1"),
+                    format!("{ident} {compare} $1"),
                     vec![date.0],
                 ));
             }
@@ -92,7 +92,7 @@ impl SearchField {
 
                 if let Ok(number) = number.parse::<u16>() {
                     return Ok(Expr::cust_with_values(
-                        &format!("{ident} {compare} $1"),
+                        format!("{ident} {compare} $1"),
                         vec![number],
                     ));
                 } else {

@@ -4,7 +4,7 @@ use manga_parser::Url;
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, QueryTrait, RelationTrait,
 };
 use tonic::{Request, Response, Status};

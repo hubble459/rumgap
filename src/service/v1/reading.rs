@@ -1,5 +1,5 @@
 use sea_orm::ActiveValue::{self, Set};
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
 use tonic::{Request, Response, Status};
 
 use super::manga::get_manga_by_id;

@@ -48,7 +48,7 @@ pub fn lucene_filter(
 
     if !without_fields.is_empty() {
         let expr = Expr::cust_with_values(
-            &format!(
+            format!(
                 "{} ILIKE {}",
                 all_fields,
                 (0..without_fields.len())
@@ -71,7 +71,7 @@ pub fn lucene_filter(
 
     if !exclude_fields.is_empty() {
         let expr = Expr::cust_with_values(
-            &format!(
+            format!(
                 "NOT {} {}",
                 all_fields,
                 (0..exclude_fields.len())

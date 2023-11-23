@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             inject_db(req, conn.clone())
         }))
         .layer(async_interceptor(interceptor::auth::check_auth))
-        .layer(tower::ServiceBuilder::new().layer(LoggerLayer::default()))
+        .layer(tower::ServiceBuilder::new().layer(LoggerLayer))
         .layer(tonic::service::interceptor(logger))
         .add_service(service::v1::user::server())
         .add_service(service::v1::friend::server())

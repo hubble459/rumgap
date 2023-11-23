@@ -3,7 +3,7 @@ use std::time::Duration;
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
+    ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
     RelationTrait,
 };
 use tokio::time::timeout;
