@@ -38,6 +38,7 @@ service Manga {
     rpc Update (Id) returns (MangaReply);
     rpc Index (PaginateSearchQuery) returns (MangasReply);
     rpc FindOrCreate (MangaRequest) returns (MangaReply);
+    rpc Similar (Id) returns (MangasReply);
 }
 
 service Chapter {

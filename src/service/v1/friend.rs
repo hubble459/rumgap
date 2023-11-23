@@ -11,6 +11,8 @@ use crate::proto::friend_server::{Friend, FriendServer};
 use crate::proto::{
     FriendRequest, PaginateQuery, PaginateReply, UserFullReply, UserReply, UsersReply,
 };
+use crate::util::auth::Authorize;
+use crate::util::db::DatabaseRequest;
 use crate::util::verify;
 
 /// Get a user by their ID
@@ -41,8 +43,8 @@ async fn index(
     request: Request<PaginateQuery>,
     following: bool,
 ) -> Result<Response<UsersReply>, Status> {
-    let db = request.extensions().get::<DatabaseConnection>().unwrap();
-    let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+    let db = request.db()?;
+    let logged_in = request.authorize()?;
     let req = request.get_ref();
     let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
 
@@ -131,8 +133,8 @@ impl Friend for FriendController {
         &self,
         request: Request<FriendRequest>,
     ) -> Result<Response<UserFullReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         let friend = entity::friend::ActiveModel {
@@ -157,8 +159,8 @@ impl Friend for FriendController {
         &self,
         request: Request<FriendRequest>,
     ) -> Result<Response<UserFullReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         let friend = entity::friend::Entity::delete_by_id((logged_in.id, req.user_id))

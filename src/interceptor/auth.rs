@@ -6,6 +6,8 @@ use sha2::Sha256;
 use tonic::service::Interceptor;
 use tonic::{Request, Status};
 
+use crate::util::db::DatabaseRequest;
+
 lazy_static! {
     static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(
         std::env::var("JWT_SECRET")
@@ -49,7 +51,7 @@ bitflags! {
 
 /// Check if user is authenticated
 pub async fn check_auth(mut req: Request<()>) -> Result<Request<()>, Status> {
-    let db = req.extensions().get::<DatabaseConnection>().unwrap();
+    let db = req.db()?;
     let bearer_token = req.metadata().get("authorization");
 
     // Has authorization meta

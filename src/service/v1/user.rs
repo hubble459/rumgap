@@ -1,7 +1,7 @@
 use migration::{Alias, Expr, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
@@ -14,6 +14,7 @@ use crate::proto::{
     UserRegisterRequest, UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
 use crate::util::auth::Authorize;
+use crate::util::db::DatabaseRequest;
 use crate::util::{argon, verify};
 
 #[rustfmt::skip]
@@ -43,7 +44,7 @@ pub struct UserController;
 impl User for UserController {
     /// Get a single user
     async fn get(&self, request: Request<Id>) -> Result<Response<UserFullReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
         let full_user = get_user_by_id(db, req.id).await?;
         Ok(Response::new(full_user.into()))
@@ -51,7 +52,7 @@ impl User for UserController {
 
     /// Get paginated users
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let paginate = entity::user::Entity::find().paginate(db, per_page);
@@ -104,7 +105,7 @@ impl User for UserController {
         &self,
         request: Request<UserRegisterRequest>,
     ) -> Result<Response<UserTokenReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
 
         let user = entity::user::ActiveModel {
@@ -135,7 +136,7 @@ impl User for UserController {
         request: Request<UserRequest>,
     ) -> Result<Response<UserTokenReply>, Status> {
         let error = "Username and password mismatch";
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
 
         let identifier = req.identifier.as_ref().unwrap();
@@ -167,7 +168,7 @@ impl User for UserController {
     /// Get logged in user
     async fn me(&self, request: Request<Empty>) -> Result<Response<UserFullReply>, Status> {
         let logged_in = request.authorize()?;
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
 
         Ok(Response::new(
             get_user_by_id(db, logged_in.id).await?.into(),
@@ -180,7 +181,7 @@ impl User for UserController {
         request: Request<UserUpdateRequest>,
     ) -> Result<Response<UserFullReply>, Status> {
         let logged_in = request.authorize()?;
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
 
         let mut active_user = logged_in.clone().into_active_model();
@@ -219,7 +220,7 @@ impl User for UserController {
         request: Request<DeviceTokenRequest>,
     ) -> Result<Response<Empty>, Status> {
         let logged_in = request.authorize()?;
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
 
         let mut device_ids = logged_in.device_ids.clone();
@@ -246,7 +247,7 @@ impl User for UserController {
         request: Request<DeviceTokenRequest>,
     ) -> Result<Response<Empty>, Status> {
         let logged_in = request.authorize()?;
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
 
         let mut device_ids = logged_in.device_ids.clone();

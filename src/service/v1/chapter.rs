@@ -9,6 +9,7 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
+use crate::util::db::DatabaseRequest;
 use crate::{data, MANGA_PARSER};
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
@@ -23,7 +24,7 @@ pub struct ChapterController;
 impl Chapter for ChapterController {
     /// Get chapter images
     async fn images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let req = request.get_ref();
         let chapter_id = req.id;
 
@@ -52,7 +53,7 @@ impl Chapter for ChapterController {
         &self,
         request: Request<ChapterRequest>,
     ) -> Result<Response<ChapterReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.manga_id;
@@ -109,7 +110,7 @@ impl Chapter for ChapterController {
         &self,
         request: Request<PaginateChapterQuery>,
     ) -> Result<Response<ChaptersReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;

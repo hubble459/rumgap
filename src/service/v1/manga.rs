@@ -20,6 +20,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     Id, MangaReply, MangaRequest, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
 };
+use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
 use crate::util::search::manga::lucene_filter;
 use crate::{data, util, MANGA_PARSER};
@@ -209,7 +210,7 @@ impl Manga for MangaController {
 
     /// Create one manga
     async fn create(&self, request: Request<MangaRequest>) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in =
             request
                 .extensions()
@@ -295,7 +296,7 @@ impl Manga for MangaController {
 
     /// Get one manga
     async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
@@ -332,7 +333,7 @@ impl Manga for MangaController {
 
     /// Force update a manga
     async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
         let manga_id = req.id;
@@ -357,7 +358,7 @@ impl Manga for MangaController {
         &self,
         request: Request<MangaRequest>,
     ) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in =
             request
                 .extensions()
@@ -386,7 +387,7 @@ impl Manga for MangaController {
         &self,
         request: Request<PaginateSearchQuery>,
     ) -> Result<Response<MangasReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>().cloned();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
@@ -440,6 +441,13 @@ impl Manga for MangaController {
             }),
             items: items.into_iter().map(|manga| manga.into()).collect(),
         }))
+    }
+
+    async fn similar(
+        &self,
+        request: Request<Id>,
+    ) -> Result<Response<MangasReply>, Status> {
+        todo!()
     }
 }
 

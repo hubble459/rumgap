@@ -13,6 +13,7 @@ use crate::proto::{
 };
 use crate::util::auth::Authorize;
 use crate::MANGA_PARSER;
+use crate::util::db::DatabaseRequest;
 
 #[derive(Debug, Default)]
 pub struct MetaController;
@@ -86,7 +87,7 @@ enum StatsCount {
 #[tonic::async_trait]
 impl Meta for MetaController {
     async fn genres(&self, req: Request<MetaGenresRequest>) -> Result<Response<MetaReply>, Status> {
-        let db = req.extensions().get::<DatabaseConnection>().unwrap();
+        let db = req.db()?;
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
         let query = entity::manga::Entity::find()
@@ -111,7 +112,7 @@ impl Meta for MetaController {
         &self,
         req: Request<MetaHostnamesRequest>,
     ) -> Result<Response<MetaReply>, Status> {
-        let db = req.extensions().get::<DatabaseConnection>().unwrap();
+        let db = req.db()?;
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
         let query = entity::manga::Entity::find()
@@ -136,7 +137,7 @@ impl Meta for MetaController {
 
     async fn stats(&self, req: Request<Empty>) -> Result<Response<StatsReply>, Status> {
         let logged_in = req.authorize()?;
-        let db = req.extensions().get::<DatabaseConnection>().unwrap();
+        let db = req.db()?;
 
         let user_id = logged_in.id;
 

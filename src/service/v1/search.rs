@@ -12,6 +12,7 @@ use tonic::{Request, Response, Status};
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 use crate::MANGA_PARSER;
+use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
 
 #[derive(Debug, Default)]
@@ -31,7 +32,7 @@ impl Search for SearchController {
         &self,
         request: Request<SearchRequest>,
     ) -> Result<Response<SearchReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
+        let db = request.db()?;
         let logged_in = request.extensions().get::<entity::user::Model>();
         let req = request.get_ref();
 

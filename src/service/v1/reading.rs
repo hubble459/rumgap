@@ -8,6 +8,8 @@ use crate::proto::reading_server::{Reading, ReadingServer};
 use crate::proto::{
     Empty, Id, MangaReply, ReadingPatchRequest, ReadingPostRequest, UpdateChapterOffsetRequest,
 };
+use crate::util::auth::Authorize;
+use crate::util::db::DatabaseRequest;
 
 #[derive(Debug, Default)]
 pub struct ReadingController;
@@ -19,8 +21,8 @@ impl Reading for ReadingController {
         &self,
         request: Request<ReadingPatchRequest>,
     ) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         let mut reading = entity::reading::Entity::find_by_id((logged_in.id, req.manga_id))
@@ -46,8 +48,8 @@ impl Reading for ReadingController {
         &self,
         request: Request<ReadingPostRequest>,
     ) -> Result<Response<MangaReply>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         let saved = entity::reading::ActiveModel {
@@ -66,8 +68,8 @@ impl Reading for ReadingController {
 
     /// Delete a reading index
     async fn delete(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         // Delete reading
@@ -89,8 +91,8 @@ impl Reading for ReadingController {
         &self,
         request: Request<UpdateChapterOffsetRequest>,
     ) -> Result<Response<Empty>, Status> {
-        let db = request.extensions().get::<DatabaseConnection>().unwrap();
-        let logged_in = request.extensions().get::<entity::user::Model>().unwrap();
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         // Find offset or create new
@@ -126,4 +128,8 @@ impl Reading for ReadingController {
     }
 }
 
-crate::export_service!(ReadingServer, ReadingController, auth = UserPermissions::USER);
+crate::export_service!(
+    ReadingServer,
+    ReadingController,
+    auth = UserPermissions::USER
+);
