@@ -1,23 +1,23 @@
 use std::num::TryFromIntError;
 
-use manga_parser::Url;
 use manga_parser::scraper::MangaScraper;
+use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, RelationTrait,
+    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
-use crate::util::auth::Authorize;
-use crate::util::db::DatabaseRequest;
-use crate::util::scrape_error_proto::StatusWrapper;
-use crate::{data, MANGA_PARSER};
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery,
     PaginateReply,
 };
+use crate::util::auth::Authorize;
+use crate::util::db::DatabaseRequest;
+use crate::util::scrape_error_proto::StatusWrapper;
+use crate::{data, MANGA_PARSER};
 
 #[derive(Debug, Default)]
 pub struct ChapterController;
@@ -116,13 +116,19 @@ impl Chapter for ChapterController {
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
         let manga_id = req.id;
+        let reversed = req.reversed.unwrap_or_default();
+        let order = if reversed {
+            migration::Order::Asc
+        } else {
+            migration::Order::Desc
+        };
         let req = req.paginate_query.clone().unwrap_or_default();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
 
         // Create paginate object
         let paginate = entity::chapter::Entity::find()
             .filter(entity::chapter::Column::MangaId.eq(manga_id))
-            .order_by(entity::chapter::Column::Id, migration::Order::Desc)
+            .order_by(entity::chapter::Column::Id, order)
             .column_as(Expr::cust("null"), "offset")
             .column_as(Expr::cust("null"), "page")
             .apply_if(logged_in, |query, logged_in| {
@@ -176,11 +182,13 @@ impl Chapter for ChapterController {
                 .into_iter()
                 .enumerate()
                 .map(|(index, chapter)| {
-                    chapter.into_chapter_reply(
+                    chapter.into_chapter_reply(if reversed {
+                        page as i64 * per_page as i64 + index as i64 + 1
+                    } else {
                         amount.number_of_items as i64
                             - (page as i64 * per_page as i64)
-                            - index as i64,
-                    )
+                            - index as i64
+                    })
                 })
                 .collect(),
         }))

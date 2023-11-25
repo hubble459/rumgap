@@ -96,13 +96,5 @@ pub fn lucene_filter(
         .skip(1)
         .fold(first, |total, expr| total.and(expr));
 
-    println!(
-        "Filter {}",
-        migration::Query::select()
-            .and_where(expression.clone())
-            .to_owned()
-            .to_string(migration::PostgresQueryBuilder)
-    );
-
     Ok(expression)
 }

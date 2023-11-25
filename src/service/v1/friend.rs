@@ -45,7 +45,7 @@ async fn index(
 ) -> Result<Response<UsersReply>, Status> {
     let db = request.db()?;
     let logged_in = request.authorize()?;
-    let req = request.get_ref();
+    let req: &PaginateQuery = request.get_ref();
     let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
 
     let paginate = entity::user::Entity::find()

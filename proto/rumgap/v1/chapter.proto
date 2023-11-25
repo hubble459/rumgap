@@ -38,4 +38,5 @@ message ImagesReply {
 message PaginateChapterQuery {
     int32 id = 1;
     optional PaginateQuery paginate_query = 2;
+    optional bool reversed = 3;
 }

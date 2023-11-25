@@ -18,6 +18,7 @@ pub struct Model {
     pub alt_titles: Vec<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub status: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

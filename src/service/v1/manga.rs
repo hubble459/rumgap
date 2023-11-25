@@ -8,8 +8,8 @@ use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, Select,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -101,6 +101,7 @@ pub async fn save_manga(
         authors: Set(manga.authors),
         alt_titles: Set(manga.alternative_titles),
         genres: Set(manga.genres),
+        status: manga.status.map_or(NotSet, Set),
         ..Default::default()
     }
     .save(db)
@@ -449,21 +450,29 @@ impl Manga for MangaController {
         let logged_in = request.authorize().ok().cloned();
 
         let id = request.get_ref().id;
-        let manga_title: String = entity::manga::Entity::find_by_id(id)
-            .select_only()
-            .column(entity::manga::Column::Title)
-            .into_tuple()
-            .one(db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?
-            .ok_or(Status::not_found("Manga not found"))?;
+        let (manga_title, alt_titles): (String, Vec<String>) =
+            entity::manga::Entity::find_by_id(id)
+                .select_only()
+                .column(entity::manga::Column::Title)
+                .column(entity::manga::Column::AltTitles)
+                .into_tuple()
+                .one(db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?
+                .ok_or(Status::not_found("Manga not found"))?;
+
+        let title_matches = alt_titles
+            .into_iter()
+            .map(|alt_title| {
+                Expr::cust_with_values("$1 % any(manga.alt_titles || manga.title)", [alt_title])
+            })
+            .fold(
+                Expr::cust_with_values("$1 % any(manga.alt_titles || manga.title)", [manga_title]),
+                |expr, alt_title_expr| expr.or(alt_title_expr),
+            );
 
         let similar = index_manga(logged_in)
-            .filter(
-                entity::manga::Column::Id
-                    .ne(id)
-                    .and(entity::manga::Column::Title.into_expr().modulo(manga_title)),
-            )
+            .filter(entity::manga::Column::Id.ne(id).and(title_matches))
             .into_model::<data::manga::Full>()
             .all(db)
             .await

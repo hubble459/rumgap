@@ -12,7 +12,7 @@ mod m20230206_144400_create_chapter_offset;
 mod m20230212_132547_add_page_column_to_chapter_offset;
 mod m20230219_170615_add_device_ids_column_to_user;
 mod m20231116_195236_fix_timestamps;
-
+mod m20231125_223257_add_status_to_manga;
 
 pub struct Migrator;
 
@@ -30,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230212_132547_add_page_column_to_chapter_offset::Migration),
             Box::new(m20230219_170615_add_device_ids_column_to_user::Migration),
             Box::new(m20231116_195236_fix_timestamps::Migration),
+            Box::new(m20231125_223257_add_status_to_manga::Migration),
         ]
     }
 }

@@ -72,4 +72,5 @@ pub(crate) enum Manga {
     Genres,
     Authors,
     AltTitles,
+    Status,
 }
