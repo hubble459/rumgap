@@ -22,6 +22,10 @@ manga:
           type: own-text
         fix_capitalization: title
   description:
+    - selector: div.summary__content > p
+      options:
+        text_selection:
+          type: own-text
     - selector: div.summary__content
       options:
         text_selection:
@@ -45,7 +49,13 @@ manga:
     - div.post-status div + div div.summary-content
     - div.post-status div.summary-content
   authors: div.author-content a
-  genres: div.genres-content a
+  genres:
+    selector: div.genres-content a
+    options:
+      fix_capitalization: title
+      cleanup:
+        - replace_regex: 'Scifi'
+          replace_with: 'Sci-Fi'
   alt_titles: div.summary-heading:has('h5:icontains("alternative")') + div
 
   chapter:

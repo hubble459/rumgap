@@ -24,12 +24,19 @@ manga:
           - content
 
   status: td:has('i.info-status') + td
-  authors: td:has('i.info-author') + td a
-  genres: td:has('i.info-genres') + td a
+  authors:
+    selector: td:has('i.info-author') + td a
+    options:
+      fix_capitalization: title
+  genres:
+    selector: td:has('i.info-genres') + td a
+    options:
+      fix_capitalization: title
   alt_titles:
     selector: td.table-label:icontains("alternative") + td h2
     options:
       text_split_regex: ' ; '
+      fix_capitalization: title
 
   chapter:
     base: ul.row-content-chapter li
