@@ -117,33 +117,22 @@ pub async fn save_manga(
             manga.url.to_string()
         );
     } else {
-        // TODO 19/11/2023: Reload all chapters with correct dates
-        // TODO 19/11/2023: Reset this when all chapters are reloaded
-        if false {
-            if id.is_some() {
-                let count_chapters = entity::chapter::Entity::find()
-                    .filter(entity::chapter::Column::MangaId.eq(manga_id))
-                    .count(db)
-                    .await
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                if (manga.chapters.len() as u64) < count_chapters {
-                    // If there are suddenly less chapters than we have in our database, we reset our chapters
-                    // Remove old chapters
-                    let res = entity::chapter::Entity::delete_many()
-                        .filter(entity::chapter::Column::MangaId.eq(manga_id))
-                        .exec(db)
-                        .await
-                        .map_err(|e| Status::internal(e.to_string()))?;
-                    info!("Cleared {} chapter(s)", res.rows_affected);
-                }
-            }
-        } else {
-            let res = entity::chapter::Entity::delete_many()
+        if id.is_some() {
+            let count_chapters = entity::chapter::Entity::find()
                 .filter(entity::chapter::Column::MangaId.eq(manga_id))
-                .exec(db)
+                .count(db)
                 .await
                 .map_err(|e| Status::internal(e.to_string()))?;
-            info!("Cleared {} chapter(s)", res.rows_affected);
+            if (manga.chapters.len() as u64) < count_chapters {
+                // If there are suddenly less chapters than we have in our database, we reset our chapters
+                // Remove old chapters
+                let res = entity::chapter::Entity::delete_many()
+                    .filter(entity::chapter::Column::MangaId.eq(manga_id))
+                    .exec(db)
+                    .await
+                    .map_err(|e| Status::internal(e.to_string()))?;
+                info!("Cleared {} chapter(s)", res.rows_affected);
+            }
         }
 
         // Add new chapters

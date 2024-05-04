@@ -47,8 +47,8 @@ impl From<Full> for MangaReply {
             reading_progress: value.progress,
             last: value.last.map(|date| date.timestamp_millis()),
             next: value.next.map(|date| date.timestamp_millis()),
-            created_at: value.created_at.timestamp_millis(),
-            updated_at: value.updated_at.timestamp_millis(),
+            created_at: value.created_at.and_utc().timestamp_millis(),
+            updated_at: value.updated_at.and_utc().timestamp_millis(),
         }
     }
 }

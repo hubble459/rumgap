@@ -12,9 +12,6 @@ pub trait TimestampExt {
     async fn timestamps<T>(&self, table: T) -> Result<(), DbErr>
     where
         T: Iden;
-    async fn drop_timestamps<T>(&self, table: T) -> Result<(), DbErr>
-    where
-        T: Iden;
 }
 
 #[async_trait::async_trait]
@@ -54,33 +51,6 @@ impl<'a> TimestampExt for SchemaManager<'a> {
                         FOR EACH ROW
                         EXECUTE PROCEDURE trigger_set_timestamp();
                     "#,
-                ),
-            ))
-            .await
-            .map(|_| ())
-    }
-
-    async fn drop_timestamps<T>(&self, table: T) -> Result<(), DbErr>
-    where
-        T: Iden,
-    {
-        let table_name = table.to_string();
-
-        self.alter_table(
-            Table::alter()
-                .table(Alias::new(&table_name))
-                .drop_column(Timestamp::CreatedAt)
-                .drop_column(Timestamp::UpdatedAt)
-                .take(),
-        )
-        .await?;
-
-        self.get_connection()
-            .execute(Statement::from_string(
-                self.get_database_backend(),
-                format!(
-                    r#"DROP TRIGGER IF EXISTS set_{}_timestamp ON "{}""#,
-                    table_name, table_name,
                 ),
             ))
             .await

@@ -32,8 +32,8 @@ impl From<Full> for UserFullReply {
             device_ids: value.device_ids,
             count_followers: value.count_followers,
             count_following: value.count_following,
-            created_at: value.created_at.timestamp_millis(),
-            updated_at: value.updated_at.timestamp_millis(),
+            created_at: value.created_at.and_utc().timestamp_millis(),
+            updated_at: value.updated_at.and_utc().timestamp_millis(),
         }
     }
 }

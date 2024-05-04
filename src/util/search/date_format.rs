@@ -1,8 +1,8 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use regex::Regex;
 use tonic::Status;
 
-pub struct DateFormat(pub NaiveDateTime);
+pub struct DateFormat(pub DateTime<Utc>);
 
 lazy_static! {
     static ref DATE_FMT_REGEX: Regex = Regex::new(r"(\d+)([hdwmy])?").unwrap();
@@ -52,7 +52,7 @@ impl DateFormat {
             millis - change
         };
 
-        let date_time = NaiveDateTime::from_timestamp_millis(millis);
+        let date_time = DateTime::from_timestamp_millis(millis);
         let date_time = date_time.ok_or(Status::invalid_argument(format!(
             "'{value}' is not a valid date"
         )))?;

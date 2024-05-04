@@ -100,8 +100,8 @@ async fn index(
                 permissions: user.permissions as i32,
                 preferred_hostnames: user.preferred_hostnames,
                 device_ids: user.device_ids,
-                created_at: user.created_at.timestamp_millis(),
-                updated_at: user.updated_at.timestamp_millis(),
+                created_at: user.created_at.and_utc().timestamp_millis(),
+                updated_at: user.updated_at.and_utc().timestamp_millis(),
             })
             .collect(),
     }))

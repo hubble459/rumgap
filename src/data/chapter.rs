@@ -34,8 +34,8 @@ impl Full {
                 pixels: offset,
                 page: self.page.unwrap(),
             }),
-            created_at: self.created_at.timestamp_millis(),
-            updated_at: self.updated_at.timestamp_millis(),
+            created_at: self.created_at.and_utc().timestamp_millis(),
+            updated_at: self.updated_at.and_utc().timestamp_millis(),
         }
     }
 }
