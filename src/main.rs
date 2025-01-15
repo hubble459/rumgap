@@ -9,7 +9,9 @@ extern crate phf;
 
 use std::env;
 
+use crate::util::auth::Authorize;
 use hyper::Uri;
+use interceptor::logger::Logger;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
@@ -18,17 +20,13 @@ use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
-use crate::interceptor::logger::LoggerLayer;
-use crate::util::auth::Authorize;
-
 mod data;
 mod interceptor;
 mod service;
 mod util;
 
 lazy_static! {
-    static ref MANGA_PARSER: ScraperManager =
-        manga_parser::scraper::scraper_manager::ScraperManager::default();
+    static ref MANGA_PARSER: ScraperManager = manga_parser::scraper::scraper_manager::ScraperManager::default();
 }
 
 /// Load all ProtoBuf files
@@ -68,11 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     Server::builder()
-        .layer(tonic::service::interceptor(move |req| {
-            inject_db(req, conn.clone())
-        }))
+        .layer(tonic::service::interceptor(move |req| inject_db(req, conn.clone())))
         .layer(async_interceptor(interceptor::auth::check_auth))
-        .layer(tower::ServiceBuilder::new().layer(LoggerLayer))
+        // .layer(tower::ServiceBuilder::new().layer_fn(Logger::new))
         .layer(tonic::service::interceptor(logger))
         .add_service(service::v1::user::server())
         .add_service(service::v1::friend::server())
@@ -84,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
-                .build()?,
+                .build_v1()?,
         )
         .serve(addr)
         .await?;
@@ -117,8 +113,7 @@ fn logger(req: Request<()>) -> Result<Request<()>, Status> {
 
     info!(
         "[{}] -> [{:?}] ({})",
-        req.remote_addr()
-            .map_or(String::from("unknown"), |ip| ip.to_string()),
+        req.remote_addr().map_or(String::from("unknown"), |ip| ip.to_string()),
         target_uri.map_or(String::from("unknown"), |uri| uri.path().to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
     );

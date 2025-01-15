@@ -1,16 +1,14 @@
 use migration::{Alias, Expr, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QuerySelect, RelationTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
 use crate::data;
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::friend_server::{Friend, FriendServer};
-use crate::proto::{
-    FriendRequest, PaginateQuery, PaginateReply, UserFullReply, UserReply, UsersReply,
-};
+use crate::proto::{FriendRequest, PaginateQuery, PaginateReply, UserFullReply, UserReply, UsersReply};
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::verify;
@@ -39,10 +37,7 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
 /// Get all following or followers
 /// [following=true] Index Following
 /// [following=false] Index Followers
-async fn index(
-    request: Request<PaginateQuery>,
-    following: bool,
-) -> Result<Response<UsersReply>, Status> {
+async fn index(request: Request<PaginateQuery>, following: bool) -> Result<Response<UsersReply>, Status> {
     let db = request.db()?;
     let logged_in = request.authorize()?;
     let req: &PaginateQuery = request.get_ref();
@@ -113,26 +108,17 @@ pub struct FriendController;
 #[tonic::async_trait]
 impl Friend for FriendController {
     /// Get all following from logged in user
-    async fn following(
-        &self,
-        request: Request<PaginateQuery>,
-    ) -> Result<Response<UsersReply>, Status> {
+    async fn following(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
         index(request, true).await
     }
 
     /// Get all followers from logged in user
-    async fn followers(
-        &self,
-        request: Request<PaginateQuery>,
-    ) -> Result<Response<UsersReply>, Status> {
+    async fn followers(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
         index(request, false).await
     }
 
     /// Follow a user
-    async fn follow(
-        &self,
-        request: Request<FriendRequest>,
-    ) -> Result<Response<UserFullReply>, Status> {
+    async fn follow(&self, request: Request<FriendRequest>) -> Result<Response<UserFullReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();
@@ -155,10 +141,7 @@ impl Friend for FriendController {
     }
 
     /// Unfollow a user
-    async fn unfollow(
-        &self,
-        request: Request<FriendRequest>,
-    ) -> Result<Response<UserFullReply>, Status> {
+    async fn unfollow(&self, request: Request<FriendRequest>) -> Result<Response<UserFullReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();

@@ -1,32 +1,26 @@
 use std::task::{Context, Poll};
 
-use hyper::Body;
+use hyper::body::Incoming;
 use prost::Message;
 use tonic::body::BoxBody;
 use tonic::Status;
-use tower::{Layer, Service};
+use tower::Service;
 
 use crate::proto::ScrapeError;
-
-#[derive(Debug, Clone, Default)]
-pub struct LoggerLayer;
-
-impl<S> Layer<S> for LoggerLayer {
-    type Service = Logger<S>;
-
-    fn layer(&self, service: S) -> Self::Service {
-        Logger { inner: service }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Logger<S> {
     inner: S,
 }
+impl<S> Logger<S> {
+    pub fn new(inner: S) -> Self {
+        Logger { inner }
+    }
+}
 
-impl<S> Service<hyper::Request<Body>> for Logger<S>
+impl<S> Service<hyper::Request<Incoming>> for Logger<S>
 where
-    S: Service<hyper::Request<Body>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
+    S: Service<hyper::Request<Incoming>, Response = hyper::Response<BoxBody>> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Error = S::Error;
@@ -37,7 +31,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: hyper::Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: hyper::Request<Incoming>) -> Self::Future {
         // This is necessary because tonic internally uses `tower::buffer::Buffer`.
         // See https://github.com/tower-rs/tower/issues/547#issuecomment-767629149
         // for details on why this is necessary

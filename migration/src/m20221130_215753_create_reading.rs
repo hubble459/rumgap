@@ -18,12 +18,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Reading::UserId).integer().not_null())
                     .col(ColumnDef::new(Reading::MangaId).integer().not_null())
                     .primary_key(Index::create().col(Reading::UserId).col(Reading::MangaId))
-                    .col(
-                        ColumnDef::new(Reading::Progress)
-                            .integer()
-                            .not_null()
-                            .default(0),
-                    )
+                    .col(ColumnDef::new(Reading::Progress).integer().not_null().default(0))
                     .foreign_key(
                         ForeignKey::create()
                             .from(Reading::Table, Reading::MangaId)
@@ -46,9 +41,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_table(Table::drop().table(Reading::Table).take())
-            .await
+        manager.drop_table(Table::drop().table(Reading::Table).take()).await
     }
 }
 

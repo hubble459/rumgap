@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
         .build_client(false)
         .compile_well_known_types(false)
         .protoc_arg("--experimental_allow_proto3_optional")
-        .compile(protos.as_slice(), &["proto"])?;
+        .compile_protos(protos.as_slice(), &["proto", "/usr/local/include"])?;
 
     #[cfg(windows)]
     {

@@ -1,7 +1,7 @@
 use migration::{Alias, Expr, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
@@ -10,8 +10,8 @@ use crate::interceptor::auth::sign;
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    DeviceTokenRequest, Empty, Id, PaginateQuery, PaginateReply, UserFullReply,
-    UserRegisterRequest, UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
+    DeviceTokenRequest, Empty, Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply,
+    UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
@@ -101,10 +101,7 @@ impl User for UserController {
     }
 
     /// Register a new account
-    async fn register(
-        &self,
-        request: Request<UserRegisterRequest>,
-    ) -> Result<Response<UserTokenReply>, Status> {
+    async fn register(&self, request: Request<UserRegisterRequest>) -> Result<Response<UserTokenReply>, Status> {
         let db = request.db()?;
         let req = request.get_ref();
 
@@ -131,10 +128,7 @@ impl User for UserController {
     }
 
     /// Log in with username/email and password
-    async fn login(
-        &self,
-        request: Request<UserRequest>,
-    ) -> Result<Response<UserTokenReply>, Status> {
+    async fn login(&self, request: Request<UserRequest>) -> Result<Response<UserTokenReply>, Status> {
         let error = "Username and password mismatch";
         let db = request.db()?;
         let req = request.get_ref();
@@ -142,9 +136,7 @@ impl User for UserController {
         let identifier = req.identifier.as_ref().unwrap();
 
         let filter = match identifier {
-            Identifier::Username(username) => {
-                entity::user::Column::Username.eq(username.to_ascii_lowercase())
-            }
+            Identifier::Username(username) => entity::user::Column::Username.eq(username.to_ascii_lowercase()),
             Identifier::Email(email) => entity::user::Column::Email.eq(email.to_ascii_lowercase()),
         };
 
@@ -170,16 +162,11 @@ impl User for UserController {
         let logged_in = request.authorize()?;
         let db = request.db()?;
 
-        Ok(Response::new(
-            get_user_by_id(db, logged_in.id).await?.into(),
-        ))
+        Ok(Response::new(get_user_by_id(db, logged_in.id).await?.into()))
     }
 
     /// Update logged in user
-    async fn update(
-        &self,
-        request: Request<UserUpdateRequest>,
-    ) -> Result<Response<UserFullReply>, Status> {
+    async fn update(&self, request: Request<UserUpdateRequest>) -> Result<Response<UserFullReply>, Status> {
         let logged_in = request.authorize()?;
         let db = request.db()?;
         let req = request.get_ref();
@@ -193,8 +180,7 @@ impl User for UserController {
             active_user.email = ActiveValue::Set(verify::email(email)?);
         }
         if let Some(password) = &req.password {
-            active_user.password_hash =
-                ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
+            active_user.password_hash = ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
         }
         if !req.preferred_hostnames.is_empty() {
             active_user.preferred_hostnames = ActiveValue::Set(req.preferred_hostnames.clone());
@@ -210,15 +196,10 @@ impl User for UserController {
             Status::internal(e.to_string())
         })?;
 
-        Ok(Response::new(
-            get_user_by_id(db, logged_in.id).await?.into(),
-        ))
+        Ok(Response::new(get_user_by_id(db, logged_in.id).await?.into()))
     }
 
-    async fn add_device_token(
-        &self,
-        request: Request<DeviceTokenRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    async fn add_device_token(&self, request: Request<DeviceTokenRequest>) -> Result<Response<Empty>, Status> {
         let logged_in = request.authorize()?;
         let db = request.db()?;
         let req = request.get_ref();
@@ -242,10 +223,7 @@ impl User for UserController {
         Ok(Response::new(Empty::default()))
     }
 
-    async fn remove_device_token(
-        &self,
-        request: Request<DeviceTokenRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    async fn remove_device_token(&self, request: Request<DeviceTokenRequest>) -> Result<Response<Empty>, Status> {
         let logged_in = request.authorize()?;
         let db = request.db()?;
         let req = request.get_ref();

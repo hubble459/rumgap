@@ -20,12 +20,7 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(Manga::Url)
-                            .string_len(511)
-                            .not_null()
-                            .unique_key(),
-                    )
+                    .col(ColumnDef::new(Manga::Url).string_len(511).not_null().unique_key())
                     .col(ColumnDef::new(Manga::Title).string_len(511).not_null())
                     .col(ColumnDef::new(Manga::Description).string().not_null())
                     .col(ColumnDef::new(Manga::Cover).string_len(511))
@@ -53,9 +48,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_table(Table::drop().table(Manga::Table).take())
-            .await
+        manager.drop_table(Table::drop().table(Manga::Table).take()).await
     }
 }
 

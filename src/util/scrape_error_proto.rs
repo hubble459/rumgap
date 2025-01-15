@@ -38,11 +38,7 @@ impl From<ScrapeError> for StatusWrapper {
         buffer.clear();
         details.encode(&mut buffer).expect("encode error");
 
-        Self(Status::with_details(
-            tonic::Code::Internal,
-            message,
-            buffer.into(),
-        ))
+        Self(Status::with_details(tonic::Code::Internal, message, buffer.into()))
     }
 }
 

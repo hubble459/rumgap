@@ -22,12 +22,7 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Chapter::MangaId).integer().not_null())
-                    .col(
-                        ColumnDef::new(Chapter::Url)
-                            .string_len(511)
-                            .not_null()
-                            .unique_key(),
-                    )
+                    .col(ColumnDef::new(Chapter::Url).string_len(511).not_null().unique_key())
                     .col(ColumnDef::new(Chapter::Title).string_len(511).not_null())
                     .col(ColumnDef::new(Chapter::Number).float().not_null())
                     .col(ColumnDef::new(Chapter::Posted).timestamp_with_time_zone())
@@ -46,9 +41,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_table(Table::drop().table(Chapter::Table).take())
-            .await
+        manager.drop_table(Table::drop().table(Chapter::Table).take()).await
     }
 }
 

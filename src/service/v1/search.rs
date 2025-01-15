@@ -2,19 +2,16 @@ use std::time::Duration;
 
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
-use sea_orm::{
-    ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect,
-    RelationTrait,
-};
+use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect, RelationTrait};
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
-use crate::MANGA_PARSER;
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
+use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
 pub struct SearchController;
@@ -29,10 +26,7 @@ enum QueryAs {
 #[tonic::async_trait]
 impl Search for SearchController {
     /// Edit reading progress
-    async fn manga(
-        &self,
-        request: Request<SearchRequest>,
-    ) -> Result<Response<SearchReply>, Status> {
+    async fn manga(&self, request: Request<SearchRequest>) -> Result<Response<SearchReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
@@ -45,10 +39,7 @@ impl Search for SearchController {
         .map_err(|e| Status::deadline_exceeded(e.to_string()))?
         .map_err(StatusWrapper::from)?;
 
-        let urls: Vec<String> = search_results
-            .iter()
-            .map(|item| item.url.to_string())
-            .collect();
+        let urls: Vec<String> = search_results.iter().map(|item| item.url.to_string()).collect();
 
         let query = if let Some(logged_in) = logged_in {
             let user_id = logged_in.id;
@@ -81,17 +72,14 @@ impl Search for SearchController {
             items: search_results
                 .into_iter()
                 .map(|item| {
-                    let existing = exists
-                        .iter()
-                        .find(|(_id, url, ..)| &item.url.to_string() == url);
+                    let existing = exists.iter().find(|(_id, url, ..)| &item.url.to_string() == url);
 
                     SearchManga {
                         url: item.url.to_string(),
                         title: item.title,
                         cover: item.cover_url.map(|cover| cover.to_string()),
                         posted: item.posted.map(|date| date.timestamp_millis()),
-                        is_reading: existing
-                            .map_or(false, |(_id, _url, progress)| progress.is_some()),
+                        is_reading: existing.map_or(false, |(_id, _url, progress)| progress.is_some()),
                         manga_id: existing.map(|(id, ..)| *id),
                     }
                 })

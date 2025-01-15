@@ -16,22 +16,9 @@ impl MigrationTrait for Migration {
                     .table(ChapterOffset::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(ChapterOffset::UserId).integer().not_null())
-                    .col(
-                        ColumnDef::new(ChapterOffset::ChapterId)
-                            .integer()
-                            .not_null(),
-                    )
-                    .primary_key(
-                        Index::create()
-                            .col(ChapterOffset::UserId)
-                            .col(ChapterOffset::ChapterId),
-                    )
-                    .col(
-                        ColumnDef::new(ChapterOffset::Offset)
-                            .integer()
-                            .not_null()
-                            .default(0),
-                    )
+                    .col(ColumnDef::new(ChapterOffset::ChapterId).integer().not_null())
+                    .primary_key(Index::create().col(ChapterOffset::UserId).col(ChapterOffset::ChapterId))
+                    .col(ColumnDef::new(ChapterOffset::Offset).integer().not_null().default(0))
                     .foreign_key(
                         ForeignKey::create()
                             .from(ChapterOffset::Table, ChapterOffset::ChapterId)

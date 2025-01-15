@@ -5,9 +5,7 @@ use tonic::{Request, Response, Status};
 use super::manga::get_manga_by_id;
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::reading_server::{Reading, ReadingServer};
-use crate::proto::{
-    Empty, Id, MangaReply, ReadingPatchRequest, ReadingPostRequest, UpdateChapterOffsetRequest,
-};
+use crate::proto::{Empty, Id, MangaReply, ReadingPatchRequest, ReadingPostRequest, UpdateChapterOffsetRequest};
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 
@@ -17,10 +15,7 @@ pub struct ReadingController;
 #[tonic::async_trait]
 impl Reading for ReadingController {
     /// Edit reading progress
-    async fn update(
-        &self,
-        request: Request<ReadingPatchRequest>,
-    ) -> Result<Response<MangaReply>, Status> {
+    async fn update(&self, request: Request<ReadingPatchRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();
@@ -33,10 +28,7 @@ impl Reading for ReadingController {
             .into_active_model();
 
         reading.progress = Set(req.progress);
-        let reading = reading
-            .update(db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let reading = reading.update(db).await.map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(
             get_manga_by_id(db, Some(logged_in), reading.manga_id).await?,
@@ -44,10 +36,7 @@ impl Reading for ReadingController {
     }
 
     /// Add a new manga to reading
-    async fn create(
-        &self,
-        request: Request<ReadingPostRequest>,
-    ) -> Result<Response<MangaReply>, Status> {
+    async fn create(&self, request: Request<ReadingPostRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();
@@ -107,10 +96,7 @@ impl Reading for ReadingController {
             model.offset = ActiveValue::Set(req.pixels);
             model.page = ActiveValue::Set(req.page);
 
-            model
-                .update(db)
-                .await
-                .map_err(|e| Status::internal(e.to_string()))?;
+            model.update(db).await.map_err(|e| Status::internal(e.to_string()))?;
         } else {
             entity::chapter_offset::ActiveModel {
                 user_id: ActiveValue::Set(logged_in.id),
@@ -128,8 +114,4 @@ impl Reading for ReadingController {
     }
 }
 
-crate::export_service!(
-    ReadingServer,
-    ReadingController,
-    auth = UserPermissions::USER
-);
+crate::export_service!(ReadingServer, ReadingController, auth = UserPermissions::USER);

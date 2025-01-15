@@ -4,10 +4,7 @@ use chrono::Utc;
 use fcm::{Client, MessageBuilder, NotificationBuilder};
 use manga_parser::Url;
 use migration::{Expr, JoinType};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use tokio::time::{self, Duration};
 
 use crate::data;
@@ -26,10 +23,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
 
         let update_list = collect_priority_manga(db).await;
 
-        info!(
-            "[Auto Update] Found {} manga that should be updated",
-            update_list.len()
-        );
+        info!("[Auto Update] Found {} manga that should be updated", update_list.len());
         for manga in update_list {
             info!("[Auto Update] Automatically updating {}", manga.url);
             let url = Url::parse(&manga.url);
@@ -40,15 +34,9 @@ pub async fn watch_updates(db: &DatabaseConnection) {
                         Ok(saved) => {
                             if saved.count_chapters != manga.count_chapters {
                                 let readers = get_readers(db, manga.id).await;
-                                let ids: Vec<String> = readers
-                                    .into_iter()
-                                    .flat_map(|user| user.device_ids)
-                                    .collect();
+                                let ids: Vec<String> = readers.into_iter().flat_map(|user| user.device_ids).collect();
 
-                                info!(
-                                    "[Auto Update] Successfully updated {}",
-                                    saved.url.to_string()
-                                );
+                                info!("[Auto Update] Successfully updated {}", saved.url.to_string());
                                 if !ids.is_empty() {
                                     send_notification(&manga, ids.as_slice()).await;
                                 }
@@ -82,10 +70,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
 
     index_manga(None)
-        .join(
-            JoinType::LeftJoin,
-            entity::reading::Relation::Manga.def().rev(),
-        )
+        .join(JoinType::LeftJoin, entity::reading::Relation::Manga.def().rev())
         .column_as(reading::Column::MangaId.count(), "count_reading")
         .group_by(manga::Column::Id)
         .filter(manga::Column::UpdatedAt.lte(date_time))

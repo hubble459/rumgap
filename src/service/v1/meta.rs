@@ -1,19 +1,18 @@
 use manga_parser::scraper::MangaScraper;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Select,
+    ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait, Select,
 };
 use tonic::{Request, Response, Status};
 
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
-    Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest,
-    MetaReply, StatsReply,
+    Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest, MetaReply, StatsReply,
 };
 use crate::util::auth::Authorize;
-use crate::MANGA_PARSER;
 use crate::util::db::DatabaseRequest;
+use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
 pub struct MetaController;
@@ -37,20 +36,20 @@ async fn get_reply(
 ) -> Result<MetaReply, Status> {
     let reply = match meta_option {
         MetaOption::Reading => {
-            let logged_in =
-                logged_in.ok_or(Status::permission_denied("You have to be logged in!"))?;
+            let logged_in = logged_in.ok_or(Status::permission_denied("You have to be logged in!"))?;
 
             MetaReply {
                 items: query
                     .join(
                         JoinType::RightJoin,
-                        entity::reading::Relation::Manga.def().rev().on_condition(
-                            move |_left, right| {
+                        entity::reading::Relation::Manga
+                            .def()
+                            .rev()
+                            .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
                                     .eq(logged_in.id)
                                     .into_condition()
-                            },
-                        ),
+                            }),
                     )
                     .into_values::<_, QueryAs>()
                     .all(db)
@@ -108,16 +107,16 @@ impl Meta for MetaController {
         ))
     }
 
-    async fn hostnames(
-        &self,
-        req: Request<MetaHostnamesRequest>,
-    ) -> Result<Response<MetaReply>, Status> {
+    async fn hostnames(&self, req: Request<MetaHostnamesRequest>) -> Result<Response<MetaReply>, Status> {
         let db = req.db()?;
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
         let query = entity::manga::Entity::find()
             .select_only()
-            .column_as(Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"), QueryAs::Strings)
+            .column_as(
+                Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"),
+                QueryAs::Strings,
+            )
             .order_by_asc(Expr::cust("(regexp_matches(manga.url, '://([^/]+)'))[1]"));
 
         Ok(Response::new(
@@ -159,18 +158,9 @@ impl Meta for MetaController {
             .left_join(entity::manga::Entity)
             .join(JoinType::LeftJoin, entity::manga::Relation::Chapter.def())
             .select_only()
-            .column_as(
-                Expr::cust("COUNT(DISTINCT reading.manga_id)"),
-                StatsCount::TotalReading,
-            )
-            .column_as(
-                Expr::cust("COUNT(DISTINCT chapter.id)"),
-                StatsCount::TotalChapters,
-            )
-            .column_as(
-                Expr::cust("SUM(DISTINCT reading.progress)"),
-                StatsCount::Chapters,
-            )
+            .column_as(Expr::cust("COUNT(DISTINCT reading.manga_id)"), StatsCount::TotalReading)
+            .column_as(Expr::cust("COUNT(DISTINCT chapter.id)"), StatsCount::TotalChapters)
+            .column_as(Expr::cust("SUM(DISTINCT reading.progress)"), StatsCount::Chapters)
             .into_values::<_, StatsCount>()
             .one(db)
             .await

@@ -4,16 +4,12 @@ use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
 use migration::{Expr, IntoCondition, JoinType};
 use sea_orm::{
-    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait,
+    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
 use crate::proto::chapter_server::{Chapter, ChapterServer};
-use crate::proto::{
-    ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery,
-    PaginateReply,
-};
+use crate::proto::{ChapterReply, ChapterRequest, ChaptersReply, Id, ImagesReply, PaginateChapterQuery, PaginateReply};
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
@@ -51,10 +47,7 @@ impl Chapter for ChapterController {
     }
 
     /// Get chapter
-    async fn get(
-        &self,
-        request: Request<ChapterRequest>,
-    ) -> Result<Response<ChapterReply>, Status> {
+    async fn get(&self, request: Request<ChapterRequest>) -> Result<Response<ChapterReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
@@ -108,10 +101,7 @@ impl Chapter for ChapterController {
     }
 
     /// Get paginated chapters from a manga
-    async fn index(
-        &self,
-        request: Request<PaginateChapterQuery>,
-    ) -> Result<Response<ChaptersReply>, Status> {
+    async fn index(&self, request: Request<PaginateChapterQuery>) -> Result<Response<ChaptersReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
@@ -185,9 +175,7 @@ impl Chapter for ChapterController {
                     chapter.into_chapter_reply(if reversed {
                         page as i64 * per_page as i64 + index as i64 + 1
                     } else {
-                        amount.number_of_items as i64
-                            - (page as i64 * per_page as i64)
-                            - index as i64
+                        amount.number_of_items as i64 - (page as i64 * per_page as i64) - index as i64
                     })
                 })
                 .collect(),

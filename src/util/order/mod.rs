@@ -9,10 +9,7 @@ lazy_static! {
 }
 
 /// Order parser for generating a SeaORM query
-pub fn parse(
-    map: &phf::Map<&'static str, &'static str>,
-    order: &str,
-) -> Result<Vec<(SimpleExpr, Order)>, Status> {
+pub fn parse(map: &phf::Map<&'static str, &'static str>, order: &str) -> Result<Vec<(SimpleExpr, Order)>, Status> {
     let capture_list = ORDER_REGEX.captures_iter(order);
 
     let mut orders = vec![];

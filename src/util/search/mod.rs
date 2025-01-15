@@ -11,10 +11,7 @@ pub mod manga;
 pub mod parse;
 
 /// Search parser for generating a SeaORM query
-pub fn lucene_filter(
-    map: &phf::Map<&'static str, SearchField>,
-    query: Search,
-) -> Result<SimpleExpr, Status> {
+pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -> Result<SimpleExpr, Status> {
     let with_fields: Vec<&Field> = query.iter().filter(|q| q.name.is_some()).collect();
     // TODO 13/12/2022: Use group_by when stable
 
@@ -28,10 +25,7 @@ pub fn lucene_filter(
             )));
         }
 
-        let expr = name_key
-            .cloned()
-            .unwrap()
-            .into_expression(&field.value, field.exclude);
+        let expr = name_key.cloned().unwrap().into_expression(&field.value, field.exclude);
         match expr {
             Ok(expr) => expressions.push(expr),
             Err(e) => return Err(e),

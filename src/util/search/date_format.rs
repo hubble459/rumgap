@@ -20,11 +20,9 @@ impl DateFormat {
     /// y => year
     /// Default format is "d"
     pub fn try_from(value: &str, in_future: bool) -> Result<Self, Status> {
-        let captures = DATE_FMT_REGEX
-            .captures(value)
-            .ok_or(Status::invalid_argument(format!(
-                "Expected date format but got {value}"
-            )))?;
+        let captures = DATE_FMT_REGEX.captures(value).ok_or(Status::invalid_argument(format!(
+            "Expected date format but got {value}"
+        )))?;
 
         let amount = captures.get(1).unwrap().as_str();
         let amount: i64 = amount
@@ -46,16 +44,10 @@ impl DateFormat {
             "y" => 31536000000 * amount,
             _ => unreachable!("Regex does not match anything else"),
         };
-        let millis = if in_future {
-            millis + change
-        } else {
-            millis - change
-        };
+        let millis = if in_future { millis + change } else { millis - change };
 
         let date_time = DateTime::from_timestamp_millis(millis);
-        let date_time = date_time.ok_or(Status::invalid_argument(format!(
-            "'{value}' is not a valid date"
-        )))?;
+        let date_time = date_time.ok_or(Status::invalid_argument(format!("'{value}' is not a valid date")))?;
         Ok(Self(date_time))
     }
 }

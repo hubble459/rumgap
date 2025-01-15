@@ -18,13 +18,9 @@ pub fn username(username: &str) -> Result<String, Status> {
     let username = username.trim();
 
     if username.len() < 4 {
-        Err(Status::invalid_argument(
-            "Username should be at least 4 characters",
-        ))
+        Err(Status::invalid_argument("Username should be at least 4 characters"))
     } else if !ONLY_WORD.is_match(username) {
-        Err(Status::invalid_argument(
-            "Username should only contain [a-zA-Z0-9_]+",
-        ))
+        Err(Status::invalid_argument("Username should only contain [a-zA-Z0-9_]+"))
     } else {
         Ok(username.to_ascii_lowercase())
     }

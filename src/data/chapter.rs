@@ -1,5 +1,5 @@
-use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::prelude::DateTime;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::FromQueryResult;
 
 use crate::proto::{ChapterOffset, ChapterReply};

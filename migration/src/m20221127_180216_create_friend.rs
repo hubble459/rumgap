@@ -39,9 +39,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_table(Table::drop().table(Friend::Table).take())
-            .await
+        manager.drop_table(Table::drop().table(Friend::Table).take()).await
     }
 }
 

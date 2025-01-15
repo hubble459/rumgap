@@ -25,12 +25,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .alter_table(
-                Table::alter()
-                    .table(Manga::Table)
-                    .drop_column(Manga::Status)
-                    .take(),
-            )
+            .alter_table(Table::alter().table(Manga::Table).drop_column(Manga::Status).take())
             .await
     }
 }

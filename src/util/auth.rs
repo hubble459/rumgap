@@ -8,8 +8,6 @@ impl<T> Authorize for Request<T> {
     fn authorize(&self) -> Result<&entity::user::Model, Status> {
         self.extensions()
             .get::<entity::user::Model>()
-            .ok_or(Status::unauthenticated(
-                "Missing bearer token! Log in first",
-            ))
+            .ok_or(Status::unauthenticated("Missing bearer token! Log in first"))
     }
 }
