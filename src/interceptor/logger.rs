@@ -12,6 +12,7 @@ use crate::proto::ScrapeError;
 pub struct Logger<S> {
     inner: S,
 }
+#[allow(dead_code)]
 impl<S> Logger<S> {
     pub fn new(inner: S) -> Self {
         Logger { inner }

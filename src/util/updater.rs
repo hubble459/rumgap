@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-
 use chrono::Utc;
-use fcm::{Client, MessageBuilder, NotificationBuilder};
+use fcm::message::{Message, Notification, Target};
+use fcm::FcmClient;
 use manga_parser::Url;
 use migration::{Expr, JoinType};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
+use serde_json::json;
 use tokio::time::{self, Duration};
 
 use crate::data;
@@ -96,30 +96,35 @@ async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user
 }
 
 async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
-    let fcm_token = std::env::var("FCM_LEGACY_API_KEY").ok();
+    let client = FcmClient::builder()
+        .service_account_key_json_path("manga-reader-5c535-148af5dd8096.json")
+        .build()
+        .await;
 
-    if let Some(fcm_token) = fcm_token {
+    if let Ok(client) = client {
         info!("Sending notifications to {} users", ids.len());
-        let notification_tag = manga.id.to_string();
-        let client = Client::new();
 
-        let mut notification_builder = NotificationBuilder::new();
-        notification_builder.title("Manga Updated!");
-        notification_builder.body(&manga.title);
-        notification_builder.tag(&notification_tag);
+        let data = json!({ "manga_id": manga.id });
 
-        notification_builder.icon("https://cdn.discordapp.com/attachments/1013449250102857729/1076924437280067705/v2-84ce3eaa59c7a6f6fd8b8e23c7431c48_b.jpg");
+        for target in ids.to_owned() {
+            let message = Message {
+                data: Some(data.clone()),
+                notification: Some(Notification {
+                    title: Some("Manga Updated!".to_string()),
+                    body: Some(manga.title.to_string()),
+                    image: None,
+                }),
+                target: Target::Token(target),
+                android: None,
+                webpush: None,
+                apns: None,
+                fcm_options: None,
+            };
 
-        let mut builder = MessageBuilder::new_multi(&fcm_token, ids);
-        builder.notification(notification_builder.finalize());
-
-        let mut data = HashMap::new();
-        data.insert("manga_id", manga.id.to_string());
-        builder.data(&data).unwrap();
-
-        let response = client.send(builder.finalize()).await.unwrap();
-        info!("Sent: {:?}", response);
+            let response = client.send(message).await.unwrap();
+            info!("Sent: {:?}", response);
+        }
     } else {
-        info!("Missing FCM_LEGACY_API_KEY so not sending notifications");
+        info!("FCM Error: {:#?}", client.err().unwrap());
     }
 }

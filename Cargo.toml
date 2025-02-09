@@ -49,7 +49,7 @@ futures = { version = "0" }
 futures-util = { version = "0" }
 manga_parser = { git = "https://github.com/hubble459/manga_parser" }
 # manga_parser = { path = "../manga_parser" }
-fcm = "0"
+fcm = { git = "https://github.com/rj76/fcm-rust.git" }
 hyper = { version = "1", features = ["http1", "http2"] }
 
 [build-dependencies]

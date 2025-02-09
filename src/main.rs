@@ -11,7 +11,6 @@ use std::env;
 
 use crate::util::auth::Authorize;
 use hyper::Uri;
-use interceptor::logger::Logger;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
