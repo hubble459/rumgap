@@ -70,5 +70,3 @@ loggers:
             - log_rumgap
             - stdout_ext
         additive: false
-
-
