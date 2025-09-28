@@ -12,12 +12,12 @@ fn main() -> io::Result<()> {
         .collect::<Result<Vec<PathBuf>, glob::GlobError>>()
         .unwrap();
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .file_descriptor_set_path(descriptor_path)
         .build_client(false)
         .compile_well_known_types(false)
         .protoc_arg("--experimental_allow_proto3_optional")
-        .compile_protos(protos.as_slice(), &["proto", "/usr/local/include"])?;
+        .compile_protos(protos.as_slice(), &["proto".into(), "/usr/local/include".into()])?;
 
     #[cfg(windows)]
     {

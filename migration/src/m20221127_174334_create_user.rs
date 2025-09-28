@@ -1,4 +1,7 @@
-use sea_orm_migration::prelude::*;
+use sea_orm_migration::{
+    prelude::*,
+    schema::{array, pk_auto, small_integer, string, string_len_uniq, string_uniq},
+};
 
 use crate::extension::timestamps::TimestampExt;
 
@@ -13,23 +16,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(User::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(User::Id)
-                            .integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
-                    .col(ColumnDef::new(User::Permissions).small_integer().not_null().default(1))
-                    .col(ColumnDef::new(User::Username).string_len(15).unique_key().not_null())
-                    .col(ColumnDef::new(User::Email).string_len(255).unique_key().not_null())
-                    .col(ColumnDef::new(User::PasswordHash).string_len(255).not_null())
-                    .col(
-                        ColumnDef::new(User::PreferredHostnames)
-                            .array(ColumnType::String(None))
-                            .default(Expr::cust(r#"'{"mangadex.org","isekaiscan.com","manganato.com"}'"#))
-                            .not_null(),
-                    )
+                    .col(pk_auto(User::Id))
+                    .col(small_integer(User::Permissions).default(1))
+                    .col(string_len_uniq(User::Username, 15))
+                    .col(string_uniq(User::Email))
+                    .col(string(User::PasswordHash))
+                    .col(string(User::PasswordHash))
+                    .col(array(User::PreferredHostnames, ColumnType::String(Default::default())))
                     .take(),
             )
             .await?;

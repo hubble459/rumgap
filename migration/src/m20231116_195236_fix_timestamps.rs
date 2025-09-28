@@ -27,8 +27,8 @@ impl MigrationTrait for Migration {
                 .alter_table(
                     Table::alter()
                         .table(table)
-                        .modify_column(&mut ColumnDef::new(Timestamp::CreatedAt).timestamp())
-                        .modify_column(&mut ColumnDef::new(Timestamp::UpdatedAt).timestamp())
+                        .modify_column(ColumnDef::new(Timestamp::CreatedAt).timestamp())
+                        .modify_column(ColumnDef::new(Timestamp::UpdatedAt).timestamp())
                         .take(),
                 )
                 .await?;

@@ -27,17 +27,17 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Manga::IsOngoing).boolean().not_null())
                     .col(
                         ColumnDef::new(Manga::Genres)
-                            .array(ColumnType::String(Some(255)))
+                            .array(ColumnType::String(StringLen::N(255)))
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(Manga::Authors)
-                            .array(ColumnType::String(Some(255)))
+                            .array(ColumnType::String(StringLen::N(255)))
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(Manga::AltTitles)
-                            .array(ColumnType::String(Some(255)))
+                            .array(ColumnType::String(StringLen::N(255)))
                             .not_null(),
                     )
                     .take(),

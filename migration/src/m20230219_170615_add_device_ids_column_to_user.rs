@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
                     .table(User::Table)
                     .add_column_if_not_exists(
                         ColumnDef::new(UserWithDeviceIds::DeviceIds)
-                            .array(ColumnType::String(None))
+                            .array(ColumnType::String(Default::default()))
                             .default(Expr::cust(r#"'{}'"#))
                             .not_null(),
                     )
