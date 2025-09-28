@@ -65,10 +65,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     Server::builder()
-        .layer(tonic::service::interceptor(move |req| inject_db(req, conn.clone())))
+        .layer(tonic::service::InterceptorLayer::new(move |req| {
+            inject_db(req, conn.clone())
+        }))
         .layer(async_interceptor(interceptor::auth::check_auth))
-        // .layer(tower::ServiceBuilder::new().layer_fn(Logger::new))
-        .layer(tonic::service::interceptor(logger))
+        .layer(async_interceptor(logger))
         .add_service(service::v1::user::server())
         .add_service(service::v1::friend::server())
         .add_service(service::v1::manga::server())
@@ -106,7 +107,7 @@ fn inject_db(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
 }
 
 /// Log the incoming request
-fn logger(req: Request<()>) -> Result<Request<()>, Status> {
+async fn logger(req: Request<()>) -> Result<Request<()>, Status> {
     let logged_in = req.authorize().ok();
     let target_uri = req.extensions().get::<Uri>();
 
@@ -135,7 +136,7 @@ macro_rules! export_service {
             $crate::interceptor::auth::LoggedInCheck,
         > {
             tower::ServiceBuilder::new()
-                .layer(tonic::service::interceptor(
+                .layer(tonic::service::InterceptorLayer::new(
                     crate::interceptor::auth::LoggedInCheck::new(UserPermissions::USER),
                 ))
                 .service(

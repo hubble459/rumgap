@@ -19,6 +19,7 @@ opt-level = 3
 
 [dependencies]
 tonic = { version = "0.14", features = ["gzip", "tls-connect-info"] }
+tonic-prost = "0.14"
 tonic-reflection = "0.14"
 tower = { version = "0.5" }
 tonic-async-interceptor = "0.14"
@@ -47,8 +48,8 @@ sea-orm = { version = "1.1" }
 phf = { version = "0", features = ["macros"] }
 futures = { version = "0" }
 futures-util = { version = "0" }
-manga_parser = { git = "https://github.com/hubble459/manga_parser" }
-# manga_parser = { path = "../manga_parser" }
+# manga_parser = { git = "https://github.com/hubble459/manga_parser" }
+manga_parser = { path = "../manga_parser" }
 fcm = { git = "https://github.com/rj76/fcm-rust.git" }
 hyper = { version = "1", features = ["http1", "http2"] }
 

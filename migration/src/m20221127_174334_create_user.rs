@@ -21,7 +21,6 @@ impl MigrationTrait for Migration {
                     .col(string_len_uniq(User::Username, 15))
                     .col(string_uniq(User::Email))
                     .col(string(User::PasswordHash))
-                    .col(string(User::PasswordHash))
                     .col(array(User::PreferredHostnames, ColumnType::String(Default::default())))
                     .take(),
             )

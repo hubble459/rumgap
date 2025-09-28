@@ -731,15 +731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "convert_case"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baaaa0ecca5b51987b9423ccdc971514dd8b0bb7b4060b983d3664dad3f1f89f"
-dependencies = [
- "unicode-segmentation",
-]
-
-[[package]]
 name = "cookie"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2273,13 +2264,12 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser#db7d6b0a3b559f5ac487cf813be1e286704d3e04"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "config",
- "convert_case 0.8.0",
+ "convert_case 0.6.0",
  "fake_user_agent",
  "futures",
  "http-cache-reqwest",
@@ -2298,7 +2288,7 @@ dependencies = [
  "serde",
  "serde_regex",
  "simple-builder",
- "strum",
+ "strum 0.27.2",
  "task-local-extensions",
  "thiserror 2.0.16",
  "tokio",
@@ -3773,6 +3763,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-async-interceptor",
+ "tonic-prost",
  "tonic-prost-build",
  "tonic-reflection",
  "tower",
@@ -3966,7 +3957,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "strum",
+ "strum 0.26.3",
  "thiserror 2.0.16",
  "time",
  "tracing",
@@ -4718,20 +4709,25 @@ name = "strum"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+
+[[package]]
+name = "strum"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
  "strum_macros",
 ]
 
 [[package]]
 name = "strum_macros"
-version = "0.26.4"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
  "quote",
- "rustversion",
  "syn 2.0.106",
 ]
 
