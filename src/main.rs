@@ -113,7 +113,7 @@ async fn logger(req: Request<()>) -> Result<Request<()>, Status> {
     info!(
         "[{}] -> [{:?}] ({})",
         req.remote_addr().map_or(String::from("unknown"), |ip| ip.to_string()),
-        target_uri.map_or(String::from("unknown"), |uri| uri.path().to_string()),
+        target_uri.map_or(String::from("unknown"), |uri| uri.to_string()),
         logged_in.map_or("#anon#".to_string(), |user| user.username.clone()),
     );
 
