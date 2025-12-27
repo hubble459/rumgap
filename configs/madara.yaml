@@ -83,6 +83,7 @@ manga:
       - id: script:icontains('mangaid')
         regex: var mangaID = '(?<id>\d+)';
         url: /ajax-list-chapter?mangaID={id}
+
       - id:
           selector: "link[rel=canonical][href*=mangasushi], link[rel=canonical][href*=manga68]"
           options:
@@ -93,6 +94,7 @@ manga:
         regex: /manga/(?<id>[^/]+)/
         url: https://{host}/manga/{id}/ajax/chapters/
         method: post
+
       - id:
           selector: "#manga-chapters-holder"
           options:
@@ -103,6 +105,7 @@ manga:
         regex: (?<id>.*)
         url: "{url}ajax/chapters/"
         method: post
+
 images:
   image_selector:
     - selector: img.wp-manga-chapter-img, li.blocks-gallery-item img, div.reading-content div.text-left img
@@ -119,39 +122,11 @@ images:
 
 search:
   - hostnames:
-      - 1stkissmanga.club
-      - 1stkissmanga.io
-      - 1stkissmanga.com
-      - 1stkissmanga.love
-      - 247manga.com
-      - aquamanga.com
-      - azmanhwa.net
-      - isekaiscanmanga.com
-      - isekaiscan.com
-      - isekaiscan.top
       - lhtranslation.net
       - manga68.com
-      - mangabat.best
-      - mangaboat.com
-      - mangachill.net
-      - mangachill.io
-      - mangafoxfull.com
-      - mangahz.com
-      - mangaonlineteam.com
-      - mangarockteam.com
-      - mangasushi.org
-      - mangatx.com
-      - mangaweebs.in
-      - mangazukiteam.com
-      - manhuadex.com
       - manhuaplus.com
       - manhwatop.com
-      - mixedmanga.com
       - s2manga.com
-      - topmanhua.com
-      - yaoi.mobi
-      - zinmanga.com
-      - hubmanga.com
       - manhuafast.com
     search_url: "{hostname}/search?s={query}"
     query_format:
