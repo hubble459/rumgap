@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../schema/config.schema.yaml
+name: weebcentral
+
+accept:
+  selectors:
+    - "[og:site_name='Weeb Central']"
+  hostnames:
+    - weebcentral.com
+
+manga:
+  title:
+    - selector: "#top section:first-child section:last-child h1"
+      options:
+        fix_capitalization: title
+  description: "#top section:first-child section:last-child strong:contains(Description) ~ p"
+  cover_url:
+    selector: "#top section:first-child section:first-child picture img"
+    options:
+      text_selection:
+        type: attributes
+        attributes:
+          - src
+          - data-src
+
+  status: "#top section:first-child section:first-child strong:contains(Status) ~ a"
+  authors: "#top section:first-child section:first-child strong:contains(Author) ~ span a"
+  genres: "#top section:first-child section:first-child strong:contains(Tags) ~ span a"
+  alt_titles: "#top section:first-child section:last-child strong:contains(Associated) ~ ul li"
+
+  chapter:
+    base: "body > div.flex.items-center, #chapter-list > div.flex.items-center"
+    title: a span:nth-child(2) span:first-child
+    url:
+      selector: a
+      options:
+        text_selection:
+          type: attributes
+          attributes:
+            - href
+            - src
+    number: a span:nth-child(2) span:first-child
+    date:
+      - selector: time
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - datetime
+
+    fetch_external:
+      - id:
+          selector: "#chapter-list > button"
+          options:
+            text_selection:
+              type: attributes
+              attributes:
+                - hx-get
+        regex: "(?<id>.*)"
+        url: "{id}"
+
+images:
+  fetch_external:
+    - id:
+        selector: link[rel='canonical']
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - href
+      regex: "(?<id>.*)"
+      url: "{id}/images?reading_style=long_strip"
+
+  image_selector:
+    - selector: body > section > img
+      options:
+        text_selection:
+          type: attributes
+          attributes:
+            - src
+            - data-src
+
+search:
+  - hostnames:
+      - weebcentral.com
+    search_url: "{hostname}/search/data?https://weebcentral.com/search/data?anime=Any&adult=Any&display_mode=Full%20Display&text={query}"
+    selectors:
+      base: "article.bg-base-300"
+      url:
+        selector: a
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - href
+              - src
+      title:
+        selector: span[data-tip] a
+      cover_url:
+        selector: picture im
+        options:
+          text_selection:
+            type: attributes
+            attributes:
+              - src
+              - data-src
+
+date_formats:
+  - "%b %e, %R"
+  - "%e %B، %Y"
+  - "%b-%d-%H:%M"
