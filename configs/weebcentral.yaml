@@ -78,6 +78,7 @@ images:
           attributes:
             - src
             - data-src
+        text_split_regex: null
 
 search:
   - hostnames:
