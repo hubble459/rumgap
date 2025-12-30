@@ -30,7 +30,7 @@ tokio-stream = "0.1"
 migration = { path = "migration" }
 entity = { path = "entity" }
 log = "0"
-log4rs = { version = "1.2.0", features = ["gzip"] }
+log4rs = { version = "1.4", features = ["gzip"] }
 lazy_static = "1"
 argon2 = "0.5"
 hmac = "0"
