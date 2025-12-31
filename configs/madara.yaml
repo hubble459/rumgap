@@ -128,7 +128,7 @@ search:
       - manhwatop.com
       - s2manga.com
       - manhuafast.com
-    search_url: "{hostname}/search?s={query}"
+    search_url: "{hostname}/search?s={query}&post_type=wp-manga"
     query_format:
       - replace_regex: '\+'
         replace_with: "%2B"
