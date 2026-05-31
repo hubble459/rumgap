@@ -109,6 +109,8 @@ impl User for UserController {
             username: ActiveValue::Set(verify::username(&req.username)?),
             email: ActiveValue::Set(verify::email(&req.email)?),
             password_hash: ActiveValue::Set(argon::encrypt(&verify::password(&req.password)?)?),
+            preferred_hostnames: ActiveValue::Set(vec![]),
+            device_ids: ActiveValue::Set(vec![]),
             ..Default::default()
         };
 
