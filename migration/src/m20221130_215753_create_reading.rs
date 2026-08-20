@@ -52,4 +52,5 @@ pub(crate) enum Reading {
     MangaId,
     UserId,
     Progress,
+    LastCanonicalChapterId,
 }

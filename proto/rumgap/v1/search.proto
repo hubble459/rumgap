@@ -14,7 +14,9 @@ message SearchManga {
     optional int64 posted = 4;
     optional string cover = 5;
     bool is_reading = 6;
-
+    // Best-effort "is this the same manga you already have?" suggestion via the
+    // existing pg_trgm fuzzy title match, when manga_id itself isn't an exact hit.
+    optional int32 suggested_manga_id = 7;
 }
 message SearchReply {
     repeated SearchManga items = 1;

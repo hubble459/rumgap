@@ -8,6 +8,7 @@ use tonic::{Request, Response, Status};
 
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
+use crate::service::v1::manga::find_suggested_manga_id;
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
@@ -18,14 +19,14 @@ pub struct SearchController;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum QueryAs {
-    Id,
+    MangaId,
     Url,
     Progress,
 }
 
 #[tonic::async_trait]
 impl Search for SearchController {
-    /// Edit reading progress
+    /// Search for manga
     async fn manga(&self, request: Request<SearchRequest>) -> Result<Response<SearchReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
@@ -41,50 +42,62 @@ impl Search for SearchController {
 
         let urls: Vec<String> = search_results.iter().map(|item| item.url.to_string()).collect();
 
+        // manga_source is now the source of truth for urls; a manga's canonical `manga_id`
+        // is already a plain column on manga_source, so no join through `manga` is needed
+        // to get it - only (when logged in) to bring in this user's reading progress, which
+        // takes hopping manga_source -> manga -> reading since `reading` only has a direct
+        // FK to `manga`, not `manga_source`.
         let query = if let Some(logged_in) = logged_in {
             let user_id = logged_in.id;
-            entity::manga::Entity::find().join(
-                JoinType::LeftJoin,
-                entity::reading::Relation::Manga
-                    .def()
-                    .rev()
-                    .on_condition(move |_left, right| {
-                        Expr::col((right, entity::reading::Column::UserId))
-                            .eq(user_id)
-                            .into()
-                    }),
-            )
+            entity::manga_source::Entity::find()
+                .join(JoinType::LeftJoin, entity::manga_source::Relation::Manga.def())
+                .join(
+                    JoinType::LeftJoin,
+                    entity::reading::Relation::Manga
+                        .def()
+                        .rev()
+                        .on_condition(move |_left, right| {
+                            Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
+                        }),
+                )
         } else {
-            entity::manga::Entity::find()
+            entity::manga_source::Entity::find()
         };
 
         let exists: Vec<(i32, String, Option<i32>)> = query
             .select_only()
-            .columns([entity::manga::Column::Id, entity::manga::Column::Url])
+            .column(entity::manga_source::Column::MangaId)
+            .column(entity::manga_source::Column::Url)
             .column_as(entity::reading::Column::Progress, "progress")
-            .filter(entity::manga::Column::Url.is_in(urls))
+            .filter(entity::manga_source::Column::Url.is_in(urls))
             .into_values::<_, QueryAs>()
             .all(db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        Ok(Response::new(SearchReply {
-            items: search_results
-                .into_iter()
-                .map(|item| {
-                    let existing = exists.iter().find(|(_id, url, ..)| &item.url.to_string() == url);
+        let mut items = Vec::with_capacity(search_results.len());
+        for item in search_results {
+            let existing = exists.iter().find(|(_id, url, ..)| &item.url.to_string() == url);
+            let manga_id = existing.map(|(id, ..)| *id);
 
-                    SearchManga {
-                        url: item.url.to_string(),
-                        title: item.title,
-                        cover: item.cover_url.map(|cover| cover.to_string()),
-                        posted: item.posted.map(|date| date.timestamp_millis()),
-                        is_reading: existing.map_or(false, |(_id, _url, progress)| progress.is_some()),
-                        manga_id: existing.map(|(id, ..)| *id),
-                    }
-                })
-                .collect(),
-        }))
+            let suggested_manga_id = if manga_id.is_none() {
+                find_suggested_manga_id(db, &item.title).await?
+            } else {
+                None
+            };
+
+            items.push(SearchManga {
+                url: item.url.to_string(),
+                title: item.title,
+                cover: item.cover_url.map(|cover| cover.to_string()),
+                posted: item.posted.map(|date| date.timestamp_millis()),
+                is_reading: existing.is_some_and(|(_id, _url, progress)| progress.is_some()),
+                manga_id,
+                suggested_manga_id,
+            });
+        }
+
+        Ok(Response::new(SearchReply { items }))
     }
 }
 

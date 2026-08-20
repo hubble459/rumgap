@@ -11,9 +11,18 @@ message MangasRequest {
     repeated string urls = 1;
 }
 
-message MangaReply {
+message MangaSourceReply {
     int32 id = 1;
     string url = 2;
+    string hostname = 3;
+    string language = 4;
+    bool is_primary = 5;
+    int64 created_at = 6;
+    int64 updated_at = 7;
+}
+
+message MangaReply {
+    int32 id = 1;
     string title = 3;
     string description = 4;
     optional string cover = 5;
@@ -21,6 +30,7 @@ message MangaReply {
     repeated string genres = 7;
     repeated string authors = 8;
     repeated string alt_titles = 9;
+    // Computed from the primary source only.
     int64 count_chapters = 10;
     optional int64 next = 11;
     optional int64 last = 12;
@@ -28,9 +38,23 @@ message MangaReply {
     int64 updated_at = 14;
     optional int32 reading_progress = 15;
     string status = 16;
+    repeated MangaSourceReply sources = 17;
 }
 
 message MangasReply {
     PaginateReply pagination = 1;
     repeated MangaReply items = 2;
+}
+
+message AddSourceRequest {
+    int32 manga_id = 1;
+    string url = 2;
+}
+
+message RemoveSourceRequest {
+    int32 manga_source_id = 1;
+}
+
+message SetPrimarySourceRequest {
+    int32 manga_source_id = 1;
 }

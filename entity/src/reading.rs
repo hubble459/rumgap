@@ -12,6 +12,9 @@ pub struct Model {
     pub progress: i32,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    /// Cached rank of the last-read canonical chapter, kept in sync with `progress`
+    /// via one shared service function whenever either changes.
+    pub last_canonical_chapter_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -32,6 +35,14 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     User,
+    #[sea_orm(
+        belongs_to = "super::canonical_chapter::Entity",
+        from = "Column::LastCanonicalChapterId",
+        to = "super::canonical_chapter::Column::Id",
+        on_update = "Cascade",
+        on_delete = "SetNull"
+    )]
+    CanonicalChapter,
 }
 
 impl Related<super::manga::Entity> for Entity {
@@ -43,6 +54,12 @@ impl Related<super::manga::Entity> for Entity {
 impl Related<super::user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::User.def()
+    }
+}
+
+impl Related<super::canonical_chapter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CanonicalChapter.def()
     }
 }
 

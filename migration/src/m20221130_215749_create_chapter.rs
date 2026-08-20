@@ -55,4 +55,6 @@ pub(crate) enum Chapter {
     Title,
     Number,
     Posted,
+    MangaSourceId,
+    CanonicalChapterId,
 }

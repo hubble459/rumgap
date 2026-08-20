@@ -35,16 +35,24 @@ service Manga {
     rpc Create (MangaRequest) returns (MangaReply);
     rpc CreateMany (MangasRequest) returns (stream MangaReply);
     rpc Get (Id) returns (MangaReply);
+    // Refreshes this manga's primary source (only a primary-source refresh updates
+    // canonical manga title/description/cover/etc).
     rpc Update (Id) returns (MangaReply);
     rpc Index (PaginateSearchQuery) returns (MangasReply);
     rpc FindOrCreate (MangaRequest) returns (MangaReply);
     rpc Similar (Id) returns (MangasReply);
+    rpc AddSource (AddSourceRequest) returns (MangaReply);
+    rpc RemoveSource (RemoveSourceRequest) returns (MangaReply);
+    rpc SetPrimarySource (SetPrimarySourceRequest) returns (MangaReply);
 }
 
 service Chapter {
     rpc Get (ChapterRequest) returns (ChapterReply);
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
     rpc Images (Id) returns (ImagesReply);
+    rpc LinkChapter (LinkChapterRequest) returns (ChapterReply);
+    rpc UnlinkChapter (UnlinkChapterRequest) returns (ChapterReply);
+    rpc FindEquivalent (FindEquivalentRequest) returns (ChapterReply);
 }
 
 service Reading {
@@ -52,6 +60,7 @@ service Reading {
     rpc Create (ReadingPostRequest) returns (MangaReply);
     rpc Delete (Id) returns (Empty);
     rpc UpdateChapterOffset (UpdateChapterOffsetRequest) returns (Empty);
+    rpc GetCrossSourceOffset (GetCrossSourceOffsetRequest) returns (CrossSourceOffsetReply);
 }
 
 service Search {
