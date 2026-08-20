@@ -33,9 +33,7 @@ impl MigrationTrait for Migration {
                     .add_column_if_not_exists(ColumnDef::new(Manga::CoverStorageKey).string_len(511))
                     .add_column_if_not_exists(ColumnDef::new(Manga::CoverContentType).string_len(255))
                     .add_column_if_not_exists(ColumnDef::new(Manga::CoverChecksum).string_len(64))
-                    .add_column_if_not_exists(
-                        ColumnDef::new(Manga::CoverAttempts).integer().not_null().default(0),
-                    )
+                    .add_column_if_not_exists(ColumnDef::new(Manga::CoverAttempts).integer().not_null().default(0))
                     .take(),
             )
             .await

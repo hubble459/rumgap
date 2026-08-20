@@ -9,7 +9,15 @@ pub struct Model {
     pub id: i32,
     pub title: String,
     pub description: String,
-    pub cover: Option<String>,
+    /// Raw scraped cover URL (set only by primary-source refreshes) - not what's served to
+    /// clients. `MangaReply.cover` is built from `cover_status`/`cover_storage_key` instead,
+    /// pointing at the locally-hosted copy once downloaded (see src/util/cover_images.rs).
+    pub cover_source_url: Option<String>,
+    pub cover_status: String,
+    pub cover_storage_key: Option<String>,
+    pub cover_content_type: Option<String>,
+    pub cover_checksum: Option<String>,
+    pub cover_attempts: i32,
     pub is_ongoing: bool,
     pub genres: Vec<String>,
     pub authors: Vec<String>,

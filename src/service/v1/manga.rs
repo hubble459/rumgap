@@ -279,7 +279,7 @@ pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Stat
         title: Set(manga.title),
         description: Set(manga.description),
         is_ongoing: Set(manga.is_ongoing),
-        cover: Set(manga.cover_url.map(|url| url.to_string())),
+        cover_source_url: Set(manga.cover_url.map(|url| url.to_string())),
         authors: Set(manga.authors),
         alt_titles: Set(manga.alternative_titles),
         genres: Set(manga.genres),
@@ -367,7 +367,12 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32)
             title: Set(manga.title.clone()),
             description: Set(manga.description.clone()),
             is_ongoing: Set(manga.is_ongoing),
-            cover: Set(manga.cover_url.clone().map(|url| url.to_string())),
+            // Only overwrite the cover when this scrape actually found one - cover_url is a
+            // genuinely optional field in manga_parser's model (unlike title/description,
+            // which are required on the builder and fail the whole scrape if unextractable),
+            // so a successful-but-cover-less scrape must not silently wipe a previously-good
+            // cover with NULL.
+            cover_source_url: manga.cover_url.clone().map_or(NotSet, |url| Set(Some(url.to_string()))),
             authors: Set(manga.authors.clone()),
             alt_titles: Set(manga.alternative_titles.clone()),
             genres: Set(manga.genres.clone()),

@@ -13,7 +13,7 @@ pub struct Full {
     pub id: i32,
     pub title: String,
     pub description: String,
-    pub cover: Option<String>,
+    pub cover_source_url: Option<String>,
     pub status: String,
     pub is_ongoing: bool,
     pub progress: Option<i32>,
@@ -37,7 +37,12 @@ impl Full {
             id: self.id,
             title: self.title,
             description: self.description,
-            cover: self.cover,
+            // Never blocks on a download (same lazy pattern as chapter images) - the actual
+            // download happens on first real request to this URL, in the image server.
+            cover: self.cover_source_url.map(|_| {
+                let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
+                format!("{}/covers/{}", base_url.trim_end_matches('/'), self.id)
+            }),
             status: self.status,
             is_ongoing: self.is_ongoing,
             genres: self.genres,

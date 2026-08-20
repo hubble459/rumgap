@@ -89,7 +89,9 @@ impl Search for SearchController {
             items.push(SearchManga {
                 url: item.url.to_string(),
                 title: item.title,
-                cover: item.cover_url.map(|cover| cover.to_string()),
+                cover: item
+                    .cover_url
+                    .map(|cover| proxy_cover_url(cover.as_ref(), item.url.as_ref())),
                 posted: item.posted.map(|date| date.timestamp_millis()),
                 is_reading: existing.is_some_and(|(_id, _url, progress)| progress.is_some()),
                 manga_id,
@@ -99,6 +101,21 @@ impl Search for SearchController {
 
         Ok(Response::new(SearchReply { items }))
     }
+}
+
+/// Rewrite a raw scraped cover URL into rumgap's own transient `/proxy`
+/// cache (Phase A2) -- the client never sees or needs the raw source URL,
+/// and the server does the Referer-spoofing itself rather than the client
+/// (which matters beyond tidiness: a browser build can't set `Referer` on
+/// `fetch`/XHR at all, it's a forbidden header).
+fn proxy_cover_url(cover_url: &str, referer_url: &str) -> String {
+    let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
+    let mut url = manga_parser::Url::parse(&format!("{}/proxy", base_url.trim_end_matches('/')))
+        .expect("IMAGE_BASE_URL should be a valid base URL");
+    url.query_pairs_mut()
+        .append_pair("url", cover_url)
+        .append_pair("referer", referer_url);
+    url.to_string()
 }
 
 crate::export_service!(SearchServer, SearchController);
