@@ -800,3 +800,183 @@ async fn find_primary_source_id(db: &DatabaseConnection, manga_id: i32) -> Resul
 }
 
 crate::export_service!(MangaServer, MangaController);
+
+#[cfg(test)]
+mod matching_heuristic_tests {
+    use manga_parser::model::Chapter;
+    use manga_parser::Url;
+    use sea_orm::Database;
+
+    use super::*;
+
+    // `chapter.url` is globally unique across all sources (unchanged from before Phase 1),
+    // so distinct sources always need distinct urls - just like real different sites never
+    // share a literal URL string.
+    fn chapter(source: &str, number: f32) -> Chapter {
+        Chapter {
+            url: Url::parse(&format!("https://{source}.test/c{number}")).unwrap(),
+            number,
+            title: format!("Chapter {number}"),
+            date: None,
+        }
+    }
+
+    /// Temporary validation harness for the Phase 1b matching heuristic - requires
+    /// DATABASE_URL to point at a throwaway, already-migrated test database (never the
+    /// real one). Run with:
+    ///   DATABASE_URL=postgres://... cargo test -p rumgap matching_heuristic -- --ignored --nocapture
+    #[ignore]
+    #[tokio::test]
+    async fn convergence_and_ambiguity() {
+        let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
+        let db = Database::connect(db_url).await.unwrap();
+
+        let manga = entity::manga::ActiveModel {
+            title: Set("Test Manga".into()),
+            description: Set("".into()),
+            is_ongoing: Set(true),
+            authors: Set(vec![]),
+            alt_titles: Set(vec![]),
+            genres: Set(vec![]),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let source_a = entity::manga_source::ActiveModel {
+            manga_id: Set(manga.id),
+            url: Set("https://a.test/manga".into()),
+            hostname: Set("a.test".into()),
+            is_primary: Set(true),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Source A: chapters 1, 2, 3 - all brand new, each gets its own solo canonical row.
+        sync_chapters_for_source(
+            &db,
+            manga.id,
+            source_a.id,
+            &[chapter("a", 1.0), chapter("a", 2.0), chapter("a", 3.0)],
+        )
+        .await
+        .unwrap();
+
+        let canonical_count = entity::canonical_chapter::Entity::find()
+            .filter(entity::canonical_chapter::Column::MangaId.eq(manga.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(canonical_count, 3, "expected 3 solo canonical rows after source A");
+
+        let source_b = entity::manga_source::ActiveModel {
+            manga_id: Set(manga.id),
+            url: Set("https://b.test/manga".into()),
+            hostname: Set("b.test".into()),
+            is_primary: Set(false),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Source B: chapters 1, 2 (should converge onto A's existing canonical rows) and a
+        // new chapter 4 (should create a 4th canonical row).
+        sync_chapters_for_source(
+            &db,
+            manga.id,
+            source_b.id,
+            &[chapter("b", 1.0), chapter("b", 2.0), chapter("b", 4.0)],
+        )
+        .await
+        .unwrap();
+
+        let canonical_count = entity::canonical_chapter::Entity::find()
+            .filter(entity::canonical_chapter::Column::MangaId.eq(manga.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            canonical_count, 4,
+            "expected only 1 new canonical row (ordinal 4) after source B converges on 1/2"
+        );
+
+        let chapters_a = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source_a.id))
+            .all(&db)
+            .await
+            .unwrap();
+        let chapters_b = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source_b.id))
+            .all(&db)
+            .await
+            .unwrap();
+
+        let chapter_a1 = chapters_a.iter().find(|c| c.number == 1.0).unwrap();
+        let chapter_b1 = chapters_b.iter().find(|c| c.number == 1.0).unwrap();
+        assert_eq!(
+            chapter_a1.canonical_chapter_id, chapter_b1.canonical_chapter_id,
+            "source A's and source B's chapter 1 should converge on the same canonical row"
+        );
+        assert!(chapter_a1.canonical_chapter_id.is_some());
+
+        let chapter_a2 = chapters_a.iter().find(|c| c.number == 2.0).unwrap();
+        let chapter_b2 = chapters_b.iter().find(|c| c.number == 2.0).unwrap();
+        assert_eq!(chapter_a2.canonical_chapter_id, chapter_b2.canonical_chapter_id);
+
+        let chapter_b4 = chapters_b.iter().find(|c| c.number == 4.0).unwrap();
+        assert!(chapter_b4.canonical_chapter_id.is_some());
+        assert_ne!(chapter_b4.canonical_chapter_id, chapter_a1.canonical_chapter_id);
+
+        // Source C: two chapters in the *same* scrape both claim ordinal 5 - ambiguous,
+        // should leave the second one unlinked rather than guessing, and only ever create
+        // one canonical row at ordinal 5 (the unique(manga_id, ordinal) constraint couldn't
+        // allow a second one anyway).
+        let source_c = entity::manga_source::ActiveModel {
+            manga_id: Set(manga.id),
+            url: Set("https://c.test/manga".into()),
+            hostname: Set("c.test".into()),
+            is_primary: Set(false),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let dup_a = chapter("c-5a", 5.0);
+        let dup_b = chapter("c-5b", 5.0);
+
+        sync_chapters_for_source(&db, manga.id, source_c.id, &[dup_a, dup_b])
+            .await
+            .unwrap();
+
+        let chapters_c = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source_c.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(chapters_c.len(), 2);
+        let linked_count = chapters_c.iter().filter(|c| c.canonical_chapter_id.is_some()).count();
+        assert_eq!(
+            linked_count, 1,
+            "exactly one of the two same-ordinal chapters should be linked"
+        );
+
+        let canonical_count_5 = entity::canonical_chapter::Entity::find()
+            .filter(entity::canonical_chapter::Column::MangaId.eq(manga.id))
+            .filter(entity::canonical_chapter::Column::Ordinal.eq(sea_orm::prelude::Decimal::new(5000, 3)))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            canonical_count_5, 1,
+            "only one canonical row should ever exist at ordinal 5"
+        );
+
+        // Cleanup
+        entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
+    }
+}
