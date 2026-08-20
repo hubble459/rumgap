@@ -317,3 +317,27 @@ pub async fn refresh_chapter_images(
 
     ensure_chapter_image_rows(db, chapter).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::referer_for;
+
+    // manga_parser doesn't currently have a manhuagui.com scraper config, so
+    // this special case can't be exercised against a live chapter -- locked
+    // in here instead, ported 1:1 from wuxia's lib/util/tools.dart
+    // getReferer(): manhuagui.com's CDN wants the image's own URL as
+    // Referer, not the chapter page.
+    #[test]
+    fn manhuagui_uses_image_url_as_referer() {
+        let chapter_url = "https://www.manhuagui.com/comic/1234/5678.html";
+        let image_url = "https://i.hamreus.com/comic/1234/5678/001.jpg";
+        assert_eq!(referer_for(chapter_url, image_url), image_url);
+    }
+
+    #[test]
+    fn other_sites_use_chapter_page_as_referer() {
+        let chapter_url = "https://api.mangadex.org/chapter/dd1fb10a-d0ea-4a09-9cd3-f948a000f1fb";
+        let image_url = "https://cmdxd98sb0x3yprd.mangadex.network/data-saver/abc/1.jpg";
+        assert_eq!(referer_for(chapter_url, image_url), chapter_url);
+    }
+}
