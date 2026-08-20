@@ -3,9 +3,20 @@ use std::num::TryFromIntError;
 use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    QueryTrait, RelationTrait,
+    QueryTrait, RelationTrait, Select,
 };
 use tonic::{Request, Response, Status};
+
+/// LEFT JOIN this chapter's linked `canonical_chapter` (if any - NULL for a manually
+/// `UnlinkChapter`'d chapter) and select its `ordinal`, so `ChapterReply.ordinal` can be
+/// compared against `MangaReply.progress_ordinal` for "is this chapter read" - the two
+/// numbers actually share a scale, unlike `chapter.index` (purely per-source position) vs
+/// `reading_progress` (canonical rank), which don't once bonus/unlinked chapters exist.
+fn with_ordinal(query: Select<entity::chapter::Entity>) -> Select<entity::chapter::Entity> {
+    query
+        .join(JoinType::LeftJoin, entity::chapter::Relation::CanonicalChapter.def())
+        .column_as(entity::canonical_chapter::Column::Ordinal, "ordinal")
+}
 
 use crate::data;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
@@ -108,7 +119,7 @@ impl Chapter for ChapterController {
         let offset = offset - 1;
 
         // Get chapter
-        let chapter = entity::chapter::Entity::find()
+        let chapter = with_ordinal(entity::chapter::Entity::find())
             .order_by(entity::chapter::Column::Id, migration::Order::Asc)
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
             .offset(offset)
@@ -156,7 +167,7 @@ impl Chapter for ChapterController {
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
 
         // Create paginate object
-        let paginate = entity::chapter::Entity::find()
+        let paginate = with_ordinal(entity::chapter::Entity::find())
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
             .order_by(entity::chapter::Column::Id, order)
             .column_as(Expr::cust("null"), "offset")
@@ -190,7 +201,9 @@ impl Chapter for ChapterController {
             amount.number_of_pages - 1
         };
 
-        let page = req.page.unwrap_or(0).clamp(0, max_page);
+        // Don't clamp to max_page - infinite scroll relies on an out-of-range page coming
+        // back empty, not repeating the last page forever.
+        let page = std::cmp::Ord::max(req.page.unwrap_or(0), 0);
 
         // Get items from page
         let items = paginate.fetch_page(page).await.map_err(internal)?;
@@ -293,7 +306,7 @@ impl Chapter for ChapterController {
         request.authorize().ok();
         let req = request.get_ref();
 
-        let chapter = entity::chapter::Entity::find()
+        let chapter = with_ordinal(entity::chapter::Entity::find())
             .filter(entity::chapter::Column::CanonicalChapterId.eq(req.canonical_chapter_id))
             .filter(entity::chapter::Column::MangaSourceId.eq(req.manga_source_id))
             .column_as(Expr::cust("null"), "offset")
