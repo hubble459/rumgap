@@ -2,9 +2,11 @@
 
 pub mod prelude;
 
+pub mod canonical_chapter;
 pub mod chapter;
 pub mod chapter_offset;
 pub mod friend;
 pub mod manga;
+pub mod manga_source;
 pub mod reading;
 pub mod user;
