@@ -89,7 +89,12 @@ pub async fn ensure_chapter_image_rows(
     let url = Url::parse(&chapter.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
     let images = MANGA_PARSER.chapter_images(&url).await.map_err(StatusWrapper::from)?;
 
-    debug!("Scraped {} image(s) for chapter {} [{}]", images.len(), chapter.id, chapter.url);
+    debug!(
+        "Scraped {} image(s) for chapter {} [{}]",
+        images.len(),
+        chapter.id,
+        chapter.url
+    );
 
     if images.is_empty() {
         return Ok(vec![]);
@@ -189,6 +194,7 @@ pub async fn ensure_page_downloaded(
             let storage_key = format!("{}/{}.{}", row.chapter_id, row.page_index, ext);
             let checksum = hex::encode(Sha256::digest(&bytes));
             let byte_size = bytes.len() as i64;
+            let dimensions = crate::util::image_dimensions::read_dimensions(&bytes);
 
             IMAGE_STORE
                 .put(&storage_key, bytes)
@@ -201,6 +207,8 @@ pub async fn ensure_page_downloaded(
             active.byte_size = Set(Some(byte_size));
             active.checksum = Set(Some(checksum));
             active.error = Set(None);
+            active.width = Set(dimensions.map(|(w, _)| w as i32));
+            active.height = Set(dimensions.map(|(_, h)| h as i32));
         }
         Err(e) => {
             warn!(
@@ -220,14 +228,20 @@ pub async fn ensure_page_downloaded(
 /// `getReferer()` special case: manhuagui.com's CDN rejects a Referer
 /// pointing at the chapter page, and instead wants the image's own URL.
 fn referer_for(chapter_url: &str, image_url: &str) -> String {
-    if SELF_REFERER_HOSTNAMES.iter().any(|hostname| chapter_url.contains(hostname)) {
+    if SELF_REFERER_HOSTNAMES
+        .iter()
+        .any(|hostname| chapter_url.contains(hostname))
+    {
         image_url.to_string()
     } else {
         chapter_url.to_string()
     }
 }
 
-async fn download_page(chapter: &entity::chapter::Model, row: &entity::chapter_image::Model) -> Result<(Vec<u8>, String), String> {
+async fn download_page(
+    chapter: &entity::chapter::Model,
+    row: &entity::chapter_image::Model,
+) -> Result<(Vec<u8>, String), String> {
     let referer = referer_for(&chapter.url, &row.source_url);
 
     let response = manga_parser::HTTP_CLIENT
@@ -284,7 +298,10 @@ pub async fn prefetch_chapter(db: DatabaseConnection, chapter: entity::chapter::
             let chapter = &chapter;
             async move {
                 if let Err(e) = ensure_page_downloaded(db, chapter, row).await {
-                    error!("[Prefetch] Failed to download page for chapter {}: {:#?}", chapter.id, e);
+                    error!(
+                        "[Prefetch] Failed to download page for chapter {}: {:#?}",
+                        chapter.id, e
+                    );
                 }
             }
         })

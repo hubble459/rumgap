@@ -41,8 +41,15 @@ message ChaptersReply {
     repeated ChapterReply items = 2;
 }
 
+message ImagePage {
+    string url = 1;
+    // NULL if the download failed, or the format isn't PNG/JPEG.
+    optional int32 width = 2;
+    optional int32 height = 3;
+}
+
 message ImagesReply {
-    repeated string items = 1;
+    repeated ImagePage items = 1;
 }
 
 message PaginateChapterQuery {

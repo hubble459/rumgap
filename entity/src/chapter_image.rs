@@ -23,6 +23,11 @@ pub struct Model {
     pub checksum: Option<String>,
     pub error: Option<String>,
     pub attempts: i32,
+    /// Read straight from the header bytes at download time (no decoding needed) - NULL if
+    /// the download failed, or the format isn't PNG/JPEG. Lets the reader size each page's
+    /// placeholder correctly before the image loads, avoiding a scroll-jumping relayout.
+    pub width: Option<i32>,
+    pub height: Option<i32>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

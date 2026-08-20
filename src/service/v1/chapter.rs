@@ -7,6 +7,16 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
+use crate::data;
+use crate::proto::chapter_server::{Chapter, ChapterServer};
+use crate::proto::{
+    ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, Id, ImagePage, ImagesReply, LinkChapterRequest,
+    PaginateChapterQuery, PaginateReply, UnlinkChapterRequest,
+};
+use crate::util::auth::Authorize;
+use crate::util::chapter_images::{ensure_chapter_image_rows, refresh_chapter_images};
+use crate::util::db::DatabaseRequest;
+
 /// LEFT JOIN this chapter's linked `canonical_chapter` (if any - NULL for a manually
 /// `UnlinkChapter`'d chapter) and select its `ordinal`, so `ChapterReply.ordinal` can be
 /// compared against `MangaReply.progress_ordinal` for "is this chapter read" - the two
@@ -18,26 +28,20 @@ fn with_ordinal(query: Select<entity::chapter::Entity>) -> Select<entity::chapte
         .column_as(entity::canonical_chapter::Column::Ordinal, "ordinal")
 }
 
-use crate::data;
-use crate::proto::chapter_server::{Chapter, ChapterServer};
-use crate::proto::{
-    ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, Id, ImagesReply, LinkChapterRequest,
-    PaginateChapterQuery, PaginateReply, UnlinkChapterRequest,
-};
-use crate::util::auth::Authorize;
-use crate::util::chapter_images::{ensure_chapter_image_rows, refresh_chapter_images};
-use crate::util::db::DatabaseRequest;
-
-/// Build the `{IMAGE_BASE_URL}/images/{chapter_id}/{page_index}` URLs
-/// returned by `Chapter.Images`/`Chapter.RefreshImages`. Deterministic and
-/// cheap -- never blocks on a download, that happens lazily inside the
-/// image HTTP server on first real request for a given page.
-fn image_urls(chapter_id: i32, rows: &[entity::chapter_image::Model]) -> Vec<String> {
+/// Build the `{IMAGE_BASE_URL}/images/{chapter_id}/{page_index}` URLs (plus known
+/// dimensions, if any) returned by `Chapter.Images`/`Chapter.RefreshImages`.
+/// Deterministic and cheap -- never blocks on a download, that happens lazily inside
+/// the image HTTP server on first real request for a given page.
+fn image_pages(chapter_id: i32, rows: &[entity::chapter_image::Model]) -> Vec<ImagePage> {
     let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
     let base_url = base_url.trim_end_matches('/');
 
     rows.iter()
-        .map(|row| format!("{base_url}/images/{chapter_id}/{}", row.page_index))
+        .map(|row| ImagePage {
+            url: format!("{base_url}/images/{chapter_id}/{}", row.page_index),
+            width: row.width,
+            height: row.height,
+        })
         .collect()
 }
 
@@ -69,7 +73,7 @@ impl Chapter for ChapterController {
         debug!("{} image row(s) ensured for chapter {}", rows.len(), chapter.url);
 
         Ok(Response::new(ImagesReply {
-            items: image_urls(chapter_id, &rows),
+            items: image_pages(chapter_id, &rows),
         }))
     }
 
@@ -93,7 +97,7 @@ impl Chapter for ChapterController {
         info!("Refreshed {} image row(s) for chapter {}", rows.len(), chapter.url);
 
         Ok(Response::new(ImagesReply {
-            items: image_urls(chapter_id, &rows),
+            items: image_pages(chapter_id, &rows),
         }))
     }
 

@@ -25,7 +25,10 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
             )));
         }
 
-        let expr = name_key.cloned().unwrap().into_expression(&field.value, field.exclude)?;
+        let expr = name_key
+            .cloned()
+            .unwrap()
+            .into_expression(&field.value, field.exclude)?;
         expressions.push(expr);
     }
 

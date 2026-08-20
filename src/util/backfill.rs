@@ -127,14 +127,20 @@ async fn is_chapter_fully_done(db: &DatabaseConnection, chapter_id: i32) -> bool
 /// on its own schedule rather than a long-lived streaming RPC.
 pub async fn backfill_status(db: &DatabaseConnection, manga_source_id: i32) -> Result<(i32, i32), Status> {
     let total = entity::chapter_image::Entity::find()
-        .join(migration::JoinType::InnerJoin, entity::chapter_image::Relation::Chapter.def())
+        .join(
+            migration::JoinType::InnerJoin,
+            entity::chapter_image::Relation::Chapter.def(),
+        )
         .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
         .count(db)
         .await
         .map_err(|e| Status::internal(e.to_string()))?;
 
     let downloaded = entity::chapter_image::Entity::find()
-        .join(migration::JoinType::InnerJoin, entity::chapter_image::Relation::Chapter.def())
+        .join(
+            migration::JoinType::InnerJoin,
+            entity::chapter_image::Relation::Chapter.def(),
+        )
         .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
         .filter(entity::chapter_image::Column::Status.eq("done"))
         .count(db)

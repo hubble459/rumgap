@@ -16,7 +16,11 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(ColumnDef::new(ChapterImage::ChapterId).integer().not_null())
                     .col(ColumnDef::new(ChapterImage::PageIndex).integer().not_null())
-                    .primary_key(Index::create().col(ChapterImage::ChapterId).col(ChapterImage::PageIndex))
+                    .primary_key(
+                        Index::create()
+                            .col(ChapterImage::ChapterId)
+                            .col(ChapterImage::PageIndex),
+                    )
                     .col(
                         ColumnDef::new(ChapterImage::Status)
                             .string_len(255)
@@ -69,4 +73,6 @@ pub(crate) enum ChapterImage {
     Checksum,
     Error,
     Attempts,
+    Width,
+    Height,
 }
