@@ -80,7 +80,12 @@ impl MigrationTrait for Migration {
 
         // 6. Drop the now-redundant column.
         manager
-            .alter_table(Table::alter().table(Chapter::Table).drop_column(Chapter::MangaId).take())
+            .alter_table(
+                Table::alter()
+                    .table(Chapter::Table)
+                    .drop_column(Chapter::MangaId)
+                    .take(),
+            )
             .await
     }
 
