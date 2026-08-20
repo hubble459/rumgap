@@ -15,8 +15,10 @@ manga.title"#;
 static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "title" => SearchField::Text("ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title"),
     "description" => SearchField::Text("manga.description"),
-    "url" => SearchField::Equals("manga.url"),
-    "host" => SearchField::Text("manga.url"),
+    // manga.url no longer exists (Phase 1: multi-source) - both now resolve through the
+    // primary-source join that `index_manga` already sets up.
+    "url" => SearchField::Equals("manga_source.url"),
+    "host" => SearchField::Text("manga_source.hostname"),
     "genres" => SearchField::Array("manga.genres"),
     "genre" => SearchField::Array("manga.genres"),
     "authors" => SearchField::Array("manga.authors"),
