@@ -1,7 +1,5 @@
 use std::num::TryFromIntError;
 
-use manga_parser::scraper::MangaScraper;
-use manga_parser::Url;
 use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -9,15 +7,28 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
+use crate::data;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, Id, ImagesReply, LinkChapterRequest,
     PaginateChapterQuery, PaginateReply, UnlinkChapterRequest,
 };
 use crate::util::auth::Authorize;
+use crate::util::chapter_images::{ensure_chapter_image_rows, refresh_chapter_images};
 use crate::util::db::DatabaseRequest;
-use crate::util::scrape_error_proto::StatusWrapper;
-use crate::{data, MANGA_PARSER};
+
+/// Build the `{IMAGE_BASE_URL}/images/{chapter_id}/{page_index}` URLs
+/// returned by `Chapter.Images`/`Chapter.RefreshImages`. Deterministic and
+/// cheap -- never blocks on a download, that happens lazily inside the
+/// image HTTP server on first real request for a given page.
+fn image_urls(chapter_id: i32, rows: &[entity::chapter_image::Model]) -> Vec<String> {
+    let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
+    let base_url = base_url.trim_end_matches('/');
+
+    rows.iter()
+        .map(|row| format!("{base_url}/images/{chapter_id}/{}", row.page_index))
+        .collect()
+}
 
 fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
@@ -28,29 +39,50 @@ pub struct ChapterController;
 
 #[tonic::async_trait]
 impl Chapter for ChapterController {
-    /// Get chapter images
+    /// Get chapter images. Never blocks on downloads -- only ensures
+    /// `chapter_image` rows exist (scraping via manga_parser exactly once,
+    /// ever, per chapter) and returns local image-server URLs.
     async fn images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
         let db = request.db()?;
         let req = request.get_ref();
         let chapter_id = req.id;
 
-        // Get chapter
         let chapter = entity::chapter::Entity::find_by_id(chapter_id)
             .one(db)
             .await
             .map_err(internal)?
             .ok_or(Status::not_found("Chapter not found"))?;
 
-        // Get images
-        let images = MANGA_PARSER
-            .chapter_images(&Url::parse(&chapter.url).unwrap())
-            .await
-            .map_err(StatusWrapper::from)?;
+        let rows = ensure_chapter_image_rows(db, &chapter).await?;
 
-        debug!("{} images found in {}", images.len(), chapter.url);
+        debug!("{} image row(s) ensured for chapter {}", rows.len(), chapter.url);
 
         Ok(Response::new(ImagesReply {
-            items: images.into_iter().map(|url| url.to_string()).collect(),
+            items: image_urls(chapter_id, &rows),
+        }))
+    }
+
+    /// Manual-only force-refresh: deletes this chapter's existing
+    /// `chapter_image` rows (and their stored bytes) and re-scrapes/re-caches
+    /// from scratch. For the handful of sites that briefly serve a
+    /// placeholder/troll image right after a chapter is scraped.
+    async fn refresh_images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
+        let db = request.db()?;
+        let req = request.get_ref();
+        let chapter_id = req.id;
+
+        let chapter = entity::chapter::Entity::find_by_id(chapter_id)
+            .one(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .ok_or(Status::not_found("Chapter not found"))?;
+
+        let rows = refresh_chapter_images(db, &chapter).await?;
+
+        info!("Refreshed {} image row(s) for chapter {}", rows.len(), chapter.url);
+
+        Ok(Response::new(ImagesReply {
+            items: image_urls(chapter_id, &rows),
         }))
     }
 

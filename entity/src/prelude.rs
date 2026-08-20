@@ -2,6 +2,7 @@
 
 pub use super::canonical_chapter::Entity as CanonicalChapter;
 pub use super::chapter::Entity as Chapter;
+pub use super::chapter_image::Entity as ChapterImage;
 pub use super::chapter_offset::Entity as ChapterOffset;
 pub use super::friend::Entity as Friend;
 pub use super::manga::Entity as Manga;

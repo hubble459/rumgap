@@ -19,6 +19,7 @@ mod m20260820_120002_drop_manga_url;
 mod m20260820_120003_create_canonical_chapter;
 mod m20260820_120004_reading_canonical_progress;
 mod m20260820_120005_chapter_offset_fraction;
+mod m20260820_120006_create_chapter_image;
 
 pub struct Migrator;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260820_120003_create_canonical_chapter::Migration),
             Box::new(m20260820_120004_reading_canonical_progress::Migration),
             Box::new(m20260820_120005_chapter_offset_fraction::Migration),
+            Box::new(m20260820_120006_create_chapter_image::Migration),
         ]
     }
 }

@@ -21,6 +21,15 @@ message MangaSourceReply {
     int64 updated_at = 7;
 }
 
+// Progress ledger for an in-flight or completed `BackfillImages` walk.
+// `images_total` is the count of `chapter_image` rows that exist so far for
+// the source (rows are created lazily per-chapter as the walk progresses, so
+// this grows during a backfill rather than being known up front).
+message BackfillStatusReply {
+    int32 images_downloaded = 1;
+    int32 images_total = 2;
+}
+
 message MangaReply {
     int32 id = 1;
     string title = 3;

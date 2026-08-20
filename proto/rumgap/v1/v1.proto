@@ -44,15 +44,31 @@ service Manga {
     rpc AddSource (AddSourceRequest) returns (MangaReply);
     rpc RemoveSource (RemoveSourceRequest) returns (MangaReply);
     rpc SetPrimarySource (SetPrimarySourceRequest) returns (MangaReply);
+    // Id = manga_source_id. Kicks off (or resumes) a throttled background
+    // walk that downloads every not-yet-`done` page of every chapter of
+    // that source.
+    rpc BackfillImages (Id) returns (Empty);
+    // Id = manga_source_id (see BackfillImages). Cheap `GROUP BY status`
+    // count, meant to be polled on the client's own schedule -- no
+    // long-lived streaming RPC for a job that can run for hours.
+    rpc GetBackfillStatus (Id) returns (BackfillStatusReply);
 }
 
 service Chapter {
     rpc Get (ChapterRequest) returns (ChapterReply);
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
+    // Id = chapter_id. Never blocks on downloads -- ensures `chapter_image`
+    // rows exist and returns deterministic local image-server URLs; the
+    // actual download happens lazily on first real request to that URL.
     rpc Images (Id) returns (ImagesReply);
     rpc LinkChapter (LinkChapterRequest) returns (ChapterReply);
     rpc UnlinkChapter (UnlinkChapterRequest) returns (ChapterReply);
     rpc FindEquivalent (FindEquivalentRequest) returns (ChapterReply);
+    // Id = chapter_id. Manual-only force-refresh: deletes this chapter's
+    // existing `chapter_image` rows (and their stored bytes) and re-scrapes
+    // from scratch. For the handful of sites that briefly serve a
+    // placeholder/troll image right after a chapter is scraped.
+    rpc RefreshImages (Id) returns (ImagesReply);
 }
 
 service Reading {

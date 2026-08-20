@@ -25,6 +25,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::chapter_offset::Entity")]
     ChapterOffset,
+    #[sea_orm(has_many = "super::chapter_image::Entity")]
+    ChapterImage,
     #[sea_orm(
         belongs_to = "super::manga_source::Entity",
         from = "Column::MangaSourceId",
@@ -58,6 +60,12 @@ impl Related<super::manga_source::Entity> for Entity {
 impl Related<super::canonical_chapter::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::CanonicalChapter.def()
+    }
+}
+
+impl Related<super::chapter_image::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ChapterImage.def()
     }
 }
 

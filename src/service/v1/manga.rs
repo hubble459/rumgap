@@ -19,10 +19,11 @@ use tonic::{Request, Response, Status};
 
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
-    AddSourceRequest, Id, MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, PaginateReply,
-    PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest,
+    AddSourceRequest, BackfillStatusReply, Empty, Id, MangaReply, MangaRequest, MangaSourceReply, MangasReply,
+    MangasRequest, PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest,
 };
 use crate::util::auth::Authorize;
+use crate::util::backfill;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
 use crate::util::search::manga::lucene_filter;
@@ -699,7 +700,9 @@ impl Manga for MangaController {
         ))
     }
 
-    /// Remove a source from a manga.
+    /// Remove a source from a manga. If it's the primary source and another source
+    /// still exists, that other source is auto-promoted to primary first so canonical
+    /// manga metadata is never left without a primary source backing it.
     async fn remove_source(&self, request: Request<RemoveSourceRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request
@@ -718,18 +721,28 @@ impl Manga for MangaController {
             .ok_or(Status::not_found("Manga source not found"))?;
 
         if source.is_primary {
-            let other_sources = entity::manga_source::Entity::find()
+            let replacement = entity::manga_source::Entity::find()
                 .filter(entity::manga_source::Column::MangaId.eq(source.manga_id))
                 .filter(entity::manga_source::Column::Id.ne(source.id))
-                .count(db)
+                .order_by_asc(entity::manga_source::Column::Id)
+                .one(db)
                 .await
                 .map_err(internal)?;
 
-            if other_sources > 0 {
-                return Err(Status::failed_precondition(
-                    "Cannot remove the primary source while other sources exist - \
-                     call SetPrimarySource on another source first",
-                ));
+            if let Some(replacement) = replacement {
+                entity::manga_source::ActiveModel {
+                    id: Set(replacement.id),
+                    is_primary: Set(true),
+                    ..Default::default()
+                }
+                .update(db)
+                .await
+                .map_err(internal)?;
+
+                info!(
+                    "Auto-promoted manga_source {} to primary after removing primary source {}",
+                    replacement.id, source.id
+                );
             }
         }
 
@@ -784,6 +797,31 @@ impl Manga for MangaController {
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), source.manga_id).await?,
         ))
+    }
+
+    /// Id = manga_source_id. Kicks off (or resumes) a throttled background walk
+    /// downloading every not-yet-cached page of every chapter of that source.
+    async fn backfill_images(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
+        let db = request.db()?.clone();
+        let manga_source_id = request.get_ref().id;
+
+        backfill::start_backfill(db, manga_source_id);
+
+        Ok(Response::new(Empty::default()))
+    }
+
+    /// Id = manga_source_id (see BackfillImages). Cheap `GROUP BY status` progress
+    /// count for the client to poll on its own schedule.
+    async fn get_backfill_status(&self, request: Request<Id>) -> Result<Response<BackfillStatusReply>, Status> {
+        let db = request.db()?;
+        let manga_source_id = request.get_ref().id;
+
+        let (images_downloaded, images_total) = backfill::backfill_status(db, manga_source_id).await?;
+
+        Ok(Response::new(BackfillStatusReply {
+            images_downloaded,
+            images_total,
+        }))
     }
 }
 
