@@ -1,3 +1,5 @@
+use std::fmt;
+
 use migration::{Expr, SimpleExpr};
 use regex::Regex;
 use tonic::Status;
@@ -17,14 +19,14 @@ pub enum SearchField {
     Number(&'static str),
 }
 
-impl ToString for SearchField {
-    fn to_string(&self) -> String {
+impl fmt::Display for SearchField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SearchField::Array(s) => s.to_string(),
-            SearchField::Text(s) => s.to_string(),
-            SearchField::Date(s, _) => s.to_string(),
-            SearchField::Equals(s) => s.to_string(),
-            SearchField::Number(s) => s.to_string(),
+            SearchField::Array(s) => write!(f, "{s}"),
+            SearchField::Text(s) => write!(f, "{s}"),
+            SearchField::Date(s, _) => write!(f, "{s}"),
+            SearchField::Equals(s) => write!(f, "{s}"),
+            SearchField::Number(s) => write!(f, "{s}"),
         }
     }
 }

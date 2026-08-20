@@ -153,7 +153,7 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
 
         let data = json!({ "manga_id": manga.id });
 
-        for target in ids.to_owned() {
+        for target in ids.iter().cloned() {
             let message = Message {
                 data: Some(data.clone()),
                 notification: Some(Notification {

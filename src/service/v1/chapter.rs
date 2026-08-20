@@ -152,7 +152,7 @@ impl Chapter for ChapterController {
         } else {
             migration::Order::Desc
         };
-        let req = req.paginate_query.clone().unwrap_or_default();
+        let req = req.paginate_query.unwrap_or_default();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
 
         // Create paginate object
