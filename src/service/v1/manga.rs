@@ -362,26 +362,53 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32)
     let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(StatusWrapper::from)?;
 
     if source.is_primary {
-        entity::manga::ActiveModel {
+        // Only overwrite the cover when this scrape actually found one - cover_url is a
+        // genuinely optional field in manga_parser's model (unlike title/description, which
+        // are required on the builder and fail the whole scrape if unextractable), so a
+        // successful-but-cover-less scrape must not silently wipe a previously-good cover
+        // with NULL.
+        let new_cover_source_url = manga.cover_url.clone().map(|url| url.to_string());
+
+        let mut active = entity::manga::ActiveModel {
             id: Set(source.manga_id),
             title: Set(manga.title.clone()),
             description: Set(manga.description.clone()),
             is_ongoing: Set(manga.is_ongoing),
-            // Only overwrite the cover when this scrape actually found one - cover_url is a
-            // genuinely optional field in manga_parser's model (unlike title/description,
-            // which are required on the builder and fail the whole scrape if unextractable),
-            // so a successful-but-cover-less scrape must not silently wipe a previously-good
-            // cover with NULL.
-            cover_source_url: manga.cover_url.clone().map_or(NotSet, |url| Set(Some(url.to_string()))),
             authors: Set(manga.authors.clone()),
             alt_titles: Set(manga.alternative_titles.clone()),
             genres: Set(manga.genres.clone()),
             status: manga.status.clone().map_or(NotSet, Set),
             ..Default::default()
+        };
+
+        if let Some(new_cover_source_url) = new_cover_source_url {
+            let current = entity::manga::Entity::find_by_id(source.manga_id)
+                .one(db)
+                .await
+                .map_err(internal)?
+                .ok_or(Status::not_found("Manga not found"))?;
+
+            // A source flip (e.g. SetPrimarySource) or the primary source's own cover
+            // changing means whatever's cached under the OLD cover_source_url no longer
+            // applies - reset the download state so the new URL actually gets fetched,
+            // instead of `cover_status == "done"` short-circuiting `ensure_cover_downloaded`
+            // forever under the now-wrong assumption that "done" still refers to this URL.
+            if current.cover_source_url.as_deref() != Some(new_cover_source_url.as_str()) {
+                if let Some(old_key) = &current.cover_storage_key {
+                    if let Err(e) = crate::IMAGE_STORE.delete(old_key).await {
+                        warn!("Failed to delete stale cover {}: {}", old_key, e);
+                    }
+                }
+                active.cover_status = Set("pending".to_string());
+                active.cover_storage_key = Set(None);
+                active.cover_content_type = Set(None);
+                active.cover_checksum = Set(None);
+                active.cover_attempts = Set(0);
+            }
+            active.cover_source_url = Set(Some(new_cover_source_url));
         }
-        .update(db)
-        .await
-        .map_err(internal)?;
+
+        active.update(db).await.map_err(internal)?;
     }
 
     sync_chapters_for_source(db, source.manga_id, manga_source_id, &manga.chapters).await?;
@@ -798,6 +825,18 @@ impl Manga for MangaController {
         .update(db)
         .await
         .map_err(internal)?;
+
+        // Refresh the newly-primary source's metadata immediately, rather than leaving
+        // canonical title/description/cover stale until the next scheduled scrape - the
+        // primary-source flag has already flipped by this point regardless of whether this
+        // refresh succeeds, so a failure here (e.g. the new primary is briefly unreachable)
+        // is logged, not fatal to the RPC.
+        if let Err(e) = refresh_manga_source(db, source.id).await {
+            warn!(
+                "Failed to immediately refresh newly-primary source {} for manga {}: {:#?}",
+                source.id, source.manga_id, e
+            );
+        }
 
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), source.manga_id).await?,
