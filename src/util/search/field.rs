@@ -94,6 +94,6 @@ impl SearchField {
 
         let value = if wild { format!("%{value}%") } else { value.to_string() };
 
-        Ok(Expr::cust_with_values(&expr, vec![value]))
+        Ok(Expr::cust_with_values(expr, vec![value]))
     }
 }

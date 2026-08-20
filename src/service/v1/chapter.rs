@@ -2,7 +2,7 @@ use std::num::TryFromIntError;
 
 use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
-use migration::{Expr, IntoCondition, JoinType};
+use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait,
 };
@@ -61,7 +61,7 @@ impl Chapter for ChapterController {
 
         let offset: u64 = req
             .index
-            .clamp(1, total_chapters.max(1) as i32)
+            .clamp(1, std::cmp::Ord::max(total_chapters, 1) as i32)
             .try_into()
             .map_err(|e: TryFromIntError| Status::invalid_argument(e.to_string()))?;
 
@@ -85,7 +85,7 @@ impl Chapter for ChapterController {
                             .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
                                     .eq(user_id)
-                                    .into_condition()
+                                    .into()
                             }),
                     )
                     .column_as(entity::chapter_offset::Column::Offset, "offset")
@@ -132,7 +132,7 @@ impl Chapter for ChapterController {
                             .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
                                     .eq(user_id)
-                                    .into_condition()
+                                    .into()
                             }),
                     )
                     .column_as(entity::chapter_offset::Column::Offset, "offset")

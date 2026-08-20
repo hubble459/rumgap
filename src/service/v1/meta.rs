@@ -1,5 +1,5 @@
 use manga_parser::scraper::MangaScraper;
-use migration::{Expr, IntoCondition, JoinType};
+use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait, Select,
@@ -48,7 +48,7 @@ async fn get_reply(
                             .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
                                     .eq(logged_in.id)
-                                    .into_condition()
+                                    .into()
                             }),
                     )
                     .into_values::<_, QueryAs>()

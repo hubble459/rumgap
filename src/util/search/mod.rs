@@ -1,4 +1,4 @@
-use migration::{Expr, SimpleExpr};
+use migration::{Expr, ExprTrait, SimpleExpr};
 use tonic::Status;
 
 use self::field::SearchField;

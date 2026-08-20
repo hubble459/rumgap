@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, Utc};
 use futures::Stream;
 use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
-use migration::{Expr, IntoCondition, JoinType, OnConflict};
+use migration::{Expr, ExprTrait, JoinType, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, PaginatorTrait,
@@ -56,7 +56,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity:
                         move |_left, right| {
                             Expr::col((right, entity::reading::Column::UserId))
                                 .eq(user_id)
-                                .into_condition()
+                                .into()
                         },
                     ),
                 )
@@ -171,7 +171,7 @@ pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::man
                         .on_condition(move |_left, right| {
                             Expr::col((right, entity::reading::Column::UserId))
                                 .eq(user_id)
-                                .into_condition()
+                                .into()
                         }),
                 )
                 .column_as(entity::reading::Column::Progress, "progress")

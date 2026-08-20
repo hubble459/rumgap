@@ -1,4 +1,4 @@
-use migration::{Alias, Expr, JoinType};
+use migration::{Alias, Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait,
     QueryFilter, QuerySelect, RelationTrait,

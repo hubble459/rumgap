@@ -9,7 +9,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"),
             ))
@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("CREATE EXTENSION IF NOT EXISTS pg_trgm;"),
             ))
@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from(
                     r#"
@@ -47,7 +47,7 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("DROP FUNCTION trigger_set_timestamp;"),
             ))
@@ -55,7 +55,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("DROP EXTENSION pg_trgm;"),
             ))
@@ -63,7 +63,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 manager.get_database_backend(),
                 String::from("DROP EXTENSION fuzzystrmatch;"),
             ))

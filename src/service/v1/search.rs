@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use manga_parser::scraper::MangaScraper;
-use migration::{Expr, IntoCondition, JoinType};
+use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect, RelationTrait};
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
@@ -51,7 +51,7 @@ impl Search for SearchController {
                     .on_condition(move |_left, right| {
                         Expr::col((right, entity::reading::Column::UserId))
                             .eq(user_id)
-                            .into_condition()
+                            .into()
                     }),
             )
         } else {
