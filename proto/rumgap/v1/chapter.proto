@@ -40,3 +40,12 @@ message PaginateChapterQuery {
     optional PaginateQuery paginate_query = 2;
     optional bool reversed = 3;
 }
+
+// Progress ledger for an in-flight or completed `BackfillImages` walk.
+// `images_total` is the count of `chapter_image` rows that exist so far for
+// the source (rows are created lazily per-chapter as the walk progresses, so
+// this grows during a backfill rather than being known up front).
+message BackfillStatusReply {
+    int32 images_downloaded = 1;
+    int32 images_total = 2;
+}

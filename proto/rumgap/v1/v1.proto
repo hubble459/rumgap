@@ -44,7 +44,33 @@ service Manga {
 service Chapter {
     rpc Get (ChapterRequest) returns (ChapterReply);
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
+    // Id = chapter_id. Never blocks on downloads -- ensures `chapter_image`
+    // rows exist and returns deterministic local image-server URLs; the
+    // actual download happens lazily on first real request to that URL.
     rpc Images (Id) returns (ImagesReply);
+    // Id = chapter_id. Manual-only force-refresh: deletes this chapter's
+    // existing `chapter_image` rows (and their stored bytes) and re-scrapes
+    // from scratch. For the handful of sites that briefly serve a
+    // placeholder/troll image right after a chapter is scraped.
+    rpc RefreshImages (Id) returns (ImagesReply);
+    // Id = manga_source_id. Kicks off (or resumes) a throttled background
+    // walk that downloads every not-yet-`done` page of every chapter of
+    // that source.
+    //
+    // Deviation from the plan: the plan describes this as
+    // `MangaSource.BackfillImages` on `manga.proto`'s (Phase-1-introduced)
+    // `MangaSourceReply`. That message doesn't exist in this worktree (it's
+    // owned by the parallel Phase 1 branch), so it's defined here instead,
+    // scoped to a plain `manga_source_id` int32 rather than a message this
+    // branch doesn't own -- see the Phase 2 implementation report for
+    // details on folding it into `MangaSourceReply` after the two branches
+    // merge. Until Phase 1 lands, `manga_source_id` is resolved against
+    // `manga.id` (today's 1:1 manga<->source shape).
+    rpc BackfillImages (Id) returns (Empty);
+    // Id = manga_source_id (see BackfillImages). Cheap `GROUP BY status`
+    // count, meant to be polled on the client's own schedule -- no
+    // long-lived streaming RPC for a job that can run for hours.
+    rpc GetBackfillStatus (Id) returns (BackfillStatusReply);
 }
 
 service Reading {
