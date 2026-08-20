@@ -66,4 +66,12 @@ pub(crate) enum Manga {
     Authors,
     AltTitles,
     Status,
+    // Added by m20260820_120007_add_cover_tracking_to_manga -- `Cover` above is renamed to
+    // `CoverSourceUrl` there, these are new.
+    CoverSourceUrl,
+    CoverStatus,
+    CoverStorageKey,
+    CoverContentType,
+    CoverChecksum,
+    CoverAttempts,
 }

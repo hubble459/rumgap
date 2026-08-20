@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "net"] }
 tokio-stream = "0.1"
 axum = "0.8"
 async-trait = "0"
+config = { version = "0.15", features = ["yaml"], default-features = false }
 migration = { path = "migration" }
 entity = { path = "entity" }
 log = "0"
