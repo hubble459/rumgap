@@ -1,5 +1,6 @@
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::Decimal;
 use sea_orm::FromQueryResult;
 
 use crate::proto::{ChapterOffset, ChapterReply};
@@ -15,6 +16,10 @@ pub struct Full {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub canonical_chapter_id: Option<i32>,
+    /// This chapter's canonical position - NULL only for a manually-unlinked chapter.
+    /// Comparable across sources (unlike `index`, a purely per-source position) against
+    /// `MangaReply.progress_ordinal` to correctly tell whether a chapter has been read.
+    pub ordinal: Option<Decimal>,
 
     // special
     pub offset: Option<i32>,
@@ -38,6 +43,7 @@ impl Full {
                 fraction: self.fraction,
             }),
             canonical_chapter_id: self.canonical_chapter_id,
+            ordinal: self.ordinal.and_then(|o| o.to_string().parse().ok()),
             created_at: self.created_at.and_utc().timestamp_millis(),
             updated_at: self.updated_at.and_utc().timestamp_millis(),
         }

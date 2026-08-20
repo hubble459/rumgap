@@ -29,6 +29,11 @@ message ChapterReply {
     // NULL only for a manually-unlinked chapter (see UnlinkChapter) - every other
     // chapter is always attached to some canonical_chapter, even a solo one.
     optional int32 canonical_chapter_id = 11;
+    // This chapter's canonical position - comparable across sources, unlike `index`
+    // (a purely per-source position). Compare against MangaReply.progress_ordinal to
+    // correctly tell whether this specific chapter has been read. NULL alongside
+    // canonical_chapter_id being NULL (manually unlinked).
+    optional double ordinal = 12;
 }
 
 message ChaptersReply {

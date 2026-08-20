@@ -116,6 +116,7 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity:
         .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
         .group_by(entity::manga::Column::Id)
         .column_as(Expr::cust("null"), "progress")
+        .column_as(Expr::cust("null"), "progress_ordinal")
         .apply_if(logged_in, |query, logged_in| {
             let user_id = logged_in.id;
             query
@@ -129,9 +130,12 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity:
                         },
                     ),
                 )
+                .join(JoinType::LeftJoin, entity::reading::Relation::CanonicalChapter.def())
                 .column_as(entity::reading::Column::Progress, "progress")
+                .column_as(entity::canonical_chapter::Column::Ordinal, "progress_ordinal")
                 .group_by(entity::reading::Column::UserId)
                 .group_by(entity::reading::Column::MangaId)
+                .group_by(entity::canonical_chapter::Column::Ordinal)
         })
         .into_model::<data::manga::Full>()
         .one(db)
@@ -440,6 +444,7 @@ pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::man
         .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
         .group_by(entity::manga::Column::Id)
         .column_as(Expr::cust("null"), "progress")
+        .column_as(Expr::cust("null"), "progress_ordinal")
         .apply_if(logged_in, |query, logged_in| {
             let user_id = logged_in.id;
             query
@@ -452,9 +457,12 @@ pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::man
                             Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
                         }),
                 )
+                .join(JoinType::LeftJoin, entity::reading::Relation::CanonicalChapter.def())
                 .column_as(entity::reading::Column::Progress, "progress")
+                .column_as(entity::canonical_chapter::Column::Ordinal, "progress_ordinal")
                 .group_by(entity::reading::Column::MangaId)
                 .group_by(entity::reading::Column::UserId)
+                .group_by(entity::canonical_chapter::Column::Ordinal)
         })
 }
 
@@ -783,6 +791,32 @@ impl Manga for MangaController {
             .exec(db)
             .await
             .map_err(internal)?;
+
+        let remaining_sources = entity::manga_source::Entity::find()
+            .filter(entity::manga_source::Column::MangaId.eq(manga_id))
+            .count(db)
+            .await
+            .map_err(internal)?;
+
+        // A manga with zero sources can never be scraped/refreshed again - rather than
+        // leaving a dead, sourceless husk lying around (which would then need filtering out
+        // of every listing/similar/search query, forever), just delete it outright. Cascades
+        // away its reading/canonical_chapter rows too. This intentionally does NOT reserve
+        // room for "a manga that legitimately has zero sources" (e.g. a future external-index
+        // import) - today there's no such case, and if one's ever added, it'd be a deliberate
+        // exception to this rule, not the other way around.
+        if remaining_sources == 0 {
+            entity::manga::Entity::delete_by_id(manga_id)
+                .exec(db)
+                .await
+                .map_err(internal)?;
+
+            info!("Deleted manga {} - its last source was just removed", manga_id);
+
+            return Err(Status::not_found(format!(
+                "Manga {manga_id} was deleted - that was its last remaining source"
+            )));
+        }
 
         Ok(Response::new(get_manga_by_id(db, Some(&logged_in), manga_id).await?))
     }

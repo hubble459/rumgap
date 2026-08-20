@@ -1,4 +1,4 @@
-use sea_orm::prelude::{DateTime, DateTimeWithTimeZone};
+use sea_orm::prelude::{DateTime, DateTimeWithTimeZone, Decimal};
 use sea_orm::{DeriveColumn, EnumIter, FromQueryResult};
 
 use crate::proto::{MangaReply, MangaSourceReply};
@@ -17,6 +17,10 @@ pub struct Full {
     pub status: String,
     pub is_ongoing: bool,
     pub progress: Option<i32>,
+    /// Canonical ordinal of `progress`'s underlying `last_canonical_chapter_id` - comparable
+    /// across sources against `ChapterReply.ordinal`, unlike `progress` itself (a rank among
+    /// canonical slots, which isn't the same scale as any one source's own chapter count).
+    pub progress_ordinal: Option<Decimal>,
     pub genres: Vec<String>,
     pub authors: Vec<String>,
     pub alt_titles: Vec<String>,
@@ -50,6 +54,7 @@ impl Full {
             alt_titles: self.alt_titles,
             count_chapters: self.count_chapters,
             reading_progress: self.progress,
+            progress_ordinal: self.progress_ordinal.and_then(|o| o.to_string().parse().ok()),
             last: self.last.map(|date| date.timestamp_millis()),
             next: self.next.map(|date| date.timestamp_millis()),
             created_at: self.created_at.and_utc().timestamp_millis(),
