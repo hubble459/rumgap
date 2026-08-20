@@ -40,6 +40,17 @@ pub async fn watch_updates(db: &DatabaseConnection) {
                                 if !ids.is_empty() {
                                     send_notification(&manga, ids.as_slice()).await;
                                 }
+
+                                // Eager prefetch: this manga already has
+                                // active readers (same scope as the FCM
+                                // notification above), so warm the cache for
+                                // just the newly-discovered chapters instead
+                                // of leaving the first reader to eat a slow
+                                // chapter-by-chapter download.
+                                if saved.count_chapters > manga.count_chapters {
+                                    let new_count = (saved.count_chapters - manga.count_chapters) as u64;
+                                    prefetch_new_chapters(db, manga.id, new_count).await;
+                                }
                             }
                         }
                         Err(e) => {
@@ -82,6 +93,32 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
         .all(db)
         .await
         .unwrap()
+}
+
+/// Spawn `prefetch_chapter` (fire-and-forget) for just the `count` most
+/// recently inserted chapters of `manga_id` -- the ones `save_manga` just
+/// added (existing chapters are always skipped via the `url` unique
+/// constraint's `on_conflict do_nothing`, so the highest-`id` rows for this
+/// manga are exactly the new ones).
+async fn prefetch_new_chapters(db: &DatabaseConnection, manga_id: i32, count: u64) {
+    let new_chapters = entity::chapter::Entity::find()
+        .filter(entity::chapter::Column::MangaId.eq(manga_id))
+        .order_by_desc(entity::chapter::Column::Id)
+        .limit(count)
+        .all(db)
+        .await
+        .unwrap_or_default();
+
+    for chapter in new_chapters {
+        info!(
+            "[Auto Update] Prefetching images for new chapter {} [{}]",
+            chapter.id, chapter.url
+        );
+        let db = db.clone();
+        tokio::spawn(async move {
+            crate::util::chapter_images::prefetch_chapter(db, chapter).await;
+        });
+    }
 }
 
 async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user::Model> {
