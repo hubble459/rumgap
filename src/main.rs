@@ -10,6 +10,8 @@ extern crate phf;
 use std::env;
 
 use crate::util::auth::Authorize;
+use crate::util::image_store::local_disk::LocalDiskStore;
+use crate::util::image_store::ImageStore;
 use hyper::Uri;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
@@ -20,12 +22,14 @@ use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
 
 mod data;
+mod image_server;
 mod interceptor;
 mod service;
 mod util;
 
 lazy_static! {
     static ref MANGA_PARSER: ScraperManager = manga_parser::scraper::scraper_manager::ScraperManager::default();
+    static ref IMAGE_STORE: Box<dyn ImageStore> = Box::new(LocalDiskStore::from_env());
 }
 
 /// Load all ProtoBuf files
@@ -61,6 +65,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cloned_conn = conn.clone();
     tokio::spawn(async move {
         crate::util::updater::watch_updates(&cloned_conn).await;
+    });
+
+    // Start image server (separate plain-HTTP port, see src/image_server.rs)
+    let image_server_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::image_server::serve(image_server_conn).await;
     });
 
     Server::builder()

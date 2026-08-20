@@ -1,6 +1,9 @@
 pub mod argon;
 pub mod auth;
+pub mod backfill;
+pub mod chapter_images;
 pub mod db;
+pub mod image_store;
 pub mod order;
 pub mod scrape_error_proto;
 pub mod search;
