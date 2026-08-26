@@ -330,6 +330,10 @@ pub async fn refresh_chapter_images(
             if let Err(e) = IMAGE_STORE.delete(storage_key).await {
                 warn!("Failed to delete stored image {}: {}", storage_key, e);
             }
+            let ds_key = crate::util::image_transcode::data_saver_key(storage_key);
+            if let Err(e) = IMAGE_STORE.delete(&ds_key).await {
+                warn!("Failed to delete cached data-saver image {}: {}", ds_key, e);
+            }
         }
     }
 

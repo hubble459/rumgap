@@ -53,9 +53,20 @@ pub async fn serve(db: DatabaseConnection) {
     }
 }
 
+#[derive(Deserialize)]
+struct ImageQuery {
+    /// Data-saver mode: serve a downscaled, recompressed JPEG instead of the
+    /// original bytes. Note `serde_urlencoded` only accepts the literal
+    /// strings `true`/`false` for a bool query param -- callers should send
+    /// `?ds=true` and simply omit the param when off.
+    #[serde(default)]
+    ds: bool,
+}
+
 async fn get_image(
     State(db): State<DatabaseConnection>,
     Path((chapter_id, page_index)): Path<(i32, i32)>,
+    Query(query): Query<ImageQuery>,
     headers: HeaderMap,
 ) -> Response {
     let chapter = match entity::chapter::Entity::find_by_id(chapter_id).one(&db).await {
@@ -80,8 +91,13 @@ async fn get_image(
     // client already has the exact bytes.
     if row.status == "done" {
         if let Some(checksum) = &row.checksum {
+            let expected_etag = if query.ds {
+                crate::util::image_transcode::data_saver_etag(checksum)
+            } else {
+                checksum.clone()
+            };
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
-                if if_none_match.trim_matches('"') == checksum {
+                if if_none_match.trim_matches('"') == expected_etag {
                     return StatusCode::NOT_MODIFIED.into_response();
                 }
             }
@@ -99,14 +115,20 @@ async fn get_image(
         if let (Some(storage_key), Some(content_type), Some(checksum)) =
             (&row.storage_key, &row.content_type, &row.checksum)
         {
-            return serve_from_store(storage_key, content_type, checksum).await;
+            return if query.ds {
+                serve_data_saver(storage_key, content_type, checksum).await
+            } else {
+                serve_from_store(storage_key, content_type, checksum).await
+            };
         }
     }
 
     // Durably failed (or still cooling down between attempt-sessions):
     // degrade to exactly today's raw-hotlink behavior for this one page
     // only, rather than a broken image. Every other successfully-downloaded
-    // page in the same chapter keeps being served locally.
+    // page in the same chapter keeps being served locally. (No compression
+    // on this fallback -- there's nothing local to transcode, and fetching
+    // the hotlink here ourselves would bypass the download lock/semaphore.)
     Redirect::temporary(&row.source_url).into_response()
 }
 
@@ -299,24 +321,69 @@ fn respond_with_bytes(bytes: Vec<u8>, content_type: &str) -> Response {
     (StatusCode::OK, response_headers, bytes).into_response()
 }
 
+fn build_image_response(bytes: Vec<u8>, content_type: &str, etag: &str) -> Response {
+    let mut response_headers = HeaderMap::new();
+    if let Ok(value) = content_type.parse() {
+        response_headers.insert(CONTENT_TYPE, value);
+    }
+    response_headers.insert(CACHE_CONTROL, "public, max-age=31536000, immutable".parse().unwrap());
+    if let Ok(value) = format!("\"{etag}\"").parse() {
+        response_headers.insert(ETAG, value);
+    }
+    (StatusCode::OK, response_headers, bytes).into_response()
+}
+
 async fn serve_from_store(storage_key: &str, content_type: &str, checksum: &str) -> Response {
     match IMAGE_STORE.get(storage_key).await {
-        Ok(bytes) => {
-            let mut response_headers = HeaderMap::new();
-            if let Ok(value) = content_type.parse() {
-                response_headers.insert(CONTENT_TYPE, value);
-            }
-            response_headers.insert(CACHE_CONTROL, "public, max-age=31536000, immutable".parse().unwrap());
-            if let Ok(value) = format!("\"{checksum}\"").parse() {
-                response_headers.insert(ETAG, value);
-            }
-            (StatusCode::OK, response_headers, bytes).into_response()
-        }
+        Ok(bytes) => build_image_response(bytes, content_type, checksum),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read stored image: {e}"),
         )
             .into_response(),
+    }
+}
+
+/// `?ds=true` variant of [`serve_from_store`]: serve a cached downscaled
+/// JPEG if one already exists, else transcode the original once and cache
+/// it under a derived key (best-effort -- a failed cache write still lets
+/// this one request succeed). Falls back to the original bytes untouched
+/// if the source format can't be decoded (e.g. AVIF).
+async fn serve_data_saver(storage_key: &str, content_type: &str, checksum: &str) -> Response {
+    use crate::util::image_transcode;
+
+    let ds_key = image_transcode::data_saver_key(storage_key);
+    let ds_etag = image_transcode::data_saver_etag(checksum);
+
+    if IMAGE_STORE.exists(&ds_key).await {
+        return match IMAGE_STORE.get(&ds_key).await {
+            Ok(bytes) => build_image_response(bytes, "image/jpeg", &ds_etag),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read cached data-saver image: {e}"),
+            )
+                .into_response(),
+        };
+    }
+
+    let original = match IMAGE_STORE.get(storage_key).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read stored image: {e}")).into_response()
+        }
+    };
+
+    match image_transcode::transcode(&original) {
+        Ok(transcoded) => {
+            if let Err(e) = IMAGE_STORE.put(&ds_key, transcoded.clone()).await {
+                warn!("Failed to cache data-saver image {}: {}", ds_key, e);
+            }
+            build_image_response(transcoded, "image/jpeg", &ds_etag)
+        }
+        Err(e) => {
+            warn!("Data-saver transcode failed for {}, serving original: {}", storage_key, e);
+            build_image_response(original, content_type, checksum)
+        }
     }
 }
 
