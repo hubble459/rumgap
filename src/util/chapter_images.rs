@@ -29,7 +29,6 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use tonic::Status;
 
-use crate::util::scrape_error_proto::StatusWrapper;
 use crate::{IMAGE_STORE, MANGA_PARSER};
 
 /// Sites known to reject a Referer that points at the chapter page itself,
@@ -87,7 +86,15 @@ pub async fn ensure_chapter_image_rows(
     }
 
     let url = Url::parse(&chapter.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
-    let images = MANGA_PARSER.chapter_images(&url).await.map_err(StatusWrapper::from)?;
+    let images = crate::util::scrape_log::record(
+        db,
+        "chapter_images",
+        &url,
+        None,
+        Some(chapter.manga_source_id),
+        MANGA_PARSER.chapter_images(&url),
+    )
+    .await?;
 
     debug!(
         "Scraped {} image(s) for chapter {} [{}]",

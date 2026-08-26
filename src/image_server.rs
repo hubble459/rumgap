@@ -13,10 +13,12 @@ use axum::Router;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use tower_http::cors::CorsLayer;
 
 use crate::util::chapter_images::{ensure_chapter_image_rows, ensure_page_downloaded};
 use crate::util::cover_images::ensure_cover_downloaded;
 use crate::util::scraper_hostnames::is_allowed_hostname;
+use crate::util::startup_banner;
 use crate::IMAGE_STORE;
 
 /// Start serving `GET /images/{chapter_id}/{page_index}` on `IMAGE_PORT`
@@ -34,9 +36,8 @@ pub async fn serve(db: DatabaseConnection) {
         .route("/images/{chapter_id}/{page_index}", get(get_image))
         .route("/covers/{manga_id}", get(get_cover))
         .route("/proxy", get(get_proxy))
+        .layer(CorsLayer::permissive())
         .with_state(db);
-
-    info!("Running image server on {}", addr);
 
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => listener,
@@ -45,6 +46,7 @@ pub async fn serve(db: DatabaseConnection) {
             return;
         }
     };
+    startup_banner::print("Image Server", &host, port, "http://", "/");
 
     if let Err(e) = axum::serve(listener, app).await {
         error!("Image server crashed: {}", e);

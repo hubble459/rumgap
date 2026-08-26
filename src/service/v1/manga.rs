@@ -19,13 +19,13 @@ use tonic::{Request, Response, Status};
 
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
-    AddSourceRequest, BackfillStatusReply, Empty, Id, MangaReply, MangaRequest, MangaSourceReply, MangasReply,
-    MangasRequest, PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest,
+    AddSourceRequest, BackfillImagesRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
+    MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
+    RemoveSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest, UpdateMangaRequest,
 };
 use crate::util::auth::Authorize;
 use crate::util::backfill;
 use crate::util::db::DatabaseRequest;
-use crate::util::scrape_error_proto::StatusWrapper;
 use crate::util::search::manga::lucene_filter;
 use crate::{data, util, MANGA_PARSER};
 
@@ -215,6 +215,11 @@ async fn match_canonical_chapters(
     Ok(())
 }
 
+/// A chapter-count drop this large (as a fraction of what we had) is treated as suspicious
+/// rather than a legitimate renumbering - e.g. a source flipping to a single "removed" notice
+/// page would otherwise read as "chapters legitimately shrank" and wipe real data.
+const SUSPICIOUS_CHAPTER_DROP_RATIO: f64 = 0.5;
+
 /// Insert/reconcile chapters scraped for a single manga_source, then run the canonical
 /// matching heuristic on exactly the newly-inserted rows (never touching chapters that
 /// already have a link, whether auto-matched before or manually unlinked).
@@ -222,6 +227,8 @@ async fn sync_chapters_for_source(
     db: &DatabaseConnection,
     manga_id: i32,
     manga_source_id: i32,
+    source_url: &str,
+    force: bool,
     scraped_chapters: &[manga_parser::model::Chapter],
 ) -> Result<(), Status> {
     if scraped_chapters.is_empty() {
@@ -236,7 +243,42 @@ async fn sync_chapters_for_source(
         .map_err(internal)?;
 
     if (scraped_chapters.len() as u64) < count_chapters {
-        // If there are suddenly less chapters than we have in our database, we reset our chapters
+        let dropped = count_chapters - scraped_chapters.len() as u64;
+        let drop_ratio = dropped as f64 / count_chapters as f64;
+
+        if drop_ratio > SUSPICIOUS_CHAPTER_DROP_RATIO && !force {
+            // Too big a drop to trust - don't touch existing chapters, just flag it so a
+            // human can go check the url themselves.
+            warn!(
+                "Suspicious chapter drop for manga_source {} [{}]: scraped {} chapter(s), had {} - skipping reset",
+                manga_source_id,
+                source_url,
+                scraped_chapters.len(),
+                count_chapters
+            );
+            util::scrape_log::flag_suspicious_chapter_drop(
+                db,
+                manga_id,
+                manga_source_id,
+                source_url,
+                scraped_chapters.len() as u64,
+                count_chapters,
+            )
+            .await;
+            return Ok(());
+        }
+
+        if drop_ratio > SUSPICIOUS_CHAPTER_DROP_RATIO {
+            info!(
+                "Forcing chapter reset for manga_source {} [{}] despite suspicious drop ({} -> {})",
+                manga_source_id,
+                source_url,
+                count_chapters,
+                scraped_chapters.len()
+            );
+        }
+
+        // A modest drop in chapter count (or a forced refresh) - reset our chapters to match the source.
         let res = entity::chapter::Entity::delete_many()
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
             .exec(db)
@@ -277,7 +319,8 @@ async fn sync_chapters_for_source(
 pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Status> {
     info!("Creating manga [{}]", url);
 
-    let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(StatusWrapper::from)?;
+    let manga: manga_parser::model::Manga =
+        crate::util::scrape_log::record(db, "manga", &url, None, None, MANGA_PARSER.manga(&url)).await?;
 
     let saved_manga = entity::manga::ActiveModel {
         title: Set(manga.title),
@@ -305,7 +348,7 @@ pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Stat
     .await
     .map_err(internal)?;
 
-    sync_chapters_for_source(db, saved_manga.id, saved_source.id, &manga.chapters).await?;
+    sync_chapters_for_source(db, saved_manga.id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
     Ok(saved_manga.id)
 }
@@ -332,7 +375,8 @@ pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) 
 
     info!("Adding source [{}] to manga {}", url, manga_id);
 
-    let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(StatusWrapper::from)?;
+    let manga: manga_parser::model::Manga =
+        crate::util::scrape_log::record(db, "manga", &url, Some(manga_id), None, MANGA_PARSER.manga(&url)).await?;
 
     let saved_source = entity::manga_source::ActiveModel {
         manga_id: Set(manga_id),
@@ -345,7 +389,7 @@ pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) 
     .await
     .map_err(internal)?;
 
-    sync_chapters_for_source(db, manga_id, saved_source.id, &manga.chapters).await?;
+    sync_chapters_for_source(db, manga_id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
     Ok(saved_source.id)
 }
@@ -353,7 +397,11 @@ pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) 
 /// Refresh an existing manga_source in place (re-scrape its url). If it's the primary
 /// source, canonical manga.title/description/cover/etc are updated too - a secondary
 /// source's refresh must never stomp canonical metadata.
-pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32) -> Result<i32, Status> {
+///
+/// `force` bypasses the suspicious-chapter-drop safety net in `sync_chapters_for_source` --
+/// only the explicit user-triggered `Manga.Update` RPC should ever pass `true`, once someone
+/// has actually checked the source and confirmed the drop is real.
+pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32, force: bool) -> Result<i32, Status> {
     let source = entity::manga_source::Entity::find_by_id(manga_source_id)
         .one(db)
         .await
@@ -363,7 +411,15 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32)
     let url = Url::parse(&source.url).map_err(|e| Status::invalid_argument(e.to_string()))?;
     info!("Refreshing manga source {} [{}]", manga_source_id, url);
 
-    let manga: manga_parser::model::Manga = MANGA_PARSER.manga(&url).await.map_err(StatusWrapper::from)?;
+    let manga: manga_parser::model::Manga = crate::util::scrape_log::record(
+        db,
+        "manga",
+        &url,
+        Some(source.manga_id),
+        Some(manga_source_id),
+        MANGA_PARSER.manga(&url),
+    )
+    .await?;
 
     if source.is_primary {
         // Only overwrite the cover when this scrape actually found one - cover_url is a
@@ -415,7 +471,7 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32)
         active.update(db).await.map_err(internal)?;
     }
 
-    sync_chapters_for_source(db, source.manga_id, manga_source_id, &manga.chapters).await?;
+    sync_chapters_for_source(db, source.manga_id, manga_source_id, &source.url, force, &manga.chapters).await?;
 
     Ok(source.manga_id)
 }
@@ -550,7 +606,7 @@ impl Manga for MangaController {
     }
 
     /// Get one manga
-    async fn get(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
+    async fn get(&self, request: Request<GetMangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
@@ -577,7 +633,7 @@ impl Manga for MangaController {
                     "Updating manga with id '{}' (primary source {})",
                     manga_id, primary_source_id
                 );
-                refresh_manga_source(db, primary_source_id).await?;
+                refresh_manga_source(db, primary_source_id, false).await?;
             }
         }
 
@@ -585,8 +641,10 @@ impl Manga for MangaController {
     }
 
     /// Force update a manga - refreshes its primary source (only a primary-source refresh
-    /// updates canonical manga.title/description/cover/etc).
-    async fn update(&self, request: Request<Id>) -> Result<Response<MangaReply>, Status> {
+    /// updates canonical manga.title/description/cover/etc). `force` also pushes a chapter
+    /// reset through even if it looks like a suspicious drop (see `sync_chapters_for_source`) --
+    /// for when someone has checked the source and confirmed the drop is real.
+    async fn update(&self, request: Request<UpdateMangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok();
         let req = request.get_ref();
@@ -600,7 +658,7 @@ impl Manga for MangaController {
             "Updating manga with id '{}' (primary source {})",
             manga_id, primary_source_id
         );
-        refresh_manga_source(db, primary_source_id).await?;
+        refresh_manga_source(db, primary_source_id, req.force).await?;
 
         Ok(Response::new(get_manga_by_id(db, logged_in, manga_id).await?))
     }
@@ -625,7 +683,7 @@ impl Manga for MangaController {
             .map_err(internal)?;
 
         let manga_id = if let Some(existing) = existing {
-            refresh_manga_source(db, existing.id).await?
+            refresh_manga_source(db, existing.id, false).await?
         } else {
             let url = Url::parse(url).map_err(|e| Status::invalid_argument(e.to_string()))?;
             create_manga(db, url).await?
@@ -684,7 +742,7 @@ impl Manga for MangaController {
         }))
     }
 
-    async fn similar(&self, request: Request<Id>) -> Result<Response<MangasReply>, Status> {
+    async fn similar(&self, request: Request<SimilarMangaRequest>) -> Result<Response<MangasReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize().ok().cloned();
 
@@ -865,7 +923,7 @@ impl Manga for MangaController {
         // primary-source flag has already flipped by this point regardless of whether this
         // refresh succeeds, so a failure here (e.g. the new primary is briefly unreachable)
         // is logged, not fatal to the RPC.
-        if let Err(e) = refresh_manga_source(db, source.id).await {
+        if let Err(e) = refresh_manga_source(db, source.id, false).await {
             warn!(
                 "Failed to immediately refresh newly-primary source {} for manga {}: {:#?}",
                 source.id, source.manga_id, e
@@ -877,22 +935,25 @@ impl Manga for MangaController {
         ))
     }
 
-    /// Id = manga_source_id. Kicks off (or resumes) a throttled background walk
-    /// downloading every not-yet-cached page of every chapter of that source.
-    async fn backfill_images(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
+    /// Kicks off (or resumes) a throttled background walk downloading every
+    /// not-yet-cached page of every chapter of that source.
+    async fn backfill_images(&self, request: Request<BackfillImagesRequest>) -> Result<Response<Empty>, Status> {
         let db = request.db()?.clone();
-        let manga_source_id = request.get_ref().id;
+        let manga_source_id = request.get_ref().manga_source_id;
 
         backfill::start_backfill(db, manga_source_id);
 
         Ok(Response::new(Empty::default()))
     }
 
-    /// Id = manga_source_id (see BackfillImages). Cheap `GROUP BY status` progress
-    /// count for the client to poll on its own schedule.
-    async fn get_backfill_status(&self, request: Request<Id>) -> Result<Response<BackfillStatusReply>, Status> {
+    /// See BackfillImages. Cheap `GROUP BY status` progress count for the client
+    /// to poll on its own schedule.
+    async fn get_backfill_status(
+        &self,
+        request: Request<GetBackfillStatusRequest>,
+    ) -> Result<Response<BackfillStatusReply>, Status> {
         let db = request.db()?;
-        let manga_source_id = request.get_ref().id;
+        let manga_source_id = request.get_ref().manga_source_id;
 
         let (images_downloaded, images_total) = backfill::backfill_status(db, manga_source_id).await?;
 
@@ -976,6 +1037,8 @@ mod matching_heuristic_tests {
             &db,
             manga.id,
             source_a.id,
+            &source_a.url,
+            false,
             &[chapter("a", 1.0), chapter("a", 2.0), chapter("a", 3.0)],
         )
         .await
@@ -1005,6 +1068,8 @@ mod matching_heuristic_tests {
             &db,
             manga.id,
             source_b.id,
+            &source_b.url,
+            false,
             &[chapter("b", 1.0), chapter("b", 2.0), chapter("b", 4.0)],
         )
         .await
@@ -1065,7 +1130,7 @@ mod matching_heuristic_tests {
         let dup_a = chapter("c-5a", 5.0);
         let dup_b = chapter("c-5b", 5.0);
 
-        sync_chapters_for_source(&db, manga.id, source_c.id, &[dup_a, dup_b])
+        sync_chapters_for_source(&db, manga.id, source_c.id, &source_c.url, false, &[dup_a, dup_b])
             .await
             .unwrap();
 

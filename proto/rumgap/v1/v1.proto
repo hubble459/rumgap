@@ -12,11 +12,12 @@ import "rumgap/v1/reading.proto";
 import "rumgap/v1/search.proto";
 import "rumgap/v1/paginate.proto";
 import "rumgap/v1/meta.proto";
+import "rumgap/v1/scraper.proto";
 
 service User {
     rpc Register (UserRegisterRequest) returns (UserTokenReply);
     rpc Login (UserRequest) returns (UserTokenReply);
-    rpc Get (Id) returns (UserFullReply);
+    rpc Get (GetUserRequest) returns (UserFullReply);
     rpc Index (PaginateQuery) returns (UsersReply);
     rpc Me (Empty) returns (UserFullReply);
     rpc Update (UserUpdateRequest) returns (UserFullReply);
@@ -34,47 +35,46 @@ service Friend {
 service Manga {
     rpc Create (MangaRequest) returns (MangaReply);
     rpc CreateMany (MangasRequest) returns (stream MangaReply);
-    rpc Get (Id) returns (MangaReply);
+    rpc Get (GetMangaRequest) returns (MangaReply);
     // Refreshes this manga's primary source (only a primary-source refresh updates
     // canonical manga title/description/cover/etc).
-    rpc Update (Id) returns (MangaReply);
+    rpc Update (UpdateMangaRequest) returns (MangaReply);
     rpc Index (PaginateSearchQuery) returns (MangasReply);
     rpc FindOrCreate (MangaRequest) returns (MangaReply);
-    rpc Similar (Id) returns (MangasReply);
+    rpc Similar (SimilarMangaRequest) returns (MangasReply);
     rpc AddSource (AddSourceRequest) returns (MangaReply);
     rpc RemoveSource (RemoveSourceRequest) returns (MangaReply);
     rpc SetPrimarySource (SetPrimarySourceRequest) returns (MangaReply);
-    // Id = manga_source_id. Kicks off (or resumes) a throttled background
-    // walk that downloads every not-yet-`done` page of every chapter of
-    // that source.
-    rpc BackfillImages (Id) returns (Empty);
-    // Id = manga_source_id (see BackfillImages). Cheap `GROUP BY status`
-    // count, meant to be polled on the client's own schedule -- no
-    // long-lived streaming RPC for a job that can run for hours.
-    rpc GetBackfillStatus (Id) returns (BackfillStatusReply);
+    // Kicks off (or resumes) a throttled background walk that downloads every
+    // not-yet-`done` page of every chapter of that source.
+    rpc BackfillImages (BackfillImagesRequest) returns (Empty);
+    // See BackfillImages. Cheap `GROUP BY status` count, meant to be polled on
+    // the client's own schedule -- no long-lived streaming RPC for a job that
+    // can run for hours.
+    rpc GetBackfillStatus (GetBackfillStatusRequest) returns (BackfillStatusReply);
 }
 
 service Chapter {
     rpc Get (ChapterRequest) returns (ChapterReply);
     rpc Index (PaginateChapterQuery) returns (ChaptersReply);
-    // Id = chapter_id. Never blocks on downloads -- ensures `chapter_image`
-    // rows exist and returns deterministic local image-server URLs; the
-    // actual download happens lazily on first real request to that URL.
-    rpc Images (Id) returns (ImagesReply);
+    // Never blocks on downloads -- ensures `chapter_image` rows exist and returns
+    // deterministic local image-server URLs; the actual download happens lazily
+    // on first real request to that URL.
+    rpc Images (ChapterImagesRequest) returns (ImagesReply);
     rpc LinkChapter (LinkChapterRequest) returns (ChapterReply);
     rpc UnlinkChapter (UnlinkChapterRequest) returns (ChapterReply);
     rpc FindEquivalent (FindEquivalentRequest) returns (ChapterReply);
-    // Id = chapter_id. Manual-only force-refresh: deletes this chapter's
-    // existing `chapter_image` rows (and their stored bytes) and re-scrapes
-    // from scratch. For the handful of sites that briefly serve a
-    // placeholder/troll image right after a chapter is scraped.
-    rpc RefreshImages (Id) returns (ImagesReply);
+    // Manual-only force-refresh: deletes this chapter's existing `chapter_image`
+    // rows (and their stored bytes) and re-scrapes from scratch. For the handful
+    // of sites that briefly serve a placeholder/troll image right after a
+    // chapter is scraped.
+    rpc RefreshImages (RefreshImagesRequest) returns (ImagesReply);
 }
 
 service Reading {
     rpc Update (ReadingPatchRequest) returns (MangaReply);
     rpc Create (ReadingPostRequest) returns (MangaReply);
-    rpc Delete (Id) returns (Empty);
+    rpc Delete (DeleteReadingRequest) returns (Empty);
     rpc UpdateChapterOffset (UpdateChapterOffsetRequest) returns (Empty);
     rpc GetCrossSourceOffset (GetCrossSourceOffsetRequest) returns (CrossSourceOffsetReply);
 }
@@ -89,8 +89,17 @@ service Meta {
     rpc Stats (Empty) returns (StatsReply);
 }
 
-message Id {
+// Admin-only: per-hostname scraper health, backing an admin status page for keeping track of
+// which sites' scrapers are currently broken.
+service Scraper {
+    rpc Status (ScraperStatusRequest) returns (ScraperStatusReply);
+}
+
+message UpdateMangaRequest {
     int32 id = 1;
+    // Bypass the suspicious-chapter-drop safety net (see sync_chapters_for_source) and force
+    // the reset through -- only set this once you've checked the source yourself.
+    bool force = 2;
 }
 
 message Empty {

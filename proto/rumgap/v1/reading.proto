@@ -24,6 +24,10 @@ message GetCrossSourceOffsetRequest {
     int32 canonical_chapter_id = 1;
 }
 
+message DeleteReadingRequest {
+    int32 manga_id = 1;
+}
+
 message CrossSourceOffsetReply {
     // Most recent fraction recorded across any chapter sharing this canonical_chapter_id.
     optional float fraction = 1;

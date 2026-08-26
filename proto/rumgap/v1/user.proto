@@ -13,6 +13,10 @@ message DeviceTokenRequest {
     string token = 1;
 }
 
+message GetUserRequest {
+    int32 id = 1;
+}
+
 message UserRequest {
     string password = 1;
     oneof identifier {

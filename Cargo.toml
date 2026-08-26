@@ -21,6 +21,7 @@ opt-level = 3
 tonic = { version = "0.14", features = ["gzip", "tls-connect-info"] }
 tonic-prost = "0.14"
 tonic-reflection = "0.14"
+tonic-web = "0.14"
 tower = { version = "0.5" }
 tonic-async-interceptor = "0.14"
 prost = "0.14"
@@ -57,6 +58,9 @@ manga_parser = { git = "https://github.com/hubble459/manga_parser", branch = "ma
 # manga_parser = { path = "../manga_parser" }
 fcm = { git = "https://github.com/rj76/fcm-rust.git" }
 hyper = { version = "1", features = ["http1", "http2"] }
+tower-http = { version = "0.7.0", features = ["cors"] }
+http = "1.5.0"
+if-addrs = "0.15.0"
 
 [build-dependencies]
 glob = "0"

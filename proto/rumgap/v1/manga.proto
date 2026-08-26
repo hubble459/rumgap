@@ -73,3 +73,19 @@ message RemoveSourceRequest {
 message SetPrimarySourceRequest {
     int32 manga_source_id = 1;
 }
+
+message GetMangaRequest {
+    int32 id = 1;
+}
+
+message SimilarMangaRequest {
+    int32 id = 1;
+}
+
+message BackfillImagesRequest {
+    int32 manga_source_id = 1;
+}
+
+message GetBackfillStatusRequest {
+    int32 manga_source_id = 1;
+}

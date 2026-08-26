@@ -71,3 +71,11 @@ message FindEquivalentRequest {
     int32 canonical_chapter_id = 1;
     int32 manga_source_id = 2;
 }
+
+message ChapterImagesRequest {
+    int32 chapter_id = 1;
+}
+
+message RefreshImagesRequest {
+    int32 chapter_id = 1;
+}

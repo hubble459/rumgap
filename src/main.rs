@@ -20,6 +20,11 @@ use tonic::transport::Server;
 use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
+use tokio_stream::wrappers::TcpListenerStream;
+use tonic_web::GrpcWebLayer;
+use tower_http::cors::{AllowHeaders, CorsLayer};
+
+use crate::util::startup_banner;
 
 mod data;
 mod image_server;
@@ -54,12 +59,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = env::var("HOST").unwrap_or(String::from("127.0.0.1"));
     let port = env::var("PORT").unwrap_or(String::from("8000"));
     let server_url = format!("{host}:{port}");
-    let addr = server_url.parse()?;
+    let addr: std::net::SocketAddr = server_url.parse()?;
 
     // Establish connection to database and apply migrations
     let conn = conn_db(&db_url).await.unwrap();
 
-    info!("Running server on {}", addr);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    startup_banner::print("gRPC API", &host, addr.port(), "", "");
 
     // Start updater
     let cloned_conn = conn.clone();
@@ -74,6 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     Server::builder()
+        .accept_http1(true)
+        .layer(cors_layer())
+        .layer(GrpcWebLayer::new())
         .layer(tonic::service::InterceptorLayer::new(move |req| {
             inject_db(req, conn.clone())
         }))
@@ -86,12 +95,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(service::v1::reading::server())
         .add_service(service::v1::search::server())
         .add_service(service::v1::meta::server())
+        .add_service(service::v1::scraper::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
                 .build_v1()?,
         )
-        .serve(addr)
+        .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
 
     Ok(())
@@ -113,6 +123,22 @@ fn inject_db(mut req: Request<()>, conn: DatabaseConnection) -> Result<Request<(
     req.extensions_mut().insert(conn);
 
     Ok(req)
+}
+
+/// CORS layer for grpc-web requests coming from browsers.
+///
+/// Auth is carried via the `authorization` metadata header (not cookies), so
+/// no credentials mode is needed and any origin can be allowed.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(AllowHeaders::mirror_request())
+        .expose_headers([
+            http::HeaderName::from_static("grpc-status"),
+            http::HeaderName::from_static("grpc-message"),
+            http::HeaderName::from_static("grpc-status-details-bin"),
+        ])
 }
 
 /// Log the incoming request
@@ -146,7 +172,7 @@ macro_rules! export_service {
         > {
             tower::ServiceBuilder::new()
                 .layer(tonic::service::InterceptorLayer::new(
-                    crate::interceptor::auth::LoggedInCheck::new(UserPermissions::USER),
+                    crate::interceptor::auth::LoggedInCheck::new($auth),
                 ))
                 .service(
                     $server::new($server_handler::default())

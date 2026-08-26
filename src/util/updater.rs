@@ -20,6 +20,8 @@ pub async fn watch_updates(db: &DatabaseConnection) {
     loop {
         interval.tick().await;
 
+        crate::util::scrape_log::prune(db).await;
+
         let update_list = collect_priority_manga(db).await;
 
         info!("[Auto Update] Found {} manga that should be updated", update_list.len());
@@ -38,7 +40,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
 
             info!("[Auto Update] Automatically updating {}", primary_source.url);
 
-            match refresh_manga_source(db, primary_source.id).await {
+            match refresh_manga_source(db, primary_source.id, false).await {
                 Ok(manga_id) => match get_manga_by_id(db, None, manga_id).await {
                     Ok(saved) => {
                         if saved.count_chapters != manga.count_chapters {

@@ -10,8 +10,8 @@ use tonic::{Request, Response, Status};
 use crate::data;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
-    ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, Id, ImagePage, ImagesReply, LinkChapterRequest,
-    PaginateChapterQuery, PaginateReply, UnlinkChapterRequest,
+    ChapterImagesRequest, ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, ImagePage, ImagesReply,
+    LinkChapterRequest, PaginateChapterQuery, PaginateReply, RefreshImagesRequest, UnlinkChapterRequest,
 };
 use crate::util::auth::Authorize;
 use crate::util::chapter_images::{ensure_chapter_image_rows, refresh_chapter_images};
@@ -57,10 +57,10 @@ impl Chapter for ChapterController {
     /// Get chapter images. Never blocks on downloads -- only ensures
     /// `chapter_image` rows exist (scraping via manga_parser exactly once,
     /// ever, per chapter) and returns local image-server URLs.
-    async fn images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
+    async fn images(&self, request: Request<ChapterImagesRequest>) -> Result<Response<ImagesReply>, Status> {
         let db = request.db()?;
         let req = request.get_ref();
-        let chapter_id = req.id;
+        let chapter_id = req.chapter_id;
 
         let chapter = entity::chapter::Entity::find_by_id(chapter_id)
             .one(db)
@@ -81,10 +81,10 @@ impl Chapter for ChapterController {
     /// `chapter_image` rows (and their stored bytes) and re-scrapes/re-caches
     /// from scratch. For the handful of sites that briefly serve a
     /// placeholder/troll image right after a chapter is scraped.
-    async fn refresh_images(&self, request: Request<Id>) -> Result<Response<ImagesReply>, Status> {
+    async fn refresh_images(&self, request: Request<RefreshImagesRequest>) -> Result<Response<ImagesReply>, Status> {
         let db = request.db()?;
         let req = request.get_ref();
-        let chapter_id = req.id;
+        let chapter_id = req.chapter_id;
 
         let chapter = entity::chapter::Entity::find_by_id(chapter_id)
             .one(db)

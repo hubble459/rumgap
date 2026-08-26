@@ -22,6 +22,7 @@ mod m20260820_120005_chapter_offset_fraction;
 mod m20260820_120006_create_chapter_image;
 mod m20260820_120007_add_cover_tracking_to_manga;
 mod m20260820_120008_add_dimensions_to_chapter_image;
+mod m20260826_120000_create_scrape_log;
 
 pub struct Migrator;
 
@@ -49,6 +50,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260820_120006_create_chapter_image::Migration),
             Box::new(m20260820_120007_add_cover_tracking_to_manga::Migration),
             Box::new(m20260820_120008_add_dimensions_to_chapter_image::Migration),
+            Box::new(m20260826_120000_create_scrape_log::Migration),
         ]
     }
 }

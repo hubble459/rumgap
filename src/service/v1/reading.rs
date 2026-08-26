@@ -10,7 +10,7 @@ use super::manga::get_manga_by_id;
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::reading_server::{Reading, ReadingServer};
 use crate::proto::{
-    CrossSourceOffsetReply, Empty, GetCrossSourceOffsetRequest, Id, MangaReply, ReadingPatchRequest,
+    CrossSourceOffsetReply, DeleteReadingRequest, Empty, GetCrossSourceOffsetRequest, MangaReply, ReadingPatchRequest,
     ReadingPostRequest, UpdateChapterOffsetRequest,
 };
 use crate::util::auth::Authorize;
@@ -124,13 +124,13 @@ impl Reading for ReadingController {
     }
 
     /// Delete a reading index
-    async fn delete(&self, request: Request<Id>) -> Result<Response<Empty>, Status> {
+    async fn delete(&self, request: Request<DeleteReadingRequest>) -> Result<Response<Empty>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();
 
         // Delete reading
-        let reading = entity::reading::Entity::delete_by_id((logged_in.id, req.id))
+        let reading = entity::reading::Entity::delete_by_id((logged_in.id, req.manga_id))
             .exec(db)
             .await
             .map_err(internal)?;
