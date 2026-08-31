@@ -1,6 +1,7 @@
 services:
   rumgap:
     image: ghcr.io/hubble459/rumgap:main
+    container_name: rumgap
     working_dir: /usr/local/bin
     restart: unless-stopped
     environment:
@@ -21,21 +22,11 @@ services:
       - ./manga-reader-5c535-148af5dd8096.json:/usr/local/bin/manga-reader-5c535-148af5dd8096.json:ro
     command: ["rumgap"]
   web:
-    image: nginx:alpine
+    image: ghcr.io/hubble459/wuxia-web:main
+    container_name: web
     restart: unless-stopped
     ports:
-      - '8002:80'
-    volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - /opt/rumgap/wuxia-web:/usr/share/nginx/html:ro
-  watchtower:
-    image: containrrr/watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      WATCHTOWER_CLEANUP: "true"
-    command: --interval 300 rumgap
+      - '8002:8080'
   db:
     image: postgres:15
     restart: unless-stopped
