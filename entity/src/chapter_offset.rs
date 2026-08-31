@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "chapter_offset")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -13,6 +13,11 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub page: i32,
+    /// 0.0-1.0 fraction through the chapter (`page / total_pages`), used only for
+    /// cross-source scroll resume when jumping to an equivalent chapter on a
+    /// different source. The `offset`/`page` pair above remains the fast path for
+    /// same-source resume.
+    pub fraction: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,0 +1,32 @@
+syntax = "proto3";
+package rumgap.v1;
+
+import "rumgap/v1/scrape_error.proto";
+
+message ScraperStatusRequest {
+}
+
+// One recent failed attempt for a given hostname.
+message ScraperErrorEntry {
+    // `manga | chapter_images` -- which manga_parser call failed.
+    string operation = 1;
+    string url = 2;
+    ScrapeErrorType error_type = 3;
+    string message = 4;
+    int64 created_at = 5;
+}
+
+message ScraperStatus {
+    string hostname = 1;
+    optional int64 last_attempt_at = 2;
+    bool last_attempt_success = 3;
+    optional int64 last_success_at = 4;
+    int64 attempts_24h = 5;
+    int64 failures_24h = 6;
+    // Up to the 5 most recent failed attempts for this hostname, newest first.
+    repeated ScraperErrorEntry recent_errors = 7;
+}
+
+message ScraperStatusReply {
+    repeated ScraperStatus items = 1;
+}

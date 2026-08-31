@@ -4,3 +4,6 @@
 !/logs/.gitkeep
 /http-cacache
 manga-reader-5c535-148af5dd8096.json
+# Claude Code local state (worktrees, local settings) - never commit
+.claude/
+/data

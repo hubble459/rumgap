@@ -1,5 +1,5 @@
 use manga_parser::scraper::MangaScraper;
-use migration::{Expr, IntoCondition, JoinType};
+use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait, Select,
@@ -28,6 +28,21 @@ enum MetaOption {
     Online,
 }
 
+/// Restricts a `manga` -> `manga_source` join to just the primary source, matching the
+/// meaning of "count_chapters" everywhere else in the app (computed from the primary source
+/// only). Generic over the query's root entity since the join clause itself only cares
+/// about the `manga`/`manga_source` tables, not what's being selected from.
+fn join_primary_source<E: EntityTrait>(query: Select<E>) -> Select<E> {
+    query.join(
+        JoinType::LeftJoin,
+        entity::manga::Relation::MangaSource.def().on_condition(|_left, right| {
+            Expr::col((right, entity::manga_source::Column::IsPrimary))
+                .eq(true)
+                .into()
+        }),
+    )
+}
+
 async fn get_reply(
     db: &DatabaseConnection,
     query: Select<entity::manga::Entity>,
@@ -48,7 +63,7 @@ async fn get_reply(
                             .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
                                     .eq(logged_in.id)
-                                    .into_condition()
+                                    .into()
                             }),
                     )
                     .into_values::<_, QueryAs>()
@@ -111,13 +126,15 @@ impl Meta for MetaController {
         let db = req.db()?;
         let logged_in = req.extensions().get::<entity::user::Model>().cloned();
         let request = req.get_ref();
+        // `hostname` is now a plain stored column on manga_source (no more regexp-parsing a
+        // `manga.url` that no longer exists) - across *all* sources, not just primary, since
+        // this is meant to answer "what hostnames exist across my whole collection".
         let query = entity::manga::Entity::find()
+            .join(JoinType::LeftJoin, entity::manga::Relation::MangaSource.def())
             .select_only()
-            .column_as(
-                Expr::cust("distinct (regexp_matches(manga.url, '://([^/]+)'))[1]"),
-                QueryAs::Strings,
-            )
-            .order_by_asc(Expr::cust("(regexp_matches(manga.url, '://([^/]+)'))[1]"));
+            .column_as(entity::manga_source::Column::Hostname, QueryAs::Strings)
+            .distinct()
+            .order_by_asc(entity::manga_source::Column::Hostname);
 
         Ok(Response::new(
             get_reply(
@@ -144,7 +161,12 @@ impl Meta for MetaController {
             .filter(entity::reading::Column::UserId.eq(user_id))
             .select_only()
             .column_as(
-                Expr::cust("COUNT(CASE WHEN ((SELECT COUNT(*) FROM chapter WHERE chapter.manga_id = reading.manga_id) = reading.progress) THEN 1 END)"),
+                Expr::cust(
+                    "COUNT(CASE WHEN ((SELECT COUNT(*) FROM chapter \
+                     JOIN manga_source ON manga_source.id = chapter.manga_source_id \
+                     WHERE manga_source.manga_id = reading.manga_id AND manga_source.is_primary = true) \
+                     = reading.progress) THEN 1 END)",
+                ),
                 "count_reading",
             )
             .into_tuple()
@@ -153,19 +175,21 @@ impl Meta for MetaController {
             .map_err(|e| Status::internal(e.to_string()))?
             .ok_or(Status::unknown("How?"))?;
 
-        let stats: (i64, i64, i64) = entity::reading::Entity::find()
-            .filter(entity::reading::Column::UserId.eq(user_id))
-            .left_join(entity::manga::Entity)
-            .join(JoinType::LeftJoin, entity::manga::Relation::Chapter.def())
-            .select_only()
-            .column_as(Expr::cust("COUNT(DISTINCT reading.manga_id)"), StatsCount::TotalReading)
-            .column_as(Expr::cust("COUNT(DISTINCT chapter.id)"), StatsCount::TotalChapters)
-            .column_as(Expr::cust("SUM(DISTINCT reading.progress)"), StatsCount::Chapters)
-            .into_values::<_, StatsCount>()
-            .one(db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?
-            .ok_or(Status::unknown("How?"))?;
+        let stats: (i64, i64, i64) = join_primary_source(
+            entity::reading::Entity::find()
+                .filter(entity::reading::Column::UserId.eq(user_id))
+                .left_join(entity::manga::Entity),
+        )
+        .join(JoinType::LeftJoin, entity::manga_source::Relation::Chapter.def())
+        .select_only()
+        .column_as(Expr::cust("COUNT(DISTINCT reading.manga_id)"), StatsCount::TotalReading)
+        .column_as(Expr::cust("COUNT(DISTINCT chapter.id)"), StatsCount::TotalChapters)
+        .column_as(Expr::cust("SUM(DISTINCT reading.progress)"), StatsCount::Chapters)
+        .into_values::<_, StatsCount>()
+        .one(db)
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .ok_or(Status::unknown("How?"))?;
 
         Ok(Response::new(StatsReply {
             count_total_reading: stats.0,

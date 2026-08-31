@@ -4,18 +4,20 @@ package rumgap.v1;
 import "rumgap/v1/paginate.proto";
 
 message ChapterRequest {
-    int32 manga_id = 1;
+    int32 manga_source_id = 1;
     int32 index = 2;
 }
 
 message ChapterOffset {
     int32 pixels = 1;
     int32 page = 2;
+    // 0.0-1.0 fraction through the chapter, used for cross-source scroll resume.
+    optional float fraction = 3;
 }
 
 message ChapterReply {
     int32 id = 1;
-    int32 manga_id = 2;
+    int32 manga_source_id = 2;
     string url = 3;
     string title = 4;
     float number = 5;
@@ -24,6 +26,14 @@ message ChapterReply {
     optional ChapterOffset offset = 8;
     int64 created_at = 9;
     int64 updated_at = 10;
+    // NULL only for a manually-unlinked chapter (see UnlinkChapter) - every other
+    // chapter is always attached to some canonical_chapter, even a solo one.
+    optional int32 canonical_chapter_id = 11;
+    // This chapter's canonical position - comparable across sources, unlike `index`
+    // (a purely per-source position). Compare against MangaReply.progress_ordinal to
+    // correctly tell whether this specific chapter has been read. NULL alongside
+    // canonical_chapter_id being NULL (manually unlinked).
+    optional double ordinal = 12;
 }
 
 message ChaptersReply {
@@ -31,12 +41,41 @@ message ChaptersReply {
     repeated ChapterReply items = 2;
 }
 
+message ImagePage {
+    string url = 1;
+    // NULL if the download failed, or the format isn't PNG/JPEG.
+    optional int32 width = 2;
+    optional int32 height = 3;
+}
+
 message ImagesReply {
-    repeated string items = 1;
+    repeated ImagePage items = 1;
 }
 
 message PaginateChapterQuery {
-    int32 id = 1;
+    int32 manga_source_id = 1;
     optional PaginateQuery paginate_query = 2;
     optional bool reversed = 3;
+}
+
+message LinkChapterRequest {
+    int32 chapter_id = 1;
+    int32 canonical_chapter_id = 2;
+}
+
+message UnlinkChapterRequest {
+    int32 chapter_id = 1;
+}
+
+message FindEquivalentRequest {
+    int32 canonical_chapter_id = 1;
+    int32 manga_source_id = 2;
+}
+
+message ChapterImagesRequest {
+    int32 chapter_id = 1;
+}
+
+message RefreshImagesRequest {
+    int32 chapter_id = 1;
 }

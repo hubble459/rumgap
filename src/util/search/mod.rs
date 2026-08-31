@@ -1,4 +1,4 @@
-use migration::{Expr, SimpleExpr};
+use migration::{Expr, ExprTrait, SimpleExpr};
 use tonic::Status;
 
 use self::field::SearchField;
@@ -25,11 +25,11 @@ pub fn lucene_filter(map: &phf::Map<&'static str, SearchField>, query: Search) -
             )));
         }
 
-        let expr = name_key.cloned().unwrap().into_expression(&field.value, field.exclude);
-        match expr {
-            Ok(expr) => expressions.push(expr),
-            Err(e) => return Err(e),
-        }
+        let expr = name_key
+            .cloned()
+            .unwrap()
+            .into_expression(&field.value, field.exclude)?;
+        expressions.push(expr);
     }
 
     let without_fields: Vec<String> = query

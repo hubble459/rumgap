@@ -1,52 +1,77 @@
-use sea_orm::prelude::{DateTime, DateTimeWithTimeZone};
+use sea_orm::prelude::{DateTime, DateTimeWithTimeZone, Decimal};
 use sea_orm::{DeriveColumn, EnumIter, FromQueryResult};
 
-use crate::proto::MangaReply;
+use crate::proto::{MangaReply, MangaSourceReply};
 
 #[derive(Debug, Copy, Clone, EnumIter, DeriveColumn)]
 pub enum Minimal {
-    Url,
     UpdatedAt,
 }
 
 #[derive(Debug, FromQueryResult)]
 pub struct Full {
     pub id: i32,
-    pub url: String,
     pub title: String,
     pub description: String,
-    pub cover: Option<String>,
+    pub cover_source_url: Option<String>,
     pub status: String,
     pub is_ongoing: bool,
     pub progress: Option<i32>,
+    /// Canonical ordinal of `progress`'s underlying `last_canonical_chapter_id` - comparable
+    /// across sources against `ChapterReply.ordinal`, unlike `progress` itself (a rank among
+    /// canonical slots, which isn't the same scale as any one source's own chapter count).
+    pub progress_ordinal: Option<Decimal>,
     pub genres: Vec<String>,
     pub authors: Vec<String>,
     pub alt_titles: Vec<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
     // special
+    // NOTE: count_chapters/last/next are computed from the primary source's chapters only.
     pub count_chapters: i64,
     pub next: Option<DateTimeWithTimeZone>,
     pub last: Option<DateTimeWithTimeZone>,
 }
 
-impl From<Full> for MangaReply {
-    fn from(value: Full) -> Self {
+impl Full {
+    /// `sources` has to be fetched (and, for `Manga.Index`/`Manga.Similar`, batched) separately
+    /// since it's a one-to-many list, not something that fits this struct's flat-row shape.
+    pub fn into_manga_reply(self, sources: Vec<MangaSourceReply>) -> MangaReply {
+        MangaReply {
+            id: self.id,
+            title: self.title,
+            description: self.description,
+            // Never blocks on a download (same lazy pattern as chapter images) - the actual
+            // download happens on first real request to this URL, in the image server.
+            cover: self.cover_source_url.map(|_| {
+                let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
+                format!("{}/covers/{}", base_url.trim_end_matches('/'), self.id)
+            }),
+            status: self.status,
+            is_ongoing: self.is_ongoing,
+            genres: self.genres,
+            authors: self.authors,
+            alt_titles: self.alt_titles,
+            count_chapters: self.count_chapters,
+            reading_progress: self.progress,
+            progress_ordinal: self.progress_ordinal.and_then(|o| o.to_string().parse().ok()),
+            last: self.last.map(|date| date.timestamp_millis()),
+            next: self.next.map(|date| date.timestamp_millis()),
+            created_at: self.created_at.and_utc().timestamp_millis(),
+            updated_at: self.updated_at.and_utc().timestamp_millis(),
+            sources,
+        }
+    }
+}
+
+impl From<entity::manga_source::Model> for MangaSourceReply {
+    fn from(value: entity::manga_source::Model) -> Self {
         Self {
             id: value.id,
             url: value.url,
-            title: value.title,
-            description: value.description,
-            cover: value.cover,
-            status: value.status,
-            is_ongoing: value.is_ongoing,
-            genres: value.genres,
-            authors: value.authors,
-            alt_titles: value.alt_titles,
-            count_chapters: value.count_chapters,
-            reading_progress: value.progress,
-            last: value.last.map(|date| date.timestamp_millis()),
-            next: value.next.map(|date| date.timestamp_millis()),
+            hostname: value.hostname,
+            language: value.language,
+            is_primary: value.is_primary,
             created_at: value.created_at.and_utc().timestamp_millis(),
             updated_at: value.updated_at.and_utc().timestamp_millis(),
         }

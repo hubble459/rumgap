@@ -39,6 +39,23 @@ appenders:
                 count: 5
                 base: 1
 
+    # Dedicated file for raw SQL query logging, kept off stdout and out of
+    # rumgap.log since it's high-volume and only useful for ad-hoc debugging.
+    log_sql:
+        kind: rolling_file
+        path: "logs/sql.log"
+        encoder:
+            pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {m}{n}"
+        policy:
+            trigger:
+                kind: size
+                limit: 5 mb
+            roller:
+                kind: fixed_window
+                pattern: logs/sql_{}.gz
+                count: 5
+                base: 1
+
 root:
     level: warn
     appenders:
@@ -67,6 +84,5 @@ loggers:
     sqlx:
         level: debug
         appenders:
-            - log_rumgap
-            - stdout_ext
+            - log_sql
         additive: false

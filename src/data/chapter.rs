@@ -1,5 +1,6 @@
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::Decimal;
 use sea_orm::FromQueryResult;
 
 use crate::proto::{ChapterOffset, ChapterReply};
@@ -7,24 +8,30 @@ use crate::proto::{ChapterOffset, ChapterReply};
 #[derive(Debug, FromQueryResult)]
 pub struct Full {
     pub id: i32,
-    pub manga_id: i32,
+    pub manga_source_id: i32,
     pub url: String,
     pub title: String,
     pub number: f32,
     pub posted: Option<DateTimeWithTimeZone>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub canonical_chapter_id: Option<i32>,
+    /// This chapter's canonical position - NULL only for a manually-unlinked chapter.
+    /// Comparable across sources (unlike `index`, a purely per-source position) against
+    /// `MangaReply.progress_ordinal` to correctly tell whether a chapter has been read.
+    pub ordinal: Option<Decimal>,
 
     // special
     pub offset: Option<i32>,
     pub page: Option<i32>,
+    pub fraction: Option<f32>,
 }
 
 impl Full {
     pub fn into_chapter_reply(self, index: i64) -> ChapterReply {
         ChapterReply {
             id: self.id,
-            manga_id: self.manga_id,
+            manga_source_id: self.manga_source_id,
             title: self.title,
             url: self.url,
             index,
@@ -33,7 +40,10 @@ impl Full {
             offset: self.offset.map(|offset| ChapterOffset {
                 pixels: offset,
                 page: self.page.unwrap(),
+                fraction: self.fraction,
             }),
+            canonical_chapter_id: self.canonical_chapter_id,
+            ordinal: self.ordinal.and_then(|o| o.to_string().parse().ok()),
             created_at: self.created_at.and_utc().timestamp_millis(),
             updated_at: self.updated_at.and_utc().timestamp_millis(),
         }

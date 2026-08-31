@@ -1,4 +1,4 @@
-use migration::{Alias, Expr, JoinType};
+use migration::{Alias, Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait,
     QueryFilter, QuerySelect, RelationTrait,
@@ -10,8 +10,8 @@ use crate::interceptor::auth::sign;
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    DeviceTokenRequest, Empty, Id, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest, UserReply,
-    UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
+    DeviceTokenRequest, Empty, GetUserRequest, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest,
+    UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
@@ -43,7 +43,7 @@ pub struct UserController;
 #[tonic::async_trait]
 impl User for UserController {
     /// Get a single user
-    async fn get(&self, request: Request<Id>) -> Result<Response<UserFullReply>, Status> {
+    async fn get(&self, request: Request<GetUserRequest>) -> Result<Response<UserFullReply>, Status> {
         let db = request.db()?;
         let req = request.get_ref();
         let full_user = get_user_by_id(db, req.id).await?;
