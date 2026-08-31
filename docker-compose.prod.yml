@@ -17,6 +17,8 @@ services:
     ports:
       - '8000:8000'
       - '8001:8001'
+    volumes:
+      - ./manga-reader-5c535-148af5dd8096.json:/usr/local/bin/manga-reader-5c535-148af5dd8096.json:ro
     command: ["rumgap"]
   web:
     image: nginx:alpine
