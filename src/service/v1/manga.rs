@@ -152,33 +152,19 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity:
 /// (freshly-inserted) chapters. Deliberately simple, no fuzzy scoring: find an existing
 /// canonical_chapter for this manga whose `ordinal` equals the chapter's `number` and link
 /// to it; if none exists, create one and link to it. Every chapter always ends up attached
-/// to *some* canonical_chapter this way - `canonical_chapter_id` is left NULL only for the
-/// rare within-this-scrape ambiguous case (two of this source's own new chapters would
-/// claim the same ordinal - can't both be right, so neither is guessed; left for manual
-/// `LinkChapter` resolution instead) since `canonical_chapter(manga_id, ordinal)` is unique
-/// and can't hold two rows for the same ordinal anyway.
+/// to *some* canonical_chapter this way, including multiple chapters from the same source
+/// sharing an ordinal (e.g. two scanlation groups both releasing "chapter 5") - they all
+/// link to the same canonical_chapter, which is exactly what `LinkChapter`/`UnlinkChapter`
+/// exist to override manually if a particular pairing turns out wrong.
 async fn match_canonical_chapters(
     db: &DatabaseConnection,
     manga_id: i32,
     chapters: &[entity::chapter::Model],
 ) -> Result<(), Status> {
-    use std::collections::HashSet;
-
-    let mut claimed_ordinals: HashSet<sea_orm::prelude::Decimal> = HashSet::new();
-
     for chapter in chapters {
         let ordinal = sea_orm::prelude::Decimal::from_f32_retain(chapter.number)
             .unwrap_or_default()
             .round_dp(3);
-
-        if !claimed_ordinals.insert(ordinal) {
-            warn!(
-                "Ambiguous canonical ordinal {} for manga {} (chapter {}, ordinal already claimed \
-                 by another chapter in this same scrape) - leaving unlinked for manual resolution",
-                ordinal, manga_id, chapter.id
-            );
-            continue;
-        }
 
         let existing = entity::canonical_chapter::Entity::find()
             .filter(entity::canonical_chapter::Column::MangaId.eq(manga_id))
