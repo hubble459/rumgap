@@ -12,6 +12,7 @@ services:
       MANGA_UPDATE_INTERVAL_MS: 600000
       DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
       RUST_LOG: trace
+      RUST_BACKTRACE: "1"
 
     depends_on:
       db:
@@ -21,6 +22,7 @@ services:
       - '8001:8001'
     volumes:
       - ./manga-reader-5c535-148af5dd8096.json:/usr/local/bin/manga-reader-5c535-148af5dd8096.json:ro
+      - /opt/rumgap/data/images:/usr/local/bin/data/images
     command: ["rumgap"]
   web:
     image: ghcr.io/hubble459/wuxia-web:main

@@ -205,9 +205,8 @@ impl Chapter for ChapterController {
             amount.number_of_pages - 1
         };
 
-        // Don't clamp to max_page - infinite scroll relies on an out-of-range page coming
-        // back empty, not repeating the last page forever.
-        let page = std::cmp::Ord::max(req.page.unwrap_or(0), 0);
+        // Capped at max_page + 1 (not clamped down, so out-of-range still returns empty for infinite scroll) to stop a garbage huge page number from overflowing the SQL offset.
+        let page = std::cmp::Ord::min(req.page.unwrap_or(0), max_page + 1);
 
         // Get items from page
         let items = paginate.fetch_page(page).await.map_err(internal)?;
