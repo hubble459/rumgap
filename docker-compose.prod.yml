@@ -1,7 +1,6 @@
 services:
   rumgap:
     image: ghcr.io/hubble459/rumgap:main
-    container_name: rumgap
     working_dir: /usr/local/bin
     restart: unless-stopped
     environment:
@@ -17,19 +16,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - '8000:8000'
-      - '8001:8001'
     volumes:
       - ./manga-reader-5c535-148af5dd8096.json:/usr/local/bin/manga-reader-5c535-148af5dd8096.json:ro
       - /opt/rumgap/data/images:/usr/local/bin/data/images
     command: ["rumgap"]
   web:
     image: ghcr.io/hubble459/wuxia-web:main
-    container_name: web
+    restart: unless-stopped
+  nginx:
+    image: nginx:alpine
     restart: unless-stopped
     ports:
-      - '8002:8080'
+      - '8003:8003'
+      - '5909:5909'
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/rumgap/certs:/etc/nginx/certs:ro
+    depends_on:
+      - rumgap
+      - web
   db:
     image: postgres:15
     restart: unless-stopped

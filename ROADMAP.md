@@ -32,3 +32,8 @@
   native resolution; specify `cacheWidth`/`cacheHeight` (based on actual rendered width) to
   cut peak memory use — the Flutter equivalent of what Glide did automatically on the old
   Android app.
+- **Progressive image loading (low priority)** (wuxia). On the manga website, a slow-loading
+  image visibly buffers in top-to-bottom so you can start reading before it fully loads -
+  browsers do this natively for progressive JPEGs. Flutter's image widgets don't replicate
+  this out of the box (`loadingBuilder` only reports download progress, not partial-pixel
+  rendering); would need a custom incremental decoder. Worth doing, not urgent.
