@@ -94,7 +94,19 @@ async fn get_image(
             let expected_etag = if query.ds {
                 crate::util::image_transcode::data_saver_etag(checksum)
             } else {
-                crate::util::image_transcode::render_safe_etag(checksum)
+                // Known dimensions already under the cap -> render-safe will
+                // serve the original untouched, so match on the plain
+                // checksum. Unknown dimensions -> guess the transcoded
+                // etag; worst case a stale guess costs one full re-fetch
+                // instead of a 304, not a correctness issue.
+                match (row.width, row.height) {
+                    (Some(w), Some(h))
+                        if (w.max(h) as u32) <= crate::util::image_transcode::render_safe_max_dimension() =>
+                    {
+                        checksum.clone()
+                    }
+                    _ => crate::util::image_transcode::render_safe_etag(checksum),
+                }
             };
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
                 if if_none_match.trim_matches('"') == expected_etag {
@@ -361,6 +373,7 @@ async fn serve_data_saver(storage_key: &str, content_type: &str, checksum: &str)
         image_transcode::max_dimension(),
         image_transcode::quality(),
         "data-saver",
+        false,
     )
     .await
 }
@@ -382,6 +395,7 @@ async fn serve_render_safe(storage_key: &str, content_type: &str, checksum: &str
         image_transcode::render_safe_max_dimension(),
         image_transcode::RENDER_SAFE_QUALITY,
         "render-safe",
+        true,
     )
     .await
 }
@@ -396,6 +410,7 @@ async fn serve_transcoded(
     max_dim: u32,
     quality: u8,
     label: &str,
+    only_if_over: bool,
 ) -> Response {
     use crate::util::image_transcode;
 
@@ -417,8 +432,16 @@ async fn serve_transcoded(
         }
     };
 
-    match image_transcode::transcode(&original, max_dim, quality) {
-        Ok(transcoded) => {
+    let transcoded = if only_if_over {
+        image_transcode::transcode_if_over(&original, max_dim, quality)
+    } else {
+        image_transcode::transcode(&original, max_dim, quality).map(Some)
+    };
+
+    match transcoded {
+        // Already within the cap -- serve untouched, nothing to cache.
+        Ok(None) => build_image_response(original, content_type, checksum),
+        Ok(Some(transcoded)) => {
             if let Err(e) = IMAGE_STORE.put(&cache_key, transcoded.clone()).await {
                 warn!("Failed to cache {} image {}: {}", label, cache_key, e);
             }

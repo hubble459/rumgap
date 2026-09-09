@@ -87,6 +87,11 @@ pub fn render_safe_etag(checksum: &str) -> String {
 /// `quality`. Returns `Err` for anything undecodable (e.g. AVIF, decode
 /// support not enabled) so the caller can fall back to serving the original
 /// bytes untouched.
+///
+/// Always re-encodes, even when no resize is needed -- data-saver wants
+/// that (a smaller/lower-quality file regardless of source dimensions). For
+/// the render-safe path, which should leave already-safe images completely
+/// untouched, use [`transcode_if_over`] instead.
 pub fn transcode(bytes: &[u8], max_dim: u32, quality: u8) -> Result<Vec<u8>, String> {
     let img = ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
@@ -112,6 +117,29 @@ pub fn transcode(bytes: &[u8], max_dim: u32, quality: u8) -> Result<Vec<u8>, Str
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality);
     rgb.write_with_encoder(encoder).map_err(|e| e.to_string())?;
     Ok(out)
+}
+
+/// Cheap header-only check (no pixel decode) of whether `bytes`' longest
+/// side exceeds `max_dim`. `Err` for anything whose format/dimensions can't
+/// even be read.
+pub fn exceeds_dimension(bytes: &[u8], max_dim: u32) -> Result<bool, String> {
+    let (width, height) = ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map_err(|e| e.to_string())?;
+    Ok(width.max(height) > max_dim)
+}
+
+/// Like [`transcode`], but returns `Ok(None)` -- "serve the original bytes
+/// untouched" -- when the source is already within `max_dim`, instead of
+/// always taking a lossy JPEG round-trip regardless of whether shrinking
+/// was actually needed.
+pub fn transcode_if_over(bytes: &[u8], max_dim: u32, quality: u8) -> Result<Option<Vec<u8>>, String> {
+    if !exceeds_dimension(bytes, max_dim)? {
+        return Ok(None);
+    }
+    transcode(bytes, max_dim, quality).map(Some)
 }
 
 #[cfg(test)]
@@ -155,6 +183,18 @@ mod tests {
         let decoded = image::load_from_memory(&out).unwrap();
         assert_eq!(decoded.height(), render_safe_max_dimension());
         assert!(decoded.width() < 800);
+    }
+
+    #[test]
+    fn transcode_if_over_leaves_small_images_untouched() {
+        assert!(transcode_if_over(&png_fixture(640, 480), 1280, 70).unwrap().is_none());
+    }
+
+    #[test]
+    fn transcode_if_over_shrinks_oversized_images() {
+        let out = transcode_if_over(&png_fixture(800, 20000), 4096, 92).unwrap().unwrap();
+        let decoded = image::load_from_memory(&out).unwrap();
+        assert_eq!(decoded.height(), 4096);
     }
 
     #[test]
