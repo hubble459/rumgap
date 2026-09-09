@@ -1,6 +1,6 @@
 ################
 ##### Builder
-FROM rust:slim-bullseye AS builder
+FROM rust:slim-bookworm AS builder
 
 ENV PROJECT /usr/src/rumgap
 
@@ -37,7 +37,7 @@ RUN cargo build --release
 
 ################
 ##### Runtime
-FROM debian:bullseye AS runtime
+FROM debian:bookworm AS runtime
 
 # Copy application binary from builder image
 COPY --from=builder /usr/src/rumgap/target/release/rumgap /usr/local/bin
