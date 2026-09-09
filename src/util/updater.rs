@@ -170,8 +170,10 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
                 fcm_options: None,
             };
 
-            let response = client.send(message).await.unwrap();
-            info!("Sent: {:?}", response);
+            match client.send(message).await {
+                Ok(response) => info!("Sent: {:?}", response),
+                Err(err) => error!("Failed to send notification: {:#?}", err),
+            }
         }
     } else {
         info!("FCM Error: {:#?}", client.err().unwrap());
