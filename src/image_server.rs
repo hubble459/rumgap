@@ -94,7 +94,7 @@ async fn get_image(
             let expected_etag = if query.ds {
                 crate::util::image_transcode::data_saver_etag(checksum)
             } else {
-                checksum.clone()
+                crate::util::image_transcode::render_safe_etag(checksum)
             };
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
                 if if_none_match.trim_matches('"') == expected_etag {
@@ -118,7 +118,7 @@ async fn get_image(
             return if query.ds {
                 serve_data_saver(storage_key, content_type, checksum).await
             } else {
-                serve_from_store(storage_key, content_type, checksum).await
+                serve_render_safe(storage_key, content_type, checksum).await
             };
         }
     }
@@ -352,15 +352,59 @@ async fn serve_from_store(storage_key: &str, content_type: &str, checksum: &str)
 async fn serve_data_saver(storage_key: &str, content_type: &str, checksum: &str) -> Response {
     use crate::util::image_transcode;
 
-    let ds_key = image_transcode::data_saver_key(storage_key);
-    let ds_etag = image_transcode::data_saver_etag(checksum);
+    serve_transcoded(
+        storage_key,
+        content_type,
+        checksum,
+        image_transcode::data_saver_key(storage_key),
+        image_transcode::data_saver_etag(checksum),
+        image_transcode::max_dimension(),
+        image_transcode::quality(),
+        "data-saver",
+    )
+    .await
+}
 
-    if IMAGE_STORE.exists(&ds_key).await {
-        return match IMAGE_STORE.get(&ds_key).await {
-            Ok(bytes) => build_image_response(bytes, "image/jpeg", &ds_etag),
+/// Default (no `?ds=true`) variant of [`serve_from_store`]: same caching
+/// shape as [`serve_data_saver`], but capped at a much larger dimension and
+/// re-encoded at a much higher quality -- this isn't about bandwidth, it's
+/// about keeping long-strip webtoon pages from exceeding the GPU texture
+/// size some mobile browsers enforce (see module docs).
+async fn serve_render_safe(storage_key: &str, content_type: &str, checksum: &str) -> Response {
+    use crate::util::image_transcode;
+
+    serve_transcoded(
+        storage_key,
+        content_type,
+        checksum,
+        image_transcode::render_safe_key(storage_key),
+        image_transcode::render_safe_etag(checksum),
+        image_transcode::render_safe_max_dimension(),
+        image_transcode::RENDER_SAFE_QUALITY,
+        "render-safe",
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn serve_transcoded(
+    storage_key: &str,
+    content_type: &str,
+    checksum: &str,
+    cache_key: String,
+    etag: String,
+    max_dim: u32,
+    quality: u8,
+    label: &str,
+) -> Response {
+    use crate::util::image_transcode;
+
+    if IMAGE_STORE.exists(&cache_key).await {
+        return match IMAGE_STORE.get(&cache_key).await {
+            Ok(bytes) => build_image_response(bytes, "image/jpeg", &etag),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read cached data-saver image: {e}"),
+                format!("Failed to read cached {label} image: {e}"),
             )
                 .into_response(),
         };
@@ -373,15 +417,15 @@ async fn serve_data_saver(storage_key: &str, content_type: &str, checksum: &str)
         }
     };
 
-    match image_transcode::transcode(&original) {
+    match image_transcode::transcode(&original, max_dim, quality) {
         Ok(transcoded) => {
-            if let Err(e) = IMAGE_STORE.put(&ds_key, transcoded.clone()).await {
-                warn!("Failed to cache data-saver image {}: {}", ds_key, e);
+            if let Err(e) = IMAGE_STORE.put(&cache_key, transcoded.clone()).await {
+                warn!("Failed to cache {} image {}: {}", label, cache_key, e);
             }
-            build_image_response(transcoded, "image/jpeg", &ds_etag)
+            build_image_response(transcoded, "image/jpeg", &etag)
         }
         Err(e) => {
-            warn!("Data-saver transcode failed for {}, serving original: {}", storage_key, e);
+            warn!("{} transcode failed for {}, serving original: {}", label, storage_key, e);
             build_image_response(original, content_type, checksum)
         }
     }
