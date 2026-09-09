@@ -11,9 +11,11 @@ use std::collections::HashSet;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
+use migration::{Expr, JoinType};
 use rand::Rng;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait,
 };
 use tonic::Status;
 
@@ -120,6 +122,82 @@ async fn is_chapter_fully_done(db: &DatabaseConnection, chapter_id: i32) -> bool
         .unwrap_or(0);
 
     done == total
+}
+
+fn auto_backfill_interval_ms() -> u64 {
+    std::env::var("AUTO_BACKFILL_INTERVAL_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60_000)
+}
+
+fn auto_backfill_batch_size() -> u64 {
+    std::env::var("AUTO_BACKFILL_BATCH_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(3)
+}
+
+/// Slowly, continuously fills in missing chapter images across *every*
+/// manga source -- not just the ones a client has explicitly asked to
+/// `BackfillImages`, and not just actively-read manga like the eager
+/// prefetch in `updater.rs`. Left running for the lifetime of the process,
+/// this is what turns the local image store into a full mirror over time,
+/// so rumgap can keep serving pages even if a source site goes offline and
+/// pulls its images.
+///
+/// Deliberately separate from `start_backfill`: that's an on-demand,
+/// one-source, run-to-completion walk kicked off by a client request. This
+/// is an unattended, source-agnostic trickle that wakes up on an interval
+/// and only ever claims a small (and odd, so the batch size doesn't read as
+/// a suspiciously round bot-shaped number) handful of chapters at a time --
+/// same spirit as the pacing in `walk()`, just spread across ticks instead
+/// of a per-chapter sleep.
+pub async fn watch_auto_backfill(db: DatabaseConnection) {
+    let mut interval = tokio::time::interval(Duration::from_millis(auto_backfill_interval_ms()));
+
+    loop {
+        interval.tick().await;
+
+        let chapters = match incomplete_chapters(&db, auto_backfill_batch_size()).await {
+            Ok(chapters) => chapters,
+            Err(e) => {
+                error!("[Auto Backfill] Failed to list incomplete chapters: {:#?}", e);
+                continue;
+            }
+        };
+
+        if chapters.is_empty() {
+            continue;
+        }
+
+        info!("[Auto Backfill] Populating images for {} chapter(s)", chapters.len());
+        for chapter in chapters {
+            prefetch_chapter(db.clone(), chapter).await;
+        }
+    }
+}
+
+/// Chapters (across every manga source) that don't have a fully `done` set
+/// of `chapter_image` rows yet -- either none at all, or some still
+/// `pending`/`failed`. Ordered by id so the trickle makes steady forward
+/// progress through the whole table instead of re-rolling the same random
+/// sample every tick; a chapter stuck on a durably-failed page just rides
+/// along in the batch for free (`ensure_page_downloaded`'s own cooldown/
+/// attempt cap makes that a cheap no-op) without blocking the others.
+async fn incomplete_chapters(db: &DatabaseConnection, limit: u64) -> Result<Vec<entity::chapter::Model>, DbErr> {
+    entity::chapter::Entity::find()
+        .join(JoinType::LeftJoin, entity::chapter::Relation::ChapterImage.def())
+        .group_by(entity::chapter::Column::Id)
+        .having(Expr::cust(
+            "COUNT(chapter_image.chapter_id) = 0 \
+             OR COUNT(chapter_image.chapter_id) != COUNT(chapter_image.chapter_id) FILTER (WHERE chapter_image.status = 'done')",
+        ))
+        .order_by_asc(entity::chapter::Column::Id)
+        .limit(limit)
+        .all(db)
+        .await
 }
 
 /// `images_downloaded`/`images_total` for `GetBackfillStatus` -- a cheap

@@ -16,11 +16,11 @@ use hyper::Uri;
 use manga_parser::scraper::scraper_manager::ScraperManager;
 use migration::{DbErr, Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tonic::{Request, Status};
 use tonic_async_interceptor::async_interceptor;
 use tonic_reflection::server::Builder;
-use tokio_stream::wrappers::TcpListenerStream;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{AllowHeaders, CorsLayer};
 
@@ -71,6 +71,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cloned_conn = conn.clone();
     tokio::spawn(async move {
         crate::util::updater::watch_updates(&cloned_conn).await;
+    });
+
+    // Start the slow, unattended image backfill trickle
+    let auto_backfill_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::util::backfill::watch_auto_backfill(auto_backfill_conn).await;
     });
 
     // Start image server (separate plain-HTTP port, see src/image_server.rs)
