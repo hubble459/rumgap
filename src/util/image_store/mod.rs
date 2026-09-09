@@ -20,4 +20,12 @@ pub trait ImageStore: Send + Sync {
 
     /// Remove whatever is stored under `key`, if anything.
     async fn delete(&self, key: &str) -> std::io::Result<()>;
+
+    /// Remove every entry whose key is `{prefix}.<anything>` -- e.g. the
+    /// transcoded-variant cache entries derived from an original stored at
+    /// `prefix` (see `image_transcode::variant_key`), whose exact suffixes
+    /// aren't enumerable up front since they're parameterized by
+    /// client-supplied dimension/quality values. Does not touch `prefix`
+    /// itself -- pair with `delete` for that.
+    async fn delete_prefix(&self, prefix: &str) -> std::io::Result<()>;
 }

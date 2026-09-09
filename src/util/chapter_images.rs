@@ -330,13 +330,12 @@ pub async fn refresh_chapter_images(
             if let Err(e) = IMAGE_STORE.delete(storage_key).await {
                 warn!("Failed to delete stored image {}: {}", storage_key, e);
             }
-            let ds_key = crate::util::image_transcode::data_saver_key(storage_key);
-            if let Err(e) = IMAGE_STORE.delete(&ds_key).await {
-                warn!("Failed to delete cached data-saver image {}: {}", ds_key, e);
-            }
-            let rs_key = crate::util::image_transcode::render_safe_key(storage_key);
-            if let Err(e) = IMAGE_STORE.delete(&rs_key).await {
-                warn!("Failed to delete cached render-safe image {}: {}", rs_key, e);
+            // Cleans up every cached transcoded variant regardless of which
+            // (max_dim, quality) pairs clients have ever requested for this
+            // image -- those aren't enumerable up front since they're
+            // client-supplied, not a fixed set of named modes.
+            if let Err(e) = IMAGE_STORE.delete_prefix(storage_key).await {
+                warn!("Failed to delete cached variants of {}: {}", storage_key, e);
             }
         }
     }

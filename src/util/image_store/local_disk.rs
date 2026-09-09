@@ -66,4 +66,27 @@ impl ImageStore for LocalDiskStore {
             Err(e) => Err(e),
         }
     }
+
+    async fn delete_prefix(&self, prefix: &str) -> std::io::Result<()> {
+        let prefix_path = self.path_for(prefix)?;
+        let Some(parent) = prefix_path.parent() else {
+            return Ok(());
+        };
+        let Some(file_prefix) = prefix_path.file_name().and_then(|n| n.to_str()) else {
+            return Ok(());
+        };
+        let file_prefix = format!("{file_prefix}.");
+
+        let mut entries = match fs::read_dir(parent).await {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_name().to_str().is_some_and(|name| name.starts_with(&file_prefix)) {
+                fs::remove_file(entry.path()).await?;
+            }
+        }
+        Ok(())
+    }
 }

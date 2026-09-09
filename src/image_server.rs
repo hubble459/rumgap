@@ -53,14 +53,28 @@ pub async fn serve(db: DatabaseConnection) {
     }
 }
 
+/// Bounds for client-supplied `maxdim`/`quality` -- this endpoint is
+/// unauthenticated, so these clamp against a careless or malicious caller
+/// rather than reflecting any real use case.
+const MIN_DIM: u32 = 64;
+const MAX_DIM: u32 = 16384;
+const MIN_QUALITY: u8 = 1;
+const MAX_QUALITY: u8 = 100;
+const DEFAULT_QUALITY: u8 = 90;
+
 #[derive(Deserialize)]
 struct ImageQuery {
-    /// Data-saver mode: serve a downscaled, recompressed JPEG instead of the
-    /// original bytes. Note `serde_urlencoded` only accepts the literal
-    /// strings `true`/`false` for a bool query param -- callers should send
-    /// `?ds=true` and simply omit the param when off.
-    #[serde(default)]
-    ds: bool,
+    /// Cap the image at `maxdim` pixels on its longest side (re-encoded as
+    /// JPEG at `quality`, default 90 if omitted) -- only if it actually
+    /// exceeds that, otherwise served untouched. Omit both to get the
+    /// original bytes completely untouched. The client decides when a
+    /// transform is needed: data-saver mode always sends an aggressive
+    /// preset for bandwidth; Flutter Web sends a much larger "render-safe"
+    /// preset purely to avoid a CanvasKit GPU texture-size crash on
+    /// long-strip pages; native platforms (which never hit that crash) send
+    /// neither and always get the original.
+    maxdim: Option<u32>,
+    quality: Option<u8>,
 }
 
 async fn get_image(
@@ -86,27 +100,31 @@ async fn get_image(
         return (StatusCode::NOT_FOUND, "Page not found").into_response();
     };
 
+    // None => no transform requested at all (native platforms). Some =>
+    // clamp the caller's requested dimension/quality into sane bounds.
+    let transform = query.maxdim.map(|max_dim| {
+        (
+            max_dim.clamp(MIN_DIM, MAX_DIM),
+            query.quality.unwrap_or(DEFAULT_QUALITY).clamp(MIN_QUALITY, MAX_QUALITY),
+        )
+    });
+
     // Cheap conditional-GET short circuit before touching disk: these files
     // never change once downloaded, so a matching If-None-Match means the
     // client already has the exact bytes.
     if row.status == "done" {
         if let Some(checksum) = &row.checksum {
-            let expected_etag = if query.ds {
-                crate::util::image_transcode::data_saver_etag(checksum)
-            } else {
-                // Known dimensions already under the cap -> render-safe will
-                // serve the original untouched, so match on the plain
+            let expected_etag = match transform {
+                None => checksum.clone(),
+                // Known dimensions already under the cap -> the variant
+                // will serve the original untouched, so match on the plain
                 // checksum. Unknown dimensions -> guess the transcoded
                 // etag; worst case a stale guess costs one full re-fetch
                 // instead of a 304, not a correctness issue.
-                match (row.width, row.height) {
-                    (Some(w), Some(h))
-                        if (w.max(h) as u32) <= crate::util::image_transcode::render_safe_max_dimension() =>
-                    {
-                        checksum.clone()
-                    }
-                    _ => crate::util::image_transcode::render_safe_etag(checksum),
-                }
+                Some((max_dim, quality)) => match (row.width, row.height) {
+                    (Some(w), Some(h)) if (w.max(h) as u32) <= max_dim => checksum.clone(),
+                    _ => crate::util::image_transcode::variant_etag(checksum, max_dim, quality),
+                },
             };
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
                 if if_none_match.trim_matches('"') == expected_etag {
@@ -127,10 +145,9 @@ async fn get_image(
         if let (Some(storage_key), Some(content_type), Some(checksum)) =
             (&row.storage_key, &row.content_type, &row.checksum)
         {
-            return if query.ds {
-                serve_data_saver(storage_key, content_type, checksum).await
-            } else {
-                serve_render_safe(storage_key, content_type, checksum).await
+            return match transform {
+                None => serve_from_store(storage_key, content_type, checksum).await,
+                Some((max_dim, quality)) => serve_variant(storage_key, content_type, checksum, max_dim, quality).await,
             };
         }
     }
@@ -356,70 +373,24 @@ async fn serve_from_store(storage_key: &str, content_type: &str, checksum: &str)
     }
 }
 
-/// `?ds=true` variant of [`serve_from_store`]: serve a cached downscaled
-/// JPEG if one already exists, else transcode the original once and cache
-/// it under a derived key (best-effort -- a failed cache write still lets
-/// this one request succeed). Falls back to the original bytes untouched
-/// if the source format can't be decoded (e.g. AVIF).
-async fn serve_data_saver(storage_key: &str, content_type: &str, checksum: &str) -> Response {
+/// Serve a `(max_dim, quality)`-capped variant of the image at
+/// `storage_key`: a cached copy if one already exists, else transcode the
+/// original once (only if it actually exceeds `max_dim`) and cache it under
+/// a derived key (best-effort -- a failed cache write still lets this one
+/// request succeed). Falls back to the original bytes untouched if the
+/// image is already within the cap, or if it can't be decoded (e.g. AVIF).
+async fn serve_variant(storage_key: &str, content_type: &str, checksum: &str, max_dim: u32, quality: u8) -> Response {
     use crate::util::image_transcode;
 
-    serve_transcoded(
-        storage_key,
-        content_type,
-        checksum,
-        image_transcode::data_saver_key(storage_key),
-        image_transcode::data_saver_etag(checksum),
-        image_transcode::max_dimension(),
-        image_transcode::quality(),
-        "data-saver",
-        false,
-    )
-    .await
-}
-
-/// Default (no `?ds=true`) variant of [`serve_from_store`]: same caching
-/// shape as [`serve_data_saver`], but capped at a much larger dimension and
-/// re-encoded at a much higher quality -- this isn't about bandwidth, it's
-/// about keeping long-strip webtoon pages from exceeding the GPU texture
-/// size some mobile browsers enforce (see module docs).
-async fn serve_render_safe(storage_key: &str, content_type: &str, checksum: &str) -> Response {
-    use crate::util::image_transcode;
-
-    serve_transcoded(
-        storage_key,
-        content_type,
-        checksum,
-        image_transcode::render_safe_key(storage_key),
-        image_transcode::render_safe_etag(checksum),
-        image_transcode::render_safe_max_dimension(),
-        image_transcode::RENDER_SAFE_QUALITY,
-        "render-safe",
-        true,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn serve_transcoded(
-    storage_key: &str,
-    content_type: &str,
-    checksum: &str,
-    cache_key: String,
-    etag: String,
-    max_dim: u32,
-    quality: u8,
-    label: &str,
-    only_if_over: bool,
-) -> Response {
-    use crate::util::image_transcode;
+    let cache_key = image_transcode::variant_key(storage_key, max_dim, quality);
+    let etag = image_transcode::variant_etag(checksum, max_dim, quality);
 
     if IMAGE_STORE.exists(&cache_key).await {
         return match IMAGE_STORE.get(&cache_key).await {
             Ok(bytes) => build_image_response(bytes, "image/jpeg", &etag),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read cached {label} image: {e}"),
+                format!("Failed to read cached variant image: {e}"),
             )
                 .into_response(),
         };
@@ -432,23 +403,20 @@ async fn serve_transcoded(
         }
     };
 
-    let transcoded = if only_if_over {
-        image_transcode::transcode_if_over(&original, max_dim, quality)
-    } else {
-        image_transcode::transcode(&original, max_dim, quality).map(Some)
-    };
-
-    match transcoded {
+    match image_transcode::transcode_if_over(&original, max_dim, quality) {
         // Already within the cap -- serve untouched, nothing to cache.
         Ok(None) => build_image_response(original, content_type, checksum),
         Ok(Some(transcoded)) => {
             if let Err(e) = IMAGE_STORE.put(&cache_key, transcoded.clone()).await {
-                warn!("Failed to cache {} image {}: {}", label, cache_key, e);
+                warn!("Failed to cache variant image {}: {}", cache_key, e);
             }
             build_image_response(transcoded, "image/jpeg", &etag)
         }
         Err(e) => {
-            warn!("{} transcode failed for {}, serving original: {}", label, storage_key, e);
+            warn!(
+                "Transcode failed for {} (maxdim={}, quality={}), serving original: {}",
+                storage_key, max_dim, quality, e
+            );
             build_image_response(original, content_type, checksum)
         }
     }
