@@ -42,7 +42,6 @@ FROM debian:bookworm AS runtime
 # Copy application binary from builder image
 COPY --from=builder /usr/src/rumgap/target/release/rumgap /usr/local/bin
 COPY log4rs.yml /usr/local/bin
-COPY configs /usr/local/bin/configs
 
 RUN apt-get update && apt-get install -y ca-certificates openssl libssl-dev && apt-get clean
 
