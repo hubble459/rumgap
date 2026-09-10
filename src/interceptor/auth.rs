@@ -29,7 +29,7 @@ pub fn sign(id: i32) -> Result<String, jwt::Error> {
     Token { id }.sign_with_key(&SECRET_KEY.clone())
 }
 
-trait UserHasPermissions {
+pub(crate) trait UserHasPermissions {
     /// Returns true if the user has permissions
     fn has_permission(&self, permission: UserPermissions) -> bool;
 }

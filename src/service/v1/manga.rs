@@ -9,20 +9,23 @@ use manga_parser::Url;
 use migration::{Expr, ExprTrait, JoinType, OnConflict};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, RelationTrait, Select,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 
+use crate::interceptor::auth::{UserHasPermissions, UserPermissions};
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     AddSourceRequest, BackfillImagesRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
-    MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, PaginateReply, PaginateSearchQuery,
-    RemoveSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest, UpdateMangaRequest,
+    MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
+    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
+    UpdateMangaRequest,
 };
+use crate::service::v1::reading::sync_reading_progress;
 use crate::util::auth::Authorize;
 use crate::util::backfill;
 use crate::util::db::DatabaseRequest;
@@ -156,8 +159,8 @@ pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity:
 /// sharing an ordinal (e.g. two scanlation groups both releasing "chapter 5") - they all
 /// link to the same canonical_chapter, which is exactly what `LinkChapter`/`UnlinkChapter`
 /// exist to override manually if a particular pairing turns out wrong.
-async fn match_canonical_chapters(
-    db: &DatabaseConnection,
+async fn match_canonical_chapters<C: ConnectionTrait>(
+    db: &C,
     manga_id: i32,
     chapters: &[entity::chapter::Model],
 ) -> Result<(), Status> {
@@ -166,27 +169,7 @@ async fn match_canonical_chapters(
             .unwrap_or_default()
             .round_dp(3);
 
-        let existing = entity::canonical_chapter::Entity::find()
-            .filter(entity::canonical_chapter::Column::MangaId.eq(manga_id))
-            .filter(entity::canonical_chapter::Column::Ordinal.eq(ordinal))
-            .one(db)
-            .await
-            .map_err(internal)?;
-
-        let canonical_id = match existing {
-            Some(existing) => existing.id,
-            None => {
-                entity::canonical_chapter::ActiveModel {
-                    manga_id: Set(manga_id),
-                    ordinal: Set(ordinal),
-                    ..Default::default()
-                }
-                .insert(db)
-                .await
-                .map_err(internal)?
-                .id
-            }
-        };
+        let canonical_id = find_or_create_canonical_chapter(db, manga_id, ordinal).await?;
 
         entity::chapter::ActiveModel {
             id: Set(chapter.id),
@@ -196,6 +179,254 @@ async fn match_canonical_chapters(
         .update(db)
         .await
         .map_err(internal)?;
+    }
+
+    Ok(())
+}
+
+/// Finds the manga's canonical_chapter row at this ordinal, creating one if none exists
+/// yet. Shared by match_canonical_chapters (per freshly-inserted chapter) and the
+/// merge/move-source path (remapping a chapter/reading row already linked under a
+/// *different* manga onto this one's equivalent ordinal).
+async fn find_or_create_canonical_chapter<C: ConnectionTrait>(
+    db: &C,
+    manga_id: i32,
+    ordinal: sea_orm::prelude::Decimal,
+) -> Result<i32, Status> {
+    let existing = entity::canonical_chapter::Entity::find()
+        .filter(entity::canonical_chapter::Column::MangaId.eq(manga_id))
+        .filter(entity::canonical_chapter::Column::Ordinal.eq(ordinal))
+        .one(db)
+        .await
+        .map_err(internal)?;
+
+    match existing {
+        Some(existing) => Ok(existing.id),
+        None => Ok(entity::canonical_chapter::ActiveModel {
+            manga_id: Set(manga_id),
+            ordinal: Set(ordinal),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(internal)?
+        .id),
+    }
+}
+
+/// If `manga_id` still has another source once `excluding_source_id` is removed/moved
+/// away, promotes it to primary - so canonical manga metadata is never left without a
+/// primary source backing it. No-op if that was the manga's only source.
+async fn promote_replacement_primary<C: ConnectionTrait>(
+    db: &C,
+    manga_id: i32,
+    excluding_source_id: i32,
+) -> Result<(), Status> {
+    let replacement = entity::manga_source::Entity::find()
+        .filter(entity::manga_source::Column::MangaId.eq(manga_id))
+        .filter(entity::manga_source::Column::Id.ne(excluding_source_id))
+        .order_by_asc(entity::manga_source::Column::Id)
+        .one(db)
+        .await
+        .map_err(internal)?;
+
+    if let Some(replacement) = replacement {
+        entity::manga_source::ActiveModel {
+            id: Set(replacement.id),
+            is_primary: Set(true),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .map_err(internal)?;
+
+        info!(
+            "Auto-promoted manga_source {} to primary (excluded source {} from manga {})",
+            replacement.id, excluding_source_id, manga_id
+        );
+    }
+
+    Ok(())
+}
+
+/// Reconciles `reading` rows when manga_id `from` is about to disappear into `to`. The
+/// composite PK (user_id, manga_id) means a user with progress on both sides collides -
+/// per user, keeps whichever side has read further (by `progress`), remapping its
+/// `last_canonical_chapter_id` onto `to`'s equivalent-ordinal canonical row (via
+/// find_or_create_canonical_chapter + sync_reading_progress, so progress and
+/// last_canonical_chapter_id never drift apart) before dropping the `from` row. A user
+/// with a row on only one side is simply carried over the same way.
+async fn merge_reading_progress<C: ConnectionTrait>(db: &C, from_manga_id: i32, to_manga_id: i32) -> Result<(), Status> {
+    let from_rows = entity::reading::Entity::find()
+        .filter(entity::reading::Column::MangaId.eq(from_manga_id))
+        .all(db)
+        .await
+        .map_err(internal)?;
+
+    for from_row in from_rows {
+        let to_row = entity::reading::Entity::find_by_id((from_row.user_id, to_manga_id))
+            .one(db)
+            .await
+            .map_err(internal)?;
+
+        let from_wins = match &to_row {
+            Some(to_row) => from_row.progress > to_row.progress,
+            None => true,
+        };
+
+        if from_wins {
+            let remapped_canonical_id = match from_row.last_canonical_chapter_id {
+                Some(old_canonical_id) => {
+                    let ordinal = entity::canonical_chapter::Entity::find_by_id(old_canonical_id)
+                        .one(db)
+                        .await
+                        .map_err(internal)?
+                        .map(|c| c.ordinal);
+
+                    match ordinal {
+                        Some(ordinal) => Some(find_or_create_canonical_chapter(db, to_manga_id, ordinal).await?),
+                        None => None,
+                    }
+                }
+                None => None,
+            };
+
+            if to_row.is_some() {
+                entity::reading::ActiveModel {
+                    user_id: Set(from_row.user_id),
+                    manga_id: Set(to_manga_id),
+                    progress: Set(from_row.progress),
+                    last_canonical_chapter_id: Set(remapped_canonical_id),
+                    ..Default::default()
+                }
+                .update(db)
+                .await
+                .map_err(internal)?;
+            } else {
+                entity::reading::ActiveModel {
+                    user_id: Set(from_row.user_id),
+                    manga_id: Set(to_manga_id),
+                    progress: Set(from_row.progress),
+                    last_canonical_chapter_id: Set(remapped_canonical_id),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await
+                .map_err(internal)?;
+            }
+
+            if let Some(remapped_canonical_id) = remapped_canonical_id {
+                // Recompute `progress` as `to`'s own canonical rank rather than trusting the
+                // raw count carried over from `from` (ranked against a different manga's
+                // canonical rows) - the one shared place progress/last_canonical_chapter_id
+                // are ever written together.
+                sync_reading_progress(db, from_row.user_id, to_manga_id, remapped_canonical_id).await?;
+            }
+        }
+
+        entity::reading::Entity::delete_by_id((from_row.user_id, from_manga_id))
+            .exec(db)
+            .await
+            .map_err(internal)?;
+    }
+
+    Ok(())
+}
+
+/// Moves a single manga_source (and its chapters) onto a different manga: re-parents
+/// manga_source.manga_id, demotes it to non-primary (the target already has its own
+/// primary source), and re-links its chapters' canonical_chapter_id onto the target
+/// manga's canonical rows via match_canonical_chapters - exactly as if it had just been
+/// freshly added there. If this emptied out the source manga's last remaining source,
+/// that manga is now a dead husk: its reading progress is folded into the target (see
+/// merge_reading_progress) and it's deleted, mirroring RemoveSource's existing
+/// "delete once sourceless" rule.
+async fn move_source_to_manga<C: ConnectionTrait>(db: &C, manga_source_id: i32, target_manga_id: i32) -> Result<(), Status> {
+    let source = entity::manga_source::Entity::find_by_id(manga_source_id)
+        .one(db)
+        .await
+        .map_err(internal)?
+        .ok_or(Status::not_found("Manga source not found"))?;
+
+    let old_manga_id = source.manga_id;
+    if old_manga_id == target_manga_id {
+        return Err(Status::invalid_argument("Source already belongs to the target manga"));
+    }
+
+    entity::manga::Entity::find_by_id(target_manga_id)
+        .one(db)
+        .await
+        .map_err(internal)?
+        .ok_or(Status::not_found("Target manga not found"))?;
+
+    if source.is_primary {
+        promote_replacement_primary(db, old_manga_id, source.id).await?;
+    }
+
+    let chapters = entity::chapter::Entity::find()
+        .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
+        .all(db)
+        .await
+        .map_err(internal)?;
+
+    entity::manga_source::ActiveModel {
+        id: Set(source.id),
+        manga_id: Set(target_manga_id),
+        is_primary: Set(false),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .map_err(internal)?;
+
+    match_canonical_chapters(db, target_manga_id, &chapters).await?;
+
+    let remaining_sources = entity::manga_source::Entity::find()
+        .filter(entity::manga_source::Column::MangaId.eq(old_manga_id))
+        .count(db)
+        .await
+        .map_err(internal)?;
+
+    if remaining_sources == 0 {
+        merge_reading_progress(db, old_manga_id, target_manga_id).await?;
+
+        entity::manga::Entity::delete_by_id(old_manga_id)
+            .exec(db)
+            .await
+            .map_err(internal)?;
+
+        info!(
+            "Deleted manga {} - its last source just moved to manga {}",
+            old_manga_id, target_manga_id
+        );
+    }
+
+    Ok(())
+}
+
+/// Merges every source of `source_manga_id` into `target_manga_id`, implemented as
+/// move_source_to_manga per source - once the loop empties source_manga_id out, that last
+/// call's own cleanup (reading merge + delete) finishes the job, so there's no separate
+/// "delete the manga" step here.
+async fn merge_manga_sources<C: ConnectionTrait>(db: &C, source_manga_id: i32, target_manga_id: i32) -> Result<(), Status> {
+    entity::manga::Entity::find_by_id(target_manga_id)
+        .one(db)
+        .await
+        .map_err(internal)?
+        .ok_or(Status::not_found("Target manga not found"))?;
+
+    let sources = entity::manga_source::Entity::find()
+        .filter(entity::manga_source::Column::MangaId.eq(source_manga_id))
+        .all(db)
+        .await
+        .map_err(internal)?;
+
+    if sources.is_empty() {
+        return Err(Status::not_found("Source manga not found, or has no sources"));
+    }
+
+    for source in sources {
+        move_source_to_manga(db, source.id, target_manga_id).await?;
     }
 
     Ok(())
@@ -805,29 +1036,7 @@ impl Manga for MangaController {
             .ok_or(Status::not_found("Manga source not found"))?;
 
         if source.is_primary {
-            let replacement = entity::manga_source::Entity::find()
-                .filter(entity::manga_source::Column::MangaId.eq(source.manga_id))
-                .filter(entity::manga_source::Column::Id.ne(source.id))
-                .order_by_asc(entity::manga_source::Column::Id)
-                .one(db)
-                .await
-                .map_err(internal)?;
-
-            if let Some(replacement) = replacement {
-                entity::manga_source::ActiveModel {
-                    id: Set(replacement.id),
-                    is_primary: Set(true),
-                    ..Default::default()
-                }
-                .update(db)
-                .await
-                .map_err(internal)?;
-
-                info!(
-                    "Auto-promoted manga_source {} to primary after removing primary source {}",
-                    replacement.id, source.id
-                );
-            }
+            promote_replacement_primary(db, source.manga_id, source.id).await?;
         }
 
         let manga_id = source.manga_id;
@@ -918,6 +1127,52 @@ impl Manga for MangaController {
 
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), source.manga_id).await?,
+        ))
+    }
+
+    /// Admin-only. Folds every source of `source_manga_id` into `target_manga_id` -
+    /// reading progress reconciled (see merge_reading_progress), chapters relinked onto
+    /// the target's canonical rows - then deletes `source_manga_id`. The one safe way to
+    /// fix a duplicate manga created by adding the same title from a different source
+    /// (FindOrCreate only dedupes by exact URL).
+    async fn merge_manga(&self, request: Request<MergeMangaRequest>) -> Result<Response<MangaReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?.clone();
+        if !logged_in.has_permission(UserPermissions::ADMIN) {
+            return Err(Status::permission_denied("Admin permission required"));
+        }
+        let req = request.get_ref();
+
+        if req.source_manga_id == req.target_manga_id {
+            return Err(Status::invalid_argument("Cannot merge a manga into itself"));
+        }
+
+        let txn = db.begin().await.map_err(internal)?;
+        merge_manga_sources(&txn, req.source_manga_id, req.target_manga_id).await?;
+        txn.commit().await.map_err(internal)?;
+
+        Ok(Response::new(
+            get_manga_by_id(db, Some(&logged_in), req.target_manga_id).await?,
+        ))
+    }
+
+    /// Admin-only. Moves a single source onto a different manga (see move_source_to_manga).
+    /// If that empties out its old manga, that manga's reading progress is folded into the
+    /// target and it's deleted, same as a full MergeManga would do for it.
+    async fn move_source(&self, request: Request<MoveSourceRequest>) -> Result<Response<MangaReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?.clone();
+        if !logged_in.has_permission(UserPermissions::ADMIN) {
+            return Err(Status::permission_denied("Admin permission required"));
+        }
+        let req = request.get_ref();
+
+        let txn = db.begin().await.map_err(internal)?;
+        move_source_to_manga(&txn, req.manga_source_id, req.target_manga_id).await?;
+        txn.commit().await.map_err(internal)?;
+
+        Ok(Response::new(
+            get_manga_by_id(db, Some(&logged_in), req.target_manga_id).await?,
         ))
     }
 
@@ -1145,5 +1400,272 @@ mod matching_heuristic_tests {
 
         // Cleanup
         entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
+    }
+
+    async fn make_manga(db: &sea_orm::DatabaseConnection, title: &str) -> entity::manga::Model {
+        entity::manga::ActiveModel {
+            title: Set(title.into()),
+            description: Set("".into()),
+            is_ongoing: Set(true),
+            authors: Set(vec![]),
+            alt_titles: Set(vec![]),
+            genres: Set(vec![]),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    async fn make_source(
+        db: &sea_orm::DatabaseConnection,
+        manga_id: i32,
+        hostname: &str,
+        is_primary: bool,
+    ) -> entity::manga_source::Model {
+        entity::manga_source::ActiveModel {
+            manga_id: Set(manga_id),
+            url: Set(format!("https://{hostname}/manga")),
+            hostname: Set(hostname.into()),
+            is_primary: Set(is_primary),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    async fn make_user(db: &sea_orm::DatabaseConnection, username: &str) -> entity::user::Model {
+        entity::user::ActiveModel {
+            username: Set(username.into()),
+            email: Set(format!("{username}@test.local")),
+            password_hash: Set("".into()),
+            preferred_hostnames: Set(vec![]),
+            device_ids: Set(vec![]),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    /// Sets up an existing (user, manga) reading row linked to `canonical_chapter_id`, via
+    /// the same two-step path the real Reading.Create + Reading.Update(chapter_id) RPCs use.
+    async fn make_reading(db: &sea_orm::DatabaseConnection, user_id: i32, manga_id: i32, canonical_chapter_id: i32) {
+        entity::reading::ActiveModel {
+            user_id: Set(user_id),
+            manga_id: Set(manga_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+
+        sync_reading_progress(db, user_id, manga_id, canonical_chapter_id).await.unwrap();
+    }
+
+    /// Requires DATABASE_URL to point at a throwaway, already-migrated test database (never
+    /// the real one). Run with:
+    ///   DATABASE_URL=postgres://... cargo test -p rumgap move_source_relinks -- --ignored --nocapture
+    #[ignore]
+    #[tokio::test]
+    async fn move_source_relinks_canonical_chapters_onto_target() {
+        let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
+        let db = Database::connect(db_url).await.unwrap();
+
+        let manga_a = make_manga(&db, "Manga A").await;
+        let source_a = make_source(&db, manga_a.id, "move-a.test", true).await;
+        sync_chapters_for_source(
+            &db,
+            manga_a.id,
+            source_a.id,
+            &source_a.url,
+            false,
+            &[chapter("move-a-1", 1.0), chapter("move-a-2", 2.0), chapter("move-a-3", 3.0)],
+        )
+        .await
+        .unwrap();
+
+        let manga_b = make_manga(&db, "Manga B").await;
+        let source_b = make_source(&db, manga_b.id, "move-b.test", true).await;
+        sync_chapters_for_source(
+            &db,
+            manga_b.id,
+            source_b.id,
+            &source_b.url,
+            false,
+            &[chapter("move-b-2", 2.0), chapter("move-b-3", 3.0), chapter("move-b-4", 4.0)],
+        )
+        .await
+        .unwrap();
+
+        // Move source_a (manga_a's only source) onto manga_b - manga_a should end up
+        // sourceless and get deleted, and source_a's chapters should relink onto manga_b's
+        // canonical rows: converging with the existing ones at ordinals 2/3, and creating a
+        // fresh one at ordinal 1 (which manga_b never had).
+        move_source_to_manga(&db, source_a.id, manga_b.id).await.unwrap();
+
+        assert!(
+            entity::manga::Entity::find_by_id(manga_a.id).one(&db).await.unwrap().is_none(),
+            "manga_a should be deleted once its only source moved away"
+        );
+
+        let moved_source = entity::manga_source::Entity::find_by_id(source_a.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(moved_source.manga_id, manga_b.id);
+        assert!(!moved_source.is_primary, "moved source must not steal manga_b's primary flag");
+
+        let chapters_a = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source_a.id))
+            .all(&db)
+            .await
+            .unwrap();
+        let chapters_b = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source_b.id))
+            .all(&db)
+            .await
+            .unwrap();
+
+        let moved_2 = chapters_a.iter().find(|c| c.number == 2.0).unwrap();
+        let target_2 = chapters_b.iter().find(|c| c.number == 2.0).unwrap();
+        assert_eq!(
+            moved_2.canonical_chapter_id, target_2.canonical_chapter_id,
+            "moved chapter 2 should converge onto manga_b's existing ordinal-2 canonical row"
+        );
+
+        let canonical_2_count = entity::canonical_chapter::Entity::find()
+            .filter(entity::canonical_chapter::Column::MangaId.eq(manga_b.id))
+            .filter(entity::canonical_chapter::Column::Ordinal.eq(sea_orm::prelude::Decimal::new(2000, 3)))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(canonical_2_count, 1, "must reuse the existing ordinal-2 row, not duplicate it");
+
+        let moved_1 = chapters_a.iter().find(|c| c.number == 1.0).unwrap();
+        let canonical_1 = entity::canonical_chapter::Entity::find_by_id(moved_1.canonical_chapter_id.unwrap())
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(canonical_1.manga_id, manga_b.id, "ordinal 1 (new to manga_b) must be created under manga_b");
+
+        // Cleanup
+        entity::manga::Entity::delete_by_id(manga_b.id).exec(&db).await.unwrap();
+    }
+
+    /// Requires DATABASE_URL to point at a throwaway, already-migrated test database (never
+    /// the real one). Run with:
+    ///   DATABASE_URL=postgres://... cargo test -p rumgap merge_manga_reconciles -- --ignored --nocapture
+    #[ignore]
+    #[tokio::test]
+    async fn merge_manga_reconciles_reading_progress() {
+        let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
+        let db = Database::connect(db_url).await.unwrap();
+
+        let manga_a = make_manga(&db, "Merge A").await;
+        let source_a = make_source(&db, manga_a.id, "merge-a.test", true).await;
+        sync_chapters_for_source(
+            &db,
+            manga_a.id,
+            source_a.id,
+            &source_a.url,
+            false,
+            &[chapter("merge-a-1", 1.0), chapter("merge-a-2", 2.0), chapter("merge-a-3", 3.0)],
+        )
+        .await
+        .unwrap();
+
+        let manga_b = make_manga(&db, "Merge B").await;
+        let source_b = make_source(&db, manga_b.id, "merge-b.test", true).await;
+        sync_chapters_for_source(
+            &db,
+            manga_b.id,
+            source_b.id,
+            &source_b.url,
+            false,
+            &[chapter("merge-b-1", 1.0), chapter("merge-b-2", 2.0), chapter("merge-b-3", 3.0)],
+        )
+        .await
+        .unwrap();
+
+        let canonical_a = |ordinal: f32| {
+            entity::canonical_chapter::Entity::find()
+                .filter(entity::canonical_chapter::Column::MangaId.eq(manga_a.id))
+                .filter(entity::canonical_chapter::Column::Ordinal.eq(sea_orm::prelude::Decimal::from_f32_retain(ordinal).unwrap()))
+                .one(&db)
+        };
+        let canonical_b = |ordinal: f32| {
+            entity::canonical_chapter::Entity::find()
+                .filter(entity::canonical_chapter::Column::MangaId.eq(manga_b.id))
+                .filter(entity::canonical_chapter::Column::Ordinal.eq(sea_orm::prelude::Decimal::from_f32_retain(ordinal).unwrap()))
+                .one(&db)
+        };
+
+        let user1 = make_user(&db, "merge-user1").await; // further along on A - A should win
+        let user2 = make_user(&db, "merge-user2").await; // only ever read B - untouched
+        let user3 = make_user(&db, "merge-user3").await; // further along on B - B should win
+
+        make_reading(&db, user1.id, manga_a.id, canonical_a(3.0).await.unwrap().unwrap().id).await;
+        make_reading(&db, user1.id, manga_b.id, canonical_b(1.0).await.unwrap().unwrap().id).await;
+
+        make_reading(&db, user2.id, manga_b.id, canonical_b(2.0).await.unwrap().unwrap().id).await;
+
+        make_reading(&db, user3.id, manga_a.id, canonical_a(1.0).await.unwrap().unwrap().id).await;
+        make_reading(&db, user3.id, manga_b.id, canonical_b(2.0).await.unwrap().unwrap().id).await;
+
+        merge_manga_sources(&db, manga_a.id, manga_b.id).await.unwrap();
+
+        assert!(
+            entity::manga::Entity::find_by_id(manga_a.id).one(&db).await.unwrap().is_none(),
+            "manga_a should be deleted once fully merged into manga_b"
+        );
+
+        for user in [&user1, &user2, &user3] {
+            assert!(
+                entity::reading::Entity::find_by_id((user.id, manga_a.id))
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "no reading row should survive for the deleted manga_a"
+            );
+        }
+
+        let user1_reading = entity::reading::Entity::find_by_id((user1.id, manga_b.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user1_reading.progress, 3, "user1 was further along on A (3 > 1) - A's progress should win");
+        let user1_canonical = entity::canonical_chapter::Entity::find_by_id(user1_reading.last_canonical_chapter_id.unwrap())
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user1_canonical.manga_id, manga_b.id);
+        assert_eq!(user1_canonical.ordinal, sea_orm::prelude::Decimal::new(3000, 3));
+
+        let user2_reading = entity::reading::Entity::find_by_id((user2.id, manga_b.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user2_reading.progress, 2, "user2 never had progress on A - manga_b's row must be untouched");
+
+        let user3_reading = entity::reading::Entity::find_by_id((user3.id, manga_b.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user3_reading.progress, 2, "user3 was further along on B (2 > 1) - B's progress should win");
+
+        // Cleanup
+        entity::manga::Entity::delete_by_id(manga_b.id).exec(&db).await.unwrap();
+        for user in [user1, user2, user3] {
+            entity::user::Entity::delete_by_id(user.id).exec(&db).await.unwrap();
+        }
     }
 }

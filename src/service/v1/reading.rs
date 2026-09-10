@@ -1,7 +1,7 @@
 use migration::{Expr, JoinType};
 use sea_orm::ActiveValue::{self, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
@@ -25,8 +25,8 @@ fn internal<E: ToString>(e: E) -> Status {
 /// `progress` is redefined as "cached rank of `last_canonical_chapter_id`" - the count of
 /// canonical chapters at or before this one for the manga - which keeps it working
 /// unchanged as a plain int count for the common single-source case.
-pub async fn sync_reading_progress(
-    db: &DatabaseConnection,
+pub async fn sync_reading_progress<C: ConnectionTrait>(
+    db: &C,
     user_id: i32,
     manga_id: i32,
     canonical_chapter_id: i32,

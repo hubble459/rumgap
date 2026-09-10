@@ -45,6 +45,13 @@ service Manga {
     rpc AddSource (AddSourceRequest) returns (MangaReply);
     rpc RemoveSource (RemoveSourceRequest) returns (MangaReply);
     rpc SetPrimarySource (SetPrimarySourceRequest) returns (MangaReply);
+    // Admin-only. Folds every source of source_manga_id into target_manga_id (reading
+    // progress reconciled, canonical chapters relinked), then deletes source_manga_id.
+    rpc MergeManga (MergeMangaRequest) returns (MangaReply);
+    // Admin-only. Moves a single source onto a different manga. If that empties out its
+    // old manga, behaves like MergeManga for that one manga (reading progress folded in,
+    // old manga deleted).
+    rpc MoveSource (MoveSourceRequest) returns (MangaReply);
     // Kicks off (or resumes) a throttled background walk that downloads every
     // not-yet-`done` page of every chapter of that source.
     rpc BackfillImages (BackfillImagesRequest) returns (Empty);
