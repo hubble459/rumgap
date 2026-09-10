@@ -7,7 +7,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
@@ -152,13 +152,13 @@ async fn get_image(
         }
     }
 
-    // Durably failed (or still cooling down between attempt-sessions):
-    // degrade to exactly today's raw-hotlink behavior for this one page
-    // only, rather than a broken image. Every other successfully-downloaded
-    // page in the same chapter keeps being served locally. (No compression
-    // on this fallback -- there's nothing local to transcode, and fetching
-    // the hotlink here ourselves would bypass the download lock/semaphore.)
-    Redirect::temporary(&row.source_url).into_response()
+    // Durably failed (or still cooling down between attempt-sessions): we
+    // already tried this exact URL with a real scraper session (referer,
+    // retries, ...) and it failed, so redirecting the browser to hotlink it
+    // directly is a long shot at best -- and outright broken under COEP,
+    // since the source has no CORS/CORP headers. Surface a clean failure
+    // instead and let the client show a placeholder.
+    (StatusCode::NOT_FOUND, "Page could not be downloaded").into_response()
 }
 
 /// `GET /covers/{manga_id}` -- same lazy pattern as `get_image`, but 1:1 per
@@ -211,9 +211,10 @@ async fn get_cover(State(db): State<DatabaseConnection>, Path(manga_id): Path<i3
         }
     }
 
-    // Durably failed / cooling down: degrade to the raw source URL for this
-    // one manga's cover, same as chapter images do for a failed page.
-    Redirect::temporary(&source_url).into_response()
+    // Durably failed / cooling down -- same reasoning as `get_image`'s
+    // fallback above: a raw hotlink redirect is unlikely to succeed and
+    // breaks under COEP, so surface a clean failure instead.
+    (StatusCode::NOT_FOUND, "Cover could not be downloaded").into_response()
 }
 
 #[derive(Deserialize)]
