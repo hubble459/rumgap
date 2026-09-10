@@ -2497,7 +2497,7 @@ dependencies = [
 [[package]]
 name = "kuchiki"
 version = "0.8.1"
-source = "git+https://github.com/hubble459/kuchiki-pseudos.git#0cf964d84f9ab9d1e26b8147cdab03ea0bdbf750"
+source = "git+https://github.com/hubble459/kuchiki-pseudos.git#0ab09e2c775f7bb00e335ddac86d7b2b65212636"
 dependencies = [
  "cssparser",
  "html5ever",
@@ -2710,7 +2710,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#63ea1702b2660b3a96e4a3d365fdd8d723aea9c6"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#1c29cf0189e3393636c468b0973b50acaacaef49"
 dependencies = [
  "anyhow",
  "async-trait",
