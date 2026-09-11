@@ -2377,6 +2377,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2506,14 +2515,15 @@ dependencies = [
 
 [[package]]
 name = "kuchiki"
-version = "0.8.1"
-source = "git+https://github.com/hubble459/kuchiki-pseudos.git#0ab09e2c775f7bb00e335ddac86d7b2b65212636"
+version = "0.8.2"
+source = "git+https://github.com/hubble459/kuchiki-pseudos.git#b7113148d2530099ad0c8beca772f9f66169d704"
 dependencies = [
  "cssparser",
  "html5ever",
  "indexmap",
  "matches",
  "selectors",
+ "triomphe",
 ]
 
 [[package]]
@@ -2720,7 +2730,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#c70d0bdc51b2abee62a7fdcb41711c91b201f1bb"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#3e753c57ad41a5148629b3d46a2b276091a67d82"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2731,7 +2741,7 @@ dependencies = [
  "futures",
  "http-cache-reqwest",
  "include_dir",
- "itertools",
+ "itertools 0.15.0",
  "kuchiki",
  "lazy_static",
  "log",
@@ -3687,8 +3697,8 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
- "heck 0.4.1",
- "itertools",
+ "heck 0.5.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -3709,7 +3719,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4460,7 +4470,7 @@ dependencies = [
  "derive-where",
  "derive_more 2.1.1",
  "futures-util",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "mac_address",
  "ouroboros",
@@ -4522,7 +4532,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4039a86f9acc4d3b52747508b347dddc6fd725bbc429902ebeb6d26225fc2528"
 dependencies = [
  "heck 0.5.0",
- "itertools",
+ "itertools 0.14.0",
  "pluralizer",
  "proc-macro2",
  "quote",
@@ -5342,7 +5352,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -5594,9 +5604,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.25.14+spec-1.1.0"
+version = "0.25.15+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2195eec204e2764644a4ea619704f9fbe5e0673038eded55ad9956f24fca0cc"
+checksum = "1340ea94a5856333492c9064b02c778b191dd2c853778d9609debdcdfea3a614"
 dependencies = [
  "indexmap",
  "toml_datetime",
@@ -5840,6 +5850,12 @@ dependencies = [
  "tracing",
  "tracing-core",
 ]
+
+[[package]]
+name = "triomphe"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b40688ea6389c8171614b25491f71d4a27946e0c7ce2da1c6de27e25abf1a0ae"
 
 [[package]]
 name = "try-lock"

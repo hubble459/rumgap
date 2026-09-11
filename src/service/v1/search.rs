@@ -33,7 +33,7 @@ impl Search for SearchController {
         let req = request.get_ref();
 
         let search_results = timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(10),
             MANGA_PARSER.search(&req.keyword, req.hostnames.as_slice()),
         )
         .await
