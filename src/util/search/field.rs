@@ -86,7 +86,8 @@ impl SearchField {
 
                 let number = captures.get(2).unwrap().as_str();
 
-                if let Ok(number) = number.parse::<u16>() {
+                // i32 (not u16) so this also covers manga.id, which can exceed 65535.
+                if let Ok(number) = number.parse::<i32>() {
                     return Ok(Expr::cust_with_values(format!("{ident} {compare} $1"), vec![number]));
                 } else {
                     return Err(Status::invalid_argument(format!("Expected number but got {value}")));

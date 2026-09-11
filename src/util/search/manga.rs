@@ -13,6 +13,7 @@ manga.description                       || ' ' ||
 manga.title"#;
 
 static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
+    "id" => SearchField::Number("manga.id"),
     "title" => SearchField::Text("ARRAY_TO_STRING(manga.alt_titles, ', ') || ' ' || manga.title"),
     "description" => SearchField::Text("manga.description"),
     // manga.url no longer exists (Phase 1: multi-source) - both now resolve through the
