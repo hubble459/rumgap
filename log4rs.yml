@@ -35,7 +35,7 @@ appenders:
                 limit: 2 mb
             roller:
                 kind: fixed_window
-                pattern: logs/rumgap_{}.gz
+                pattern: logs/manga_parser_{}.gz
                 count: 5
                 base: 1
 
