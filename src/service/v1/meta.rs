@@ -130,7 +130,7 @@ impl Meta for MetaController {
         // `manga.url` that no longer exists) - across *all* sources, not just primary, since
         // this is meant to answer "what hostnames exist across my whole collection".
         let query = entity::manga::Entity::find()
-            .join(JoinType::LeftJoin, entity::manga::Relation::MangaSource.def())
+            .join(JoinType::InnerJoin, entity::manga::Relation::MangaSource.def())
             .select_only()
             .column_as(entity::manga_source::Column::Hostname, QueryAs::Strings)
             .distinct()
