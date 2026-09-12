@@ -1,0 +1,11 @@
+/target
+.git
+.cargo/
+.env
+*.json
+/data
+/logs
+/http-cacache
+.claude/
+.vscode/
+.github/
