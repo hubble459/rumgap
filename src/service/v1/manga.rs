@@ -164,22 +164,101 @@ async fn match_canonical_chapters<C: ConnectionTrait>(
     manga_id: i32,
     chapters: &[entity::chapter::Model],
 ) -> Result<(), Status> {
-    for chapter in chapters {
-        let ordinal = sea_orm::prelude::Decimal::from_f32_retain(chapter.number)
-            .unwrap_or_default()
-            .round_dp(3);
-
-        let canonical_id = find_or_create_canonical_chapter(db, manga_id, ordinal).await?;
-
-        entity::chapter::ActiveModel {
-            id: Set(chapter.id),
-            canonical_chapter_id: Set(Some(canonical_id)),
-            ..Default::default()
-        }
-        .update(db)
-        .await
-        .map_err(internal)?;
+    if chapters.is_empty() {
+        return Ok(());
     }
+
+    fn ordinal_of(chapter: &entity::chapter::Model) -> sea_orm::prelude::Decimal {
+        sea_orm::prelude::Decimal::from_f32_retain(chapter.number)
+            .unwrap_or_default()
+            .round_dp(3)
+    }
+
+    let mut unique_ordinals: Vec<sea_orm::prelude::Decimal> = chapters.iter().map(ordinal_of).collect();
+    unique_ordinals.sort();
+    unique_ordinals.dedup();
+
+    // Batch-fetch every canonical_chapter row this scrape could possibly need, in one
+    // query, instead of a per-chapter SELECT.
+    let mut ordinal_to_id: HashMap<sea_orm::prelude::Decimal, i32> = entity::canonical_chapter::Entity::find()
+        .filter(entity::canonical_chapter::Column::MangaId.eq(manga_id))
+        .filter(entity::canonical_chapter::Column::Ordinal.is_in(unique_ordinals.clone()))
+        .all(db)
+        .await
+        .map_err(internal)?
+        .into_iter()
+        .map(|row| (row.ordinal, row.id))
+        .collect();
+
+    let missing: Vec<sea_orm::prelude::Decimal> = unique_ordinals
+        .into_iter()
+        .filter(|ordinal| !ordinal_to_id.contains_key(ordinal))
+        .collect();
+
+    if !missing.is_empty() {
+        // ON CONFLICT DO NOTHING + RETURNING: several chapters in this same scrape can
+        // share an ordinal (e.g. two scanlation groups both releasing "chapter 5"), so the
+        // unique(manga_id, ordinal) constraint means only the first of them actually
+        // inserts here - the rest resolve via `ordinal_to_id` below, same as before.
+        let new_rows = missing.iter().map(|ordinal| entity::canonical_chapter::ActiveModel {
+            manga_id: Set(manga_id),
+            ordinal: Set(*ordinal),
+            ..Default::default()
+        });
+
+        let inserted = entity::canonical_chapter::Entity::insert_many(new_rows)
+            .on_conflict(
+                OnConflict::columns([
+                    entity::canonical_chapter::Column::MangaId,
+                    entity::canonical_chapter::Column::Ordinal,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_with_returning(db)
+            .await
+            .map_err(internal)?;
+
+        ordinal_to_id.extend(inserted.into_iter().map(|row| (row.ordinal, row.id)));
+
+        // Rare race: a concurrent writer inserted the same (manga_id, ordinal) between our
+        // SELECT and this INSERT, so ON CONFLICT DO NOTHING skipped it here too - one
+        // follow-up query picks up whatever's still missing.
+        let still_missing: Vec<sea_orm::prelude::Decimal> = missing
+            .into_iter()
+            .filter(|ordinal| !ordinal_to_id.contains_key(ordinal))
+            .collect();
+
+        if !still_missing.is_empty() {
+            let rows = entity::canonical_chapter::Entity::find()
+                .filter(entity::canonical_chapter::Column::MangaId.eq(manga_id))
+                .filter(entity::canonical_chapter::Column::Ordinal.is_in(still_missing))
+                .all(db)
+                .await
+                .map_err(internal)?;
+            ordinal_to_id.extend(rows.into_iter().map(|row| (row.ordinal, row.id)));
+        }
+    }
+
+    let chapter_ids: Vec<i32> = chapters.iter().map(|chapter| chapter.id).collect();
+    let canonical_ids: Vec<i32> = chapters
+        .iter()
+        .map(|chapter| ordinal_to_id[&ordinal_of(chapter)])
+        .collect();
+
+    // Bulk-apply every chapter -> canonical_chapter link in one round trip instead of one
+    // UPDATE per chapter.
+    let bulk_update = sea_orm::Statement::from_sql_and_values(
+        db.get_database_backend(),
+        r#"
+        UPDATE chapter AS c
+        SET canonical_chapter_id = data.canonical_chapter_id
+        FROM (SELECT * FROM UNNEST($1::int[], $2::int[]) AS t(id, canonical_chapter_id)) AS data
+        WHERE c.id = data.id
+        "#,
+        [chapter_ids.into(), canonical_ids.into()],
+    );
+    db.execute_raw(bulk_update).await.map_err(internal)?;
 
     Ok(())
 }
@@ -1667,5 +1746,96 @@ mod matching_heuristic_tests {
         for user in [user1, user2, user3] {
             entity::user::Entity::delete_by_id(user.id).exec(&db).await.unwrap();
         }
+    }
+
+    /// Simulates the exact scenario a force-rescrape is meant to handle: an existing manga
+    /// with a lot of chapters and a user with reading progress mid-way through, then a
+    /// forced re-sync where the source now reports far fewer chapters (a big, "suspicious"
+    /// drop that only `force: true` allows through). Verifies the user's reading progress
+    /// still resolves to a valid, correctly-ordinaled canonical chapter afterwards, and that
+    /// chapters that survived the drop keep the *same* canonical_chapter_id they had before -
+    /// not a fresh, different one.
+    #[ignore]
+    #[tokio::test]
+    async fn force_rescrape_with_drop_preserves_reading_progress() {
+        let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
+        let db = Database::connect(db_url).await.unwrap();
+
+        let manga = make_manga(&db, "Force Rescrape Manga").await;
+        let source = make_source(&db, manga.id, "force-rescrape.test", true).await;
+        let user = make_user(&db, "rescrapeuser").await;
+
+        let total = 1000;
+        let initial_chapters: Vec<Chapter> = (1..=total).map(|i| chapter("force-a", i as f32)).collect();
+        sync_chapters_for_source(&db, manga.id, source.id, &source.url, false, &initial_chapters)
+            .await
+            .unwrap();
+
+        // User is reading chapter 500.
+        let chapter_500 = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source.id))
+            .filter(entity::chapter::Column::Number.eq(500.0))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let canonical_id_before = chapter_500.canonical_chapter_id.unwrap();
+        make_reading(&db, user.id, manga.id, canonical_id_before).await;
+
+        // Force-rescrape: source now only reports chapters 1..=100 (a 90% drop - well past
+        // the suspicious-drop threshold, only lets through because force: true).
+        let shrunk_chapters: Vec<Chapter> = (1..=100).map(|i| chapter("force-a", i as f32)).collect();
+        sync_chapters_for_source(&db, manga.id, source.id, &source.url, true, &shrunk_chapters)
+            .await
+            .unwrap();
+
+        // The chapters that survived the drop (1..=100) must still exist, and chapter 50
+        // must be linked to a canonical_chapter at ordinal 50 - the same canonical row, not
+        // a newly-created duplicate.
+        let remaining = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(remaining.len(), 100, "only the 100 surviving chapters should remain");
+        assert!(
+            remaining.iter().all(|c| c.canonical_chapter_id.is_some()),
+            "every surviving chapter must still be linked to a canonical chapter"
+        );
+
+        let canonical_count_50 = entity::canonical_chapter::Entity::find()
+            .filter(entity::canonical_chapter::Column::MangaId.eq(manga.id))
+            .filter(entity::canonical_chapter::Column::Ordinal.eq(sea_orm::prelude::Decimal::new(50000, 3)))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            canonical_count_50, 1,
+            "chapter 50 should re-link to its existing canonical row, not create a second one"
+        );
+
+        // The reading row set up before the rescrape must still resolve to a real,
+        // correctly-ordinaled canonical_chapter - the rescrape must never have deleted or
+        // orphaned canonical_chapter rows themselves (only `chapter` rows get reset).
+        let reading = entity::reading::Entity::find_by_id((user.id, manga.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            reading.last_canonical_chapter_id,
+            Some(canonical_id_before),
+            "user's reading progress must still point at the same canonical chapter as before the rescrape"
+        );
+        let still_valid = entity::canonical_chapter::Entity::find_by_id(canonical_id_before)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(still_valid.ordinal, sea_orm::prelude::Decimal::new(500000, 3));
+
+        // Cleanup
+        entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
+        entity::user::Entity::delete_by_id(user.id).exec(&db).await.unwrap();
     }
 }
