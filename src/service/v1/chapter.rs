@@ -124,6 +124,7 @@ impl Chapter for ChapterController {
 
         // Get chapter
         let chapter = with_ordinal(entity::chapter::Entity::find())
+            .order_by(entity::chapter::Column::Number, migration::Order::Asc)
             .order_by(entity::chapter::Column::Id, migration::Order::Asc)
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
             .offset(offset)
@@ -173,6 +174,7 @@ impl Chapter for ChapterController {
         // Create paginate object
         let paginate = with_ordinal(entity::chapter::Entity::find())
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
+            .order_by(entity::chapter::Column::Number, order.clone())
             .order_by(entity::chapter::Column::Id, order)
             .column_as(Expr::cust("null"), "offset")
             .column_as(Expr::cust("null"), "page")
