@@ -19,7 +19,7 @@ use sea_orm::{
 };
 use tonic::Status;
 
-use crate::util::chapter_images::prefetch_chapter;
+use crate::util::chapter_images::{prefetch_chapter, MAX_ATTEMPT_SESSIONS};
 
 lazy_static! {
     static ref BACKFILLING: StdMutex<HashSet<i32>> = StdMutex::new(HashSet::new());
@@ -131,6 +131,13 @@ fn auto_backfill_interval_ms() -> u64 {
         .unwrap_or(60_000)
 }
 
+fn auto_backfill_failure_cooldown_ms() -> i64 {
+    std::env::var("AUTO_BACKFILL_FAILURE_COOLDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(86_400_000)
+}
+
 fn auto_backfill_batch_size() -> u64 {
     std::env::var("AUTO_BACKFILL_BATCH_SIZE")
         .ok()
@@ -187,12 +194,22 @@ pub async fn watch_auto_backfill(db: DatabaseConnection) {
 /// along in the batch for free (`ensure_page_downloaded`'s own cooldown/
 /// attempt cap makes that a cheap no-op) without blocking the others.
 async fn incomplete_chapters(db: &DatabaseConnection, limit: u64) -> Result<Vec<entity::chapter::Model>, DbErr> {
+    let listing_failure_cutoff =
+        chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(auto_backfill_failure_cooldown_ms());
+
     entity::chapter::Entity::find()
         .join(JoinType::LeftJoin, entity::chapter::Relation::ChapterImage.def())
+        .filter(Expr::cust_with_values(
+            "NOT EXISTS (SELECT 1 FROM scrape_log WHERE scrape_log.url = chapter.url \
+             AND scrape_log.operation = 'chapter_images' AND NOT scrape_log.success AND scrape_log.created_at > $1)",
+            [listing_failure_cutoff],
+        ))
         .group_by(entity::chapter::Column::Id)
-        .having(Expr::cust(
+        .having(Expr::cust_with_values(
             "COUNT(chapter_image.chapter_id) = 0 \
-             OR COUNT(chapter_image.chapter_id) != COUNT(chapter_image.chapter_id) FILTER (WHERE chapter_image.status = 'done')",
+             OR COUNT(chapter_image.chapter_id) FILTER (WHERE chapter_image.status <> 'done' \
+                AND NOT (chapter_image.status = 'failed' AND chapter_image.attempts >= $1)) > 0",
+            [MAX_ATTEMPT_SESSIONS],
         ))
         .order_by_asc(entity::chapter::Column::Id)
         .limit(limit)

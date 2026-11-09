@@ -91,12 +91,18 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
     use entity::{manga, reading};
 
     let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
+    let failure_cutoff = Utc::now().naive_utc() - chrono::Duration::milliseconds(min_interval);
 
     index_manga(None)
         .join(JoinType::LeftJoin, entity::reading::Relation::Manga.def().rev())
         .column_as(reading::Column::MangaId.count(), "count_reading")
         .group_by(manga::Column::Id)
         .filter(manga::Column::UpdatedAt.lte(date_time))
+        .filter(Expr::cust_with_values(
+            "NOT EXISTS (SELECT 1 FROM scrape_log WHERE scrape_log.manga_id = manga.id \
+             AND scrape_log.operation = 'manga' AND NOT scrape_log.success AND scrape_log.created_at > $1)",
+            [failure_cutoff],
+        ))
         .limit(limit)
         .order_by_desc(reading::Column::MangaId.count())
         .order_by_asc(manga::Column::UpdatedAt)

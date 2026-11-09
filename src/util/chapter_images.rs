@@ -39,7 +39,7 @@ const SELF_REFERER_HOSTNAMES: &[&str] = &["manhuagui.com"];
 /// How many attempt-sessions (each already internally retried/backed-off by
 /// `manga_parser::HTTP_CLIENT`'s own middleware) a page gets before it's
 /// considered durably failed until a manual `RefreshImages`.
-const MAX_ATTEMPT_SESSIONS: i32 = 3;
+pub const MAX_ATTEMPT_SESSIONS: i32 = 3;
 
 /// Cooldown between attempt-sessions for a page that's currently `failed`.
 const RETRY_COOLDOWN_MINUTES: i64 = 5;
