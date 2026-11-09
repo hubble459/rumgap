@@ -12,7 +12,7 @@ use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
 use migration::{Expr, JoinType};
-use rand::Rng;
+use rand::RngExt;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait,
@@ -93,7 +93,7 @@ async fn walk(db: &DatabaseConnection, manga_source_id: i32) {
         // backfill into "a couple hours" instead of finishing in well under
         // an hour at full throughput -- rate/pattern is what distinguishes
         // scraper traffic from a human reader, not total volume.
-        let jitter: i64 = rand::thread_rng().gen_range(-500..=500);
+        let jitter: i64 = rand::rng().random_range(-500..=500);
         let sleep_ms = (delay_ms as i64 + jitter).max(0) as u64;
         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
     }
