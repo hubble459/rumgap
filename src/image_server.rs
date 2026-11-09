@@ -4,9 +4,12 @@
 //! consumes bytes. Runs on its own port (`IMAGE_PORT`, default 8001) since
 //! `tonic::transport::Server` wants exclusive control of its listener.
 
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
+use axum::middleware::{self, Next};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::header::REFERER;
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -37,6 +40,7 @@ pub async fn serve(db: DatabaseConnection) {
         .route("/covers/{manga_id}", get(get_cover))
         .route("/proxy", get(get_proxy))
         .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(resource_policy))
         .with_state(db);
 
     let listener = match tokio::net::TcpListener::bind(&addr).await {
@@ -325,6 +329,24 @@ fn content_type_for_ext(ext: &str) -> String {
         _ => "image/jpeg",
     }
     .to_string()
+}
+
+async fn resource_policy(request: Request<Body>, next: Next) -> Response {
+    let from_localhost = request
+        .headers()
+        .get(REFERER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split("://").nth(1))
+        .and_then(|rest| rest.split(['/', ':']).next())
+        .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1"));
+
+    let mut response = next.run(request).await;
+    let policy = if from_localhost { "cross-origin" } else { "same-site" };
+    response.headers_mut().insert(
+        HeaderName::from_static("cross-origin-resource-policy"),
+        HeaderValue::from_static(policy),
+    );
+    response
 }
 
 fn ext_for_content_type(content_type: &str) -> &'static str {
