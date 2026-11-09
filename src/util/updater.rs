@@ -1,5 +1,5 @@
 use chrono::Utc;
-use fcm::message::{Message, Notification, Target};
+use fcm::message::{Message, Notification, Target, WebpushConfig};
 use fcm::FcmClient;
 use migration::{Expr, JoinType};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
@@ -145,8 +145,15 @@ async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user
 }
 
 async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
+    // Must belong to the same Firebase project the apps register their tokens
+    // with (wuxia-6a4d2), otherwise FCM rejects every send with SenderIdMismatch.
+    let key_path = std::env::var("FCM_SERVICE_ACCOUNT_KEY").unwrap_or_else(|_| "firebase-service-account.json".to_string());
+    // Web pushes don't pick up an icon on their own -- the browser shows its default one.
+    let web_icon = std::env::var("WEB_NOTIFICATION_ICON")
+        .unwrap_or_else(|_| "https://manga.quentincorreia.nl/icons/Icon-192.png".to_string());
+
     let client = FcmClient::builder()
-        .service_account_key_json_path("manga-reader-5c535-148af5dd8096.json")
+        .service_account_key_json_path(key_path)
         .build()
         .await;
 
@@ -165,7 +172,10 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
                 }),
                 target: Target::Token(target),
                 android: None,
-                webpush: None,
+                webpush: Some(WebpushConfig {
+                    notification: Some(json!({ "icon": web_icon })),
+                    ..Default::default()
+                }),
                 apns: None,
                 fcm_options: None,
             };
