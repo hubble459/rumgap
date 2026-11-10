@@ -10,9 +10,9 @@ use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 
 lazy_static! {
-    static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(
+    pub(crate) static ref SECRET_KEY: Hmac<Sha256> = Hmac::new_from_slice(
         std::env::var("JWT_SECRET")
-            .unwrap_or("bUHhhHH#!bU@NkNUnK12".to_string())
+            .expect("JWT_SECRET is not set")
             .as_bytes()
     )
     .unwrap();

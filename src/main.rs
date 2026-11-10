@@ -56,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get env vars
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file");
+    lazy_static::initialize(&interceptor::auth::SECRET_KEY);
     let host = env::var("HOST").unwrap_or(String::from("127.0.0.1"));
     let port = env::var("PORT").unwrap_or(String::from("8000"));
     let server_url = format!("{host}:{port}");

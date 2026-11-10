@@ -9,6 +9,7 @@ services:
       PORT: 8000
       MANGA_UPDATE_INTERVAL_MS: 600000
       DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
+      JWT_SECRET: test-secret
       RUST_LOG: trace
 
     depends_on:

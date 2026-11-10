@@ -10,6 +10,7 @@ services:
       IMAGE_BASE_URL: "https://images.manga.quentincorreia.nl"
       MANGA_UPDATE_INTERVAL_MS: 600000
       DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set}
       RUST_LOG: trace
       RUST_BACKTRACE: "1"
 
