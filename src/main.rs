@@ -103,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(service::v1::search::server())
         .add_service(service::v1::meta::server())
         .add_service(service::v1::scraper::server())
+        .add_service(service::v1::admin::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)

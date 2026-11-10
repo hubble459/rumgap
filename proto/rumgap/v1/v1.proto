@@ -13,8 +13,10 @@ import "rumgap/v1/search.proto";
 import "rumgap/v1/paginate.proto";
 import "rumgap/v1/meta.proto";
 import "rumgap/v1/scraper.proto";
+import "rumgap/v1/admin.proto";
 
 service User {
+    // Always denied; accounts are created through Admin.CreateUser.
     rpc Register (UserRegisterRequest) returns (UserTokenReply);
     rpc Login (UserRequest) returns (UserTokenReply);
     rpc Get (GetUserRequest) returns (UserFullReply);
@@ -100,6 +102,13 @@ service Meta {
 // which sites' scrapers are currently broken.
 service Scraper {
     rpc Status (ScraperStatusRequest) returns (ScraperStatusReply);
+}
+
+// Admin-only: user management.
+service Admin {
+    rpc CreateUser (AdminCreateUserRequest) returns (UserReply);
+    rpc DeleteUser (AdminDeleteUserRequest) returns (Empty);
+    rpc SetPassword (AdminSetPasswordRequest) returns (Empty);
 }
 
 message UpdateMangaRequest {

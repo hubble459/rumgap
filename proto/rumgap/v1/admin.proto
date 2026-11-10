@@ -1,0 +1,19 @@
+syntax = "proto3";
+package rumgap.v1;
+
+message AdminCreateUserRequest {
+    string username = 1;
+    string email = 2;
+    string password = 3;
+    // Also grant ADMIN on top of USER.
+    bool admin = 4;
+}
+
+message AdminDeleteUserRequest {
+    int32 id = 1;
+}
+
+message AdminSetPasswordRequest {
+    int32 id = 1;
+    string password = 2;
+}

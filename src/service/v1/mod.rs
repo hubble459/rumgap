@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod chapter;
 pub mod friend;
 pub mod manga;

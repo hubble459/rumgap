@@ -44,6 +44,7 @@ pub struct UserController;
 impl User for UserController {
     /// Get a single user
     async fn get(&self, request: Request<GetUserRequest>) -> Result<Response<UserFullReply>, Status> {
+        request.authorize()?;
         let db = request.db()?;
         let req = request.get_ref();
         let full_user = get_user_by_id(db, req.id).await?;
@@ -52,6 +53,7 @@ impl User for UserController {
 
     /// Get paginated users
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
+        request.authorize()?;
         let db = request.db()?;
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
@@ -100,33 +102,11 @@ impl User for UserController {
         }))
     }
 
-    /// Register a new account
-    async fn register(&self, request: Request<UserRegisterRequest>) -> Result<Response<UserTokenReply>, Status> {
-        let db = request.db()?;
-        let req = request.get_ref();
-
-        let user = entity::user::ActiveModel {
-            username: ActiveValue::Set(verify::username(&req.username)?),
-            email: ActiveValue::Set(verify::email(&req.email)?),
-            password_hash: ActiveValue::Set(argon::encrypt(&verify::password(&req.password)?)?),
-            preferred_hostnames: ActiveValue::Set(vec![]),
-            device_ids: ActiveValue::Set(vec![]),
-            ..Default::default()
-        };
-
-        let user = user.insert(db).await.map_err(|e| {
-            if verify::is_conflict(&e) {
-                return Status::already_exists("Username or email already in use");
-            }
-            Status::internal(e.to_string())
-        })?;
-
-        let full_user = get_user_by_id(db, user.id).await?;
-        let token = sign(full_user.id).map_err(|e| Status::aborted(e.to_string()))?;
-        Ok(Response::new(UserTokenReply {
-            token,
-            user: Some(full_user.into()),
-        }))
+    /// Registration is closed; admins create accounts
+    async fn register(&self, _request: Request<UserRegisterRequest>) -> Result<Response<UserTokenReply>, Status> {
+        Err(Status::permission_denied(
+            "Registration is closed. Email geraldd459@gmail.com to request an account.",
+        ))
     }
 
     /// Log in with username/email and password
