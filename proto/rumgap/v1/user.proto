@@ -31,6 +31,8 @@ message UserUpdateRequest {
     optional string email = 3;
     repeated string preferred_hostnames = 4;
     repeated string device_ids = 5;
+    // Required when changing password
+    optional string current_password = 6;
 }
 
 message UserReply {

@@ -162,6 +162,12 @@ impl User for UserController {
             active_user.email = ActiveValue::Set(verify::email(email)?);
         }
         if let Some(password) = &req.password {
+            let current = req
+                .current_password
+                .as_deref()
+                .ok_or(Status::invalid_argument("Current password is required"))?;
+            argon::verify(&logged_in.password_hash, current)
+                .map_err(|_| Status::permission_denied("Current password is incorrect"))?;
             active_user.password_hash = ActiveValue::Set(argon::encrypt(&verify::password(password)?)?);
         }
         if !req.preferred_hostnames.is_empty() {
