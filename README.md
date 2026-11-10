@@ -6,13 +6,9 @@ API for scraping/ relaying manga from various websites. It uses [tonic](https://
 
 blah blah blah
 
-## Checklist
+## Roadmap
 
-- [ ] Code Comments
-- [ ] API Documentation
-- [ ] Tests
-- [ ] Add more items to the checklist
-- [ ] Add a RumGap description to the README.md
+See [ROADMAP.md](ROADMAP.md) (covers both rumgap and the [wuxia](https://github.com/hubble459/wuxia) client).
 
 ## How to Run?
 
