@@ -31,10 +31,10 @@ COPY log4rs.yml /usr/local/bin
 
 RUN apt-get update && apt-get install -y ca-certificates openssl libssl-dev && apt-get clean
 
-ENV HOST 0.0.0.0
-ENV PORT 80
-ENV DATABASE_URL "postgres://postgres:postgres@postgres/postgres"
-ENV MANGA_UPDATE_INTERVAL_MS 600000
+ENV HOST=0.0.0.0
+ENV PORT=80
+ENV DATABASE_URL="postgres://postgres:postgres@postgres/postgres"
+ENV MANGA_UPDATE_INTERVAL_MS=600000
 
 EXPOSE $PORT
 
