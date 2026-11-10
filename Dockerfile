@@ -1,29 +1,25 @@
 ################
 ##### Builder
-FROM rust:slim-bookworm AS builder
+FROM rust:slim-bookworm AS chef
 
-ENV PROJECT=/usr/src/rumgap
+WORKDIR /usr/src/rumgap
 
-WORKDIR ${PROJECT}
-
-# Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev openssl protobuf-compiler && apt-get clean
+COPY rust-toolchain.toml .
+RUN rustup toolchain install && cargo install cargo-chef --locked
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Dependencies only, keyed on the recipe (Cargo.toml/Cargo.lock) -- a
+# source-only change reuses this cached layer and just compiles rumgap.
+FROM chef AS builder
+COPY --from=planner /usr/src/rumgap/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY . .
-
-# Cache mounts persist cargo's registry/git checkouts and target/ across builds
-# independently of Docker's layer cache (keyed by mount id, not by whether
-# Cargo.lock's content hash changed) - so bumping one dependency (e.g.
-# manga_parser's git rev) only recompiles that crate and whatever depends on
-# it, instead of invalidating this whole layer and rebuilding every
-# dependency from scratch. The binary is copied out of the mounted target/
-# into a normal layer path here, since mount contents don't persist into the
-# image itself.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=${PROJECT}/target,sharing=locked \
-    cargo build --release && \
-    cp target/release/rumgap /usr/local/bin/rumgap
+RUN cargo build --release --bin rumgap && cp target/release/rumgap /usr/local/bin/rumgap
 
 ################
 ##### Runtime
