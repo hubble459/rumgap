@@ -166,10 +166,16 @@ async fn get_image(
 }
 
 /// `GET /covers/{manga_id}` -- same lazy pattern as `get_image`, but 1:1 per
-/// manga rather than per-page. Referer for the download is the manga's
-/// primary source URL, matching the rule that only the primary source's
-/// scrape ever populates canonical cover data.
-async fn get_cover(State(db): State<DatabaseConnection>, Path(manga_id): Path<i32>, headers: HeaderMap) -> Response {
+/// manga rather than per-page, and with the same optional `maxdim`/`quality`
+/// cap. Referer for the download is the manga's primary source URL, matching
+/// the rule that only the primary source's scrape ever populates canonical
+/// cover data.
+async fn get_cover(
+    State(db): State<DatabaseConnection>,
+    Path(manga_id): Path<i32>,
+    Query(query): Query<ImageQuery>,
+    headers: HeaderMap,
+) -> Response {
     let manga = match entity::manga::Entity::find_by_id(manga_id).one(&db).await {
         Ok(Some(manga)) => manga,
         Ok(None) => return (StatusCode::NOT_FOUND, "Manga not found").into_response(),
@@ -180,10 +186,27 @@ async fn get_cover(State(db): State<DatabaseConnection>, Path(manga_id): Path<i3
         return (StatusCode::NOT_FOUND, "This manga has no cover").into_response();
     };
 
+    let transform = query.maxdim.map(|max_dim| {
+        (
+            max_dim.clamp(MIN_DIM, MAX_DIM),
+            query.quality.unwrap_or(DEFAULT_QUALITY).clamp(MIN_QUALITY, MAX_QUALITY),
+        )
+    });
+
     if manga.cover_status == "done" {
         if let Some(checksum) = &manga.cover_checksum {
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
-                if if_none_match.trim_matches('"') == checksum {
+                // Cover dimensions aren't stored, so unlike `get_image` there's
+                // no telling up front whether a capped request gets the
+                // original or a variant. A given URL only ever yields one of
+                // the two, though, so a match on either etag is the client
+                // already holding exactly what this URL serves.
+                let if_none_match = if_none_match.trim_matches('"');
+                let matches = if_none_match == checksum
+                    || transform.is_some_and(|(max_dim, quality)| {
+                        if_none_match == crate::util::image_transcode::variant_etag(checksum, max_dim, quality)
+                    });
+                if matches {
                     return StatusCode::NOT_MODIFIED.into_response();
                 }
             }
@@ -211,7 +234,10 @@ async fn get_cover(State(db): State<DatabaseConnection>, Path(manga_id): Path<i3
             &manga.cover_content_type,
             &manga.cover_checksum,
         ) {
-            return serve_from_store(storage_key, content_type, checksum).await;
+            return match transform {
+                None => serve_from_store(storage_key, content_type, checksum).await,
+                Some((max_dim, quality)) => serve_variant(storage_key, content_type, checksum, max_dim, quality).await,
+            };
         }
     }
 
