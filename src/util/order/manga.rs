@@ -6,8 +6,7 @@ use crate::service::v1::manga::NEXT_UPDATE_QUERY;
 static ORDER_FIELD: phf::Map<&'static str, &'static str> = phf_map! {
     "title" => "manga.title",
     "description" => "manga.description",
-    // manga.url no longer exists (Phase 1: multi-source) - resolves through the
-    // primary-source join that `index_manga` already sets up.
+    // Resolves through the primary-source join that `index_manga` sets up.
     "url" => "manga_source.url",
     "last" => "MAX(chapter.posted)",
     "next" => NEXT_UPDATE_QUERY,
