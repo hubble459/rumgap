@@ -94,6 +94,7 @@ impl Admin for AdminController {
         let mut active_user = user.into_active_model();
         active_user.password_hash = ActiveValue::Set(argon::encrypt(&verify::password(&req.password)?)?);
         active_user.update(db).await.map_err(internal)?;
+        crate::util::session::revoke_all(db, req.id, None).await?;
 
         Ok(Response::new(Empty::default()))
     }

@@ -21,6 +21,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
         interval.tick().await;
 
         crate::util::scrape_log::prune(db).await;
+        crate::util::session::prune(db).await;
 
         let update_list = collect_priority_manga(db).await;
 

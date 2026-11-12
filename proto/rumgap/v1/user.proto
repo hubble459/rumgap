@@ -68,3 +68,20 @@ message UsersReply {
     PaginateReply pagination = 1;
     repeated UserReply items = 2;
 }
+message SessionReply {
+    string id = 1;
+    optional string user_agent = 2;
+    int64 created_at = 3;
+    int64 last_used_at = 4;
+    int64 expires_at = 5;
+    // The session this request was made with
+    bool current = 6;
+}
+
+message SessionsReply {
+    repeated SessionReply items = 1;
+}
+
+message RevokeSessionRequest {
+    string id = 1;
+}

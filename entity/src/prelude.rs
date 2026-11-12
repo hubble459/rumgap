@@ -9,4 +9,5 @@ pub use super::manga::Entity as Manga;
 pub use super::manga_source::Entity as MangaSource;
 pub use super::reading::Entity as Reading;
 pub use super::scrape_log::Entity as ScrapeLog;
+pub use super::session::Entity as Session;
 pub use super::user::Entity as User;

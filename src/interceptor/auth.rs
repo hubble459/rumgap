@@ -1,6 +1,5 @@
 use hmac::{Hmac, Mac};
 use jwt::{SignWithKey, VerifyWithKey};
-use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tonic::service::Interceptor;
@@ -18,15 +17,22 @@ lazy_static! {
     .unwrap();
 }
 
-/// JWT Token
+/// JWT Token. Only valid while its `sid` session row exists, see `util::session`.
 #[derive(Serialize, Deserialize)]
 pub struct Token {
     pub id: i32,
+    pub sid: String,
+    pub iat: i64,
 }
 
 /// Sign JWT Token
-pub fn sign(id: i32) -> Result<String, jwt::Error> {
-    Token { id }.sign_with_key(&SECRET_KEY.clone())
+pub fn sign(id: i32, session_id: &str) -> Result<String, jwt::Error> {
+    Token {
+        id,
+        sid: session_id.to_string(),
+        iat: chrono::Utc::now().timestamp(),
+    }
+    .sign_with_key(&SECRET_KEY.clone())
 }
 
 pub(crate) trait UserHasPermissions {
@@ -65,23 +71,17 @@ pub async fn check_auth(mut req: Request<()>) -> Result<Request<()>, Status> {
         let token = bearer_token.strip_prefix("Bearer ");
         // If there is a token
         if let Some(token) = token {
-            // Verify it
-            let Token { id: user_id } = token
-                .verify_with_key(&SECRET_KEY.clone())
-                .map_err(|e| Status::unauthenticated(e.to_string()))?;
+            // Verify it. A token that fails here (bad signature, pre-session format,
+            // revoked or expired session) just leaves the request logged out, so calls
+            // that don't need a user (like Login) still work with a stale header.
+            let Ok(Token { id: user_id, sid, .. }) = token.verify_with_key(&SECRET_KEY.clone()) else {
+                return Ok(req);
+            };
 
-            // Get the user from the database with the id stored in the token
-            let user = entity::user::Entity::find_by_id(user_id)
-                .one(db)
-                .await
-                .map_err(|_e| Status::internal("Bearer token is invalid"))?
-                // If the user was deleted the token is invalid
-                .ok_or(Status::unauthenticated(
-                    "User belonging to this token does not exists anymore",
-                ))?;
-
-            // Store the logged in user in the request extensions
-            req.extensions_mut().insert(user);
+            if let Some((session, user)) = crate::util::session::validate(db, user_id, &sid).await? {
+                req.extensions_mut().insert(user);
+                req.extensions_mut().insert(session);
+            }
         } else {
             // "authorization" header was set but the token is invalid
             return Err(Status::unauthenticated("Bearer token is invalid"));

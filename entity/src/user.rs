@@ -25,6 +25,8 @@ pub enum Relation {
     ChapterOffset,
     #[sea_orm(has_many = "super::reading::Entity")]
     Reading,
+    #[sea_orm(has_many = "super::session::Entity")]
+    Session,
 }
 
 impl Related<super::chapter_offset::Entity> for Entity {
@@ -36,6 +38,12 @@ impl Related<super::chapter_offset::Entity> for Entity {
 impl Related<super::reading::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Reading.def()
+    }
+}
+
+impl Related<super::session::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Session.def()
     }
 }
 

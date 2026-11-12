@@ -11,4 +11,5 @@ pub mod manga;
 pub mod manga_source;
 pub mod reading;
 pub mod scrape_log;
+pub mod session;
 pub mod user;

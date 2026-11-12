@@ -25,6 +25,10 @@ service User {
     rpc Update (UserUpdateRequest) returns (UserFullReply);
     rpc AddDeviceToken (DeviceTokenRequest) returns (Empty);
     rpc RemoveDeviceToken (DeviceTokenRequest) returns (Empty);
+    // Revoke the session this request was made with
+    rpc Logout (Empty) returns (Empty);
+    rpc Sessions (Empty) returns (SessionsReply);
+    rpc RevokeSession (RevokeSessionRequest) returns (Empty);
 }
 
 service Friend {

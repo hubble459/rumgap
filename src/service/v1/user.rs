@@ -1,21 +1,28 @@
 use migration::{Alias, Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, QuerySelect, RelationTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use tonic::{Request, Response, Status};
 
 use crate::data;
-use crate::interceptor::auth::sign;
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
-    DeviceTokenRequest, Empty, GetUserRequest, PaginateQuery, PaginateReply, UserFullReply, UserRegisterRequest,
-    UserReply, UserRequest, UserTokenReply, UserUpdateRequest, UsersReply,
+    DeviceTokenRequest, Empty, GetUserRequest, PaginateQuery, PaginateReply, RevokeSessionRequest, SessionReply,
+    SessionsReply, UserFullReply, UserRegisterRequest, UserReply, UserRequest, UserTokenReply, UserUpdateRequest,
+    UsersReply,
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
-use crate::util::{argon, verify};
+use crate::util::{argon, session, verify};
+
+fn current_session<T>(request: &Request<T>) -> Result<&entity::session::Model, Status> {
+    request
+        .extensions()
+        .get::<entity::session::Model>()
+        .ok_or(Status::unauthenticated("Missing bearer token! Log in first"))
+}
 
 #[rustfmt::skip]
 pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<data::user::Full, Status> {
@@ -114,6 +121,7 @@ impl User for UserController {
         let error = "Username and password mismatch";
         let db = request.db()?;
         let req = request.get_ref();
+        let user_agent = request.metadata().get("user-agent").and_then(|ua| ua.to_str().ok());
 
         let identifier = req.identifier.as_ref().unwrap();
 
@@ -132,7 +140,7 @@ impl User for UserController {
         argon::verify(&user.password_hash, &req.password)?;
 
         let full_user = get_user_by_id(db, user.id).await?;
-        let token = sign(full_user.id).map_err(|e| Status::aborted(e.to_string()))?;
+        let token = session::create(db, full_user.id, user_agent).await?;
         Ok(Response::new(UserTokenReply {
             token,
             user: Some(full_user.into()),
@@ -184,6 +192,11 @@ impl User for UserController {
             Status::internal(e.to_string())
         })?;
 
+        // A password change logs out every other device
+        if req.password.is_some() {
+            session::revoke_all(db, logged_in.id, Some(&current_session(&request)?.id)).await?;
+        }
+
         Ok(Response::new(get_user_by_id(db, logged_in.id).await?.into()))
     }
 
@@ -229,6 +242,53 @@ impl User for UserController {
                 .map_err(|e| Status::internal(e.to_string()))?;
         } else {
             // TODO: Should it throw a 404?
+        }
+
+        Ok(Response::new(Empty::default()))
+    }
+
+    async fn logout(&self, request: Request<Empty>) -> Result<Response<Empty>, Status> {
+        let logged_in = request.authorize()?;
+        let db = request.db()?;
+
+        session::revoke(db, logged_in.id, &current_session(&request)?.id).await?;
+
+        Ok(Response::new(Empty::default()))
+    }
+
+    async fn sessions(&self, request: Request<Empty>) -> Result<Response<SessionsReply>, Status> {
+        let logged_in = request.authorize()?;
+        let db = request.db()?;
+        let current = &current_session(&request)?.id;
+
+        let sessions = entity::session::Entity::find()
+            .filter(entity::session::Column::UserId.eq(logged_in.id))
+            .order_by_desc(entity::session::Column::LastUsedAt)
+            .all(db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(SessionsReply {
+            items: sessions
+                .into_iter()
+                .map(|s| SessionReply {
+                    current: &s.id == current,
+                    id: s.id,
+                    user_agent: s.user_agent,
+                    created_at: s.created_at.and_utc().timestamp_millis(),
+                    last_used_at: s.last_used_at.and_utc().timestamp_millis(),
+                    expires_at: s.expires_at.and_utc().timestamp_millis(),
+                })
+                .collect(),
+        }))
+    }
+
+    async fn revoke_session(&self, request: Request<RevokeSessionRequest>) -> Result<Response<Empty>, Status> {
+        let logged_in = request.authorize()?;
+        let db = request.db()?;
+
+        if !session::revoke(db, logged_in.id, &request.get_ref().id).await? {
+            return Err(Status::not_found("Session not found"));
         }
 
         Ok(Response::new(Empty::default()))
