@@ -3,6 +3,9 @@
 //! Not gRPC -- protobuf framing isn't how a Flutter `Image`/browser `<img>`
 //! consumes bytes. Runs on its own port (`IMAGE_PORT`, default 8001) since
 //! `tonic::transport::Server` wants exclusive control of its listener.
+//!
+//! Every route requires an `exp`/`sig` pair minted by the (logged-in only)
+//! gRPC API -- see `crate::util::signed_url`.
 
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -21,6 +24,7 @@ use tower_http::cors::CorsLayer;
 use crate::util::chapter_images::{ensure_chapter_image_rows, ensure_page_downloaded};
 use crate::util::cover_images::ensure_cover_downloaded;
 use crate::util::scraper_hostnames::is_allowed_hostname;
+use crate::util::signed_url;
 use crate::util::startup_banner;
 use crate::IMAGE_STORE;
 
@@ -57,8 +61,8 @@ pub async fn serve(db: DatabaseConnection) {
     }
 }
 
-/// Bounds for client-supplied `maxdim`/`quality` -- this endpoint is
-/// unauthenticated, so these clamp against a careless or malicious caller
+/// Bounds for client-supplied `maxdim`/`quality` -- they aren't covered by
+/// the URL signature, so these clamp against a careless or malicious caller
 /// rather than reflecting any real use case.
 const MIN_DIM: u32 = 64;
 const MAX_DIM: u32 = 16384;
@@ -79,6 +83,12 @@ struct ImageQuery {
     /// neither and always get the original.
     maxdim: Option<u32>,
     quality: Option<u8>,
+    exp: Option<i64>,
+    sig: Option<String>,
+}
+
+fn forbidden() -> Response {
+    (StatusCode::FORBIDDEN, "Missing, invalid or expired signature").into_response()
 }
 
 async fn get_image(
@@ -87,6 +97,11 @@ async fn get_image(
     Query(query): Query<ImageQuery>,
     headers: HeaderMap,
 ) -> Response {
+    let resource = format!("/images/{chapter_id}/{page_index}");
+    if !signed_url::verify(&resource, query.exp, query.sig.as_deref()) {
+        return forbidden();
+    }
+
     let chapter = match entity::chapter::Entity::find_by_id(chapter_id).one(&db).await {
         Ok(Some(chapter)) => chapter,
         Ok(None) => return (StatusCode::NOT_FOUND, "Chapter not found").into_response(),
@@ -176,6 +191,10 @@ async fn get_cover(
     Query(query): Query<ImageQuery>,
     headers: HeaderMap,
 ) -> Response {
+    if !signed_url::verify(&format!("/covers/{manga_id}"), query.exp, query.sig.as_deref()) {
+        return forbidden();
+    }
+
     let manga = match entity::manga::Entity::find_by_id(manga_id).one(&db).await {
         Ok(Some(manga)) => manga,
         Ok(None) => return (StatusCode::NOT_FOUND, "Manga not found").into_response(),
@@ -251,6 +270,8 @@ async fn get_cover(
 struct ProxyQuery {
     url: String,
     referer: String,
+    exp: Option<i64>,
+    sig: Option<String>,
 }
 
 /// `GET /proxy?url=...&referer=...` -- transient, hash-keyed cache for
@@ -260,10 +281,16 @@ struct ProxyQuery {
 /// content_type separately.
 ///
 /// Hosts for both `url` and `referer` MUST be on the scraper hostname
-/// allowlist (`crate::util::scraper_hostnames`) or this would be an open
-/// SSRF proxy -- reachable by anyone who finds the endpoint, not just wuxia,
-/// since it's unauthenticated and potentially internet-facing.
+/// allowlist (`crate::util::scraper_hostnames`). The signature only proves
+/// rumgap minted the URL, and the cover URL it signs comes straight from a
+/// third-party search page, so the allowlist still stops that from turning
+/// this into an SSRF proxy.
 async fn get_proxy(Query(query): Query<ProxyQuery>) -> Response {
+    let resource = signed_url::proxy_resource(&query.url, &query.referer);
+    if !signed_url::verify(&resource, query.exp, query.sig.as_deref()) {
+        return forbidden();
+    }
+
     let Ok(target) = manga_parser::Url::parse(&query.url) else {
         return (StatusCode::BAD_REQUEST, "Invalid url").into_response();
     };

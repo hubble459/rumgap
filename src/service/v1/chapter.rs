@@ -3,11 +3,12 @@ use std::num::TryFromIntError;
 use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    QueryTrait, RelationTrait, Select,
+    RelationTrait, Select,
 };
 use tonic::{Request, Response, Status};
 
 use crate::data;
+use crate::interceptor::auth::UserPermissions;
 use crate::proto::chapter_server::{Chapter, ChapterServer};
 use crate::proto::{
     ChapterImagesRequest, ChapterReply, ChapterRequest, ChaptersReply, FindEquivalentRequest, ImagePage, ImagesReply,
@@ -16,6 +17,7 @@ use crate::proto::{
 use crate::util::auth::Authorize;
 use crate::util::chapter_images::{ensure_chapter_image_rows, refresh_chapter_images};
 use crate::util::db::DatabaseRequest;
+use crate::util::signed_url;
 
 /// LEFT JOIN this chapter's linked `canonical_chapter` (if any - NULL for a manually
 /// `UnlinkChapter`'d chapter) and select its `ordinal`, so `ChapterReply.ordinal` can be
@@ -28,17 +30,14 @@ fn with_ordinal(query: Select<entity::chapter::Entity>) -> Select<entity::chapte
         .column_as(entity::canonical_chapter::Column::Ordinal, "ordinal")
 }
 
-/// Build the `{IMAGE_BASE_URL}/images/{chapter_id}/{page_index}` URLs (plus known
+/// Build the signed `{IMAGE_BASE_URL}/images/{chapter_id}/{page_index}` URLs (plus known
 /// dimensions, if any) returned by `Chapter.Images`/`Chapter.RefreshImages`.
 /// Deterministic and cheap -- never blocks on a download, that happens lazily inside
 /// the image HTTP server on first real request for a given page.
 fn image_pages(chapter_id: i32, rows: &[entity::chapter_image::Model]) -> Vec<ImagePage> {
-    let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
-    let base_url = base_url.trim_end_matches('/');
-
     rows.iter()
         .map(|row| ImagePage {
-            url: format!("{base_url}/images/{chapter_id}/{}", row.page_index),
+            url: signed_url::path_url(&format!("/images/{chapter_id}/{}", row.page_index)),
             width: row.width,
             height: row.height,
         })
@@ -104,7 +103,7 @@ impl Chapter for ChapterController {
     /// Get chapter
     async fn get(&self, request: Request<ChapterRequest>) -> Result<Response<ChapterReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok();
+        let user_id = request.authorize()?.id;
         let req = request.get_ref();
         let manga_source_id = req.manga_source_id;
 
@@ -131,22 +130,18 @@ impl Chapter for ChapterController {
             .column_as(Expr::cust("null"), "offset")
             .column_as(Expr::cust("null"), "page")
             .column_as(Expr::cust("null"), "fraction")
-            .apply_if(logged_in, |query, logged_in| {
-                let user_id = logged_in.id;
-                query
-                    .join(
-                        JoinType::LeftJoin,
-                        entity::chapter_offset::Relation::Chapter
-                            .def()
-                            .rev()
-                            .on_condition(move |_left, right| {
-                                Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
-                            }),
-                    )
-                    .column_as(entity::chapter_offset::Column::Offset, "offset")
-                    .column_as(entity::chapter_offset::Column::Page, "page")
-                    .column_as(entity::chapter_offset::Column::Fraction, "fraction")
-            })
+            .join(
+                JoinType::LeftJoin,
+                entity::chapter_offset::Relation::Chapter
+                    .def()
+                    .rev()
+                    .on_condition(move |_left, right| {
+                        Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
+                    }),
+            )
+            .column_as(entity::chapter_offset::Column::Offset, "offset")
+            .column_as(entity::chapter_offset::Column::Page, "page")
+            .column_as(entity::chapter_offset::Column::Fraction, "fraction")
             .into_model::<data::chapter::Full>()
             .one(db)
             .await
@@ -159,7 +154,7 @@ impl Chapter for ChapterController {
     /// Get paginated chapters from a manga source
     async fn index(&self, request: Request<PaginateChapterQuery>) -> Result<Response<ChaptersReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok();
+        let user_id = request.authorize()?.id;
         let req = request.get_ref();
         let manga_source_id = req.manga_source_id;
         let reversed = req.reversed.unwrap_or_default();
@@ -179,22 +174,18 @@ impl Chapter for ChapterController {
             .column_as(Expr::cust("null"), "offset")
             .column_as(Expr::cust("null"), "page")
             .column_as(Expr::cust("null"), "fraction")
-            .apply_if(logged_in, |query, logged_in| {
-                let user_id = logged_in.id;
-                query
-                    .join(
-                        JoinType::LeftJoin,
-                        entity::chapter_offset::Relation::Chapter
-                            .def()
-                            .rev()
-                            .on_condition(move |_left, right| {
-                                Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
-                            }),
-                    )
-                    .column_as(entity::chapter_offset::Column::Offset, "offset")
-                    .column_as(entity::chapter_offset::Column::Page, "page")
-                    .column_as(entity::chapter_offset::Column::Fraction, "fraction")
-            })
+            .join(
+                JoinType::LeftJoin,
+                entity::chapter_offset::Relation::Chapter
+                    .def()
+                    .rev()
+                    .on_condition(move |_left, right| {
+                        Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
+                    }),
+            )
+            .column_as(entity::chapter_offset::Column::Offset, "offset")
+            .column_as(entity::chapter_offset::Column::Page, "page")
+            .column_as(entity::chapter_offset::Column::Fraction, "fraction")
             .into_model::<data::chapter::Full>()
             .paginate(db, per_page);
 
@@ -308,7 +299,6 @@ impl Chapter for ChapterController {
     /// doesn't have this one, what's the equivalent elsewhere?"
     async fn find_equivalent(&self, request: Request<FindEquivalentRequest>) -> Result<Response<ChapterReply>, Status> {
         let db = request.db()?;
-        request.authorize().ok();
         let req = request.get_ref();
 
         let chapter = with_ordinal(entity::chapter::Entity::find())
@@ -344,4 +334,4 @@ async fn get_chapter_reply(
     Ok(Response::new(chapter.into_chapter_reply(0)))
 }
 
-crate::export_service!(ChapterServer, ChapterController);
+crate::export_service!(ChapterServer, ChapterController, auth = UserPermissions::USER);

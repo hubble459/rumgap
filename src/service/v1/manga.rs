@@ -904,7 +904,7 @@ impl Manga for MangaController {
     /// Get one manga
     async fn get(&self, request: Request<GetMangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok();
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -933,7 +933,7 @@ impl Manga for MangaController {
             }
         }
 
-        Ok(Response::new(get_manga_by_id(db, logged_in, manga_id).await?))
+        Ok(Response::new(get_manga_by_id(db, Some(logged_in), manga_id).await?))
     }
 
     /// Force update a manga - refreshes its primary source (only a primary-source refresh
@@ -942,7 +942,7 @@ impl Manga for MangaController {
     /// for when someone has checked the source and confirmed the drop is real.
     async fn update(&self, request: Request<UpdateMangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok();
+        let logged_in = request.authorize()?;
         let req = request.get_ref();
         let manga_id = req.id;
 
@@ -956,7 +956,7 @@ impl Manga for MangaController {
         );
         refresh_manga_source(db, primary_source_id, req.force).await?;
 
-        Ok(Response::new(get_manga_by_id(db, logged_in, manga_id).await?))
+        Ok(Response::new(get_manga_by_id(db, Some(logged_in), manga_id).await?))
     }
 
     /// Find or create a manga by URL
@@ -991,10 +991,10 @@ impl Manga for MangaController {
     /// Paginate manga
     async fn index(&self, request: Request<PaginateSearchQuery>) -> Result<Response<MangasReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok().cloned();
+        let logged_in = request.authorize()?.clone();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
-        let mut paginate = index_manga(logged_in);
+        let mut paginate = index_manga(Some(logged_in));
 
         if let Some(search) = req.search.clone() {
             if !search.is_empty() {
@@ -1040,7 +1040,7 @@ impl Manga for MangaController {
 
     async fn similar(&self, request: Request<SimilarMangaRequest>) -> Result<Response<MangasReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok().cloned();
+        let logged_in = request.authorize()?.clone();
 
         let id = request.get_ref().id;
         let (manga_title, alt_titles): (String, Vec<String>) = entity::manga::Entity::find_by_id(id)
@@ -1061,7 +1061,7 @@ impl Manga for MangaController {
                 |expr, alt_title_expr| expr.or(alt_title_expr),
             );
 
-        let similar = index_manga(logged_in)
+        let similar = index_manga(Some(logged_in))
             .filter(entity::manga::Column::Id.ne(id).and(title_matches))
             .into_model::<data::manga::Full>()
             .all(db)
@@ -1296,7 +1296,7 @@ async fn find_primary_source_id(db: &DatabaseConnection, manga_id: i32) -> Resul
         .map_err(internal)
 }
 
-crate::export_service!(MangaServer, MangaController);
+crate::export_service!(MangaServer, MangaController, auth = UserPermissions::USER);
 
 #[cfg(test)]
 mod matching_heuristic_tests {

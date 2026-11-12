@@ -6,12 +6,14 @@ use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, Que
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
+use crate::interceptor::auth::UserPermissions;
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
 use crate::service::v1::manga::find_suggested_manga_id;
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
+use crate::util::signed_url;
 use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
@@ -29,7 +31,7 @@ impl Search for SearchController {
     /// Search for manga
     async fn manga(&self, request: Request<SearchRequest>) -> Result<Response<SearchReply>, Status> {
         let db = request.db()?;
-        let logged_in = request.authorize().ok();
+        let user_id = request.authorize()?.id;
         let req = request.get_ref();
 
         let search_results = timeout(
@@ -44,27 +46,20 @@ impl Search for SearchController {
 
         // manga_source is now the source of truth for urls; a manga's canonical `manga_id`
         // is already a plain column on manga_source, so no join through `manga` is needed
-        // to get it - only (when logged in) to bring in this user's reading progress, which
-        // takes hopping manga_source -> manga -> reading since `reading` only has a direct
-        // FK to `manga`, not `manga_source`.
-        let query = if let Some(logged_in) = logged_in {
-            let user_id = logged_in.id;
-            entity::manga_source::Entity::find()
-                .join(JoinType::LeftJoin, entity::manga_source::Relation::Manga.def())
-                .join(
-                    JoinType::LeftJoin,
-                    entity::reading::Relation::Manga
-                        .def()
-                        .rev()
-                        .on_condition(move |_left, right| {
-                            Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
-                        }),
-                )
-        } else {
-            entity::manga_source::Entity::find()
-        };
-
-        let exists: Vec<(i32, String, Option<i32>)> = query
+        // to get it - only to bring in this user's reading progress, which takes hopping
+        // manga_source -> manga -> reading since `reading` only has a direct FK to `manga`,
+        // not `manga_source`.
+        let exists: Vec<(i32, String, Option<i32>)> = entity::manga_source::Entity::find()
+            .join(JoinType::LeftJoin, entity::manga_source::Relation::Manga.def())
+            .join(
+                JoinType::LeftJoin,
+                entity::reading::Relation::Manga
+                    .def()
+                    .rev()
+                    .on_condition(move |_left, right| {
+                        Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
+                    }),
+            )
             .select_only()
             .column(entity::manga_source::Column::MangaId)
             .column(entity::manga_source::Column::Url)
@@ -91,7 +86,7 @@ impl Search for SearchController {
                 title: item.title,
                 cover: item
                     .cover_url
-                    .map(|cover| proxy_cover_url(cover.as_ref(), item.url.as_ref())),
+                    .map(|cover| signed_url::proxy_url(cover.as_ref(), item.url.as_ref())),
                 posted: item.posted.map(|date| date.timestamp_millis()),
                 is_reading: existing.is_some_and(|(_id, _url, progress)| progress.is_some()),
                 manga_id,
@@ -103,19 +98,4 @@ impl Search for SearchController {
     }
 }
 
-/// Rewrite a raw scraped cover URL into rumgap's own transient `/proxy`
-/// cache (Phase A2) -- the client never sees or needs the raw source URL,
-/// and the server does the Referer-spoofing itself rather than the client
-/// (which matters beyond tidiness: a browser build can't set `Referer` on
-/// `fetch`/XHR at all, it's a forbidden header).
-fn proxy_cover_url(cover_url: &str, referer_url: &str) -> String {
-    let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
-    let mut url = manga_parser::Url::parse(&format!("{}/proxy", base_url.trim_end_matches('/')))
-        .expect("IMAGE_BASE_URL should be a valid base URL");
-    url.query_pairs_mut()
-        .append_pair("url", cover_url)
-        .append_pair("referer", referer_url);
-    url.to_string()
-}
-
-crate::export_service!(SearchServer, SearchController);
+crate::export_service!(SearchServer, SearchController, auth = UserPermissions::USER);

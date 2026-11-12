@@ -6,6 +6,7 @@ use sea_orm::{
 };
 use tonic::{Request, Response, Status};
 
+use crate::interceptor::auth::UserPermissions;
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
     Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest, MetaReply, StatsReply,
@@ -46,12 +47,12 @@ fn join_primary_source<E: EntityTrait>(query: Select<E>) -> Select<E> {
 async fn get_reply(
     db: &DatabaseConnection,
     query: Select<entity::manga::Entity>,
-    logged_in: Option<entity::user::Model>,
+    logged_in: &entity::user::Model,
     meta_option: MetaOption,
 ) -> Result<MetaReply, Status> {
     let reply = match meta_option {
         MetaOption::Reading => {
-            let logged_in = logged_in.ok_or(Status::permission_denied("You have to be logged in!"))?;
+            let user_id = logged_in.id;
 
             MetaReply {
                 items: query
@@ -62,7 +63,7 @@ async fn get_reply(
                             .rev()
                             .on_condition(move |_left, right| {
                                 Expr::col((right, entity::reading::Column::UserId))
-                                    .eq(logged_in.id)
+                                    .eq(user_id)
                                     .into()
                             }),
                     )
@@ -102,7 +103,7 @@ enum StatsCount {
 impl Meta for MetaController {
     async fn genres(&self, req: Request<MetaGenresRequest>) -> Result<Response<MetaReply>, Status> {
         let db = req.db()?;
-        let logged_in = req.extensions().get::<entity::user::Model>().cloned();
+        let logged_in = req.authorize()?;
         let request = req.get_ref();
         let query = entity::manga::Entity::find()
             .select_only()
@@ -124,7 +125,7 @@ impl Meta for MetaController {
 
     async fn hostnames(&self, req: Request<MetaHostnamesRequest>) -> Result<Response<MetaReply>, Status> {
         let db = req.db()?;
-        let logged_in = req.extensions().get::<entity::user::Model>().cloned();
+        let logged_in = req.authorize()?;
         let request = req.get_ref();
         // `hostname` is now a plain stored column on manga_source (no more regexp-parsing a
         // `manga.url` that no longer exists) - across *all* sources, not just primary, since
@@ -200,4 +201,4 @@ impl Meta for MetaController {
     }
 }
 
-crate::export_service!(MetaServer, MetaController);
+crate::export_service!(MetaServer, MetaController, auth = UserPermissions::USER);

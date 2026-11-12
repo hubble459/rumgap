@@ -43,10 +43,9 @@ impl Full {
             description: self.description,
             // Never blocks on a download (same lazy pattern as chapter images) - the actual
             // download happens on first real request to this URL, in the image server.
-            cover: self.cover_source_url.map(|_| {
-                let base_url = std::env::var("IMAGE_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
-                format!("{}/covers/{}", base_url.trim_end_matches('/'), self.id)
-            }),
+            cover: self
+                .cover_source_url
+                .map(|_| crate::util::signed_url::path_url(&format!("/covers/{}", self.id))),
             status: self.status,
             is_ongoing: self.is_ongoing,
             genres: self.genres,

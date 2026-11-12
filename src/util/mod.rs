@@ -12,6 +12,7 @@ pub mod scrape_error_proto;
 pub mod scrape_log;
 pub mod scraper_hostnames;
 pub mod search;
+pub mod signed_url;
 pub mod startup_banner;
 pub mod updater;
 pub mod verify;
