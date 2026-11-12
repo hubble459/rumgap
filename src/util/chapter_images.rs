@@ -268,6 +268,10 @@ async fn download_page(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(';').next().unwrap_or(s).trim().to_string())
         .unwrap_or_else(|| "image/jpeg".to_string());
+    // A bot check or error page answered with 200 isn't a page.
+    if !content_type.starts_with("image/") {
+        return Err(format!("not an image ({content_type})"));
+    }
 
     let bytes = response.bytes().await.map_err(|e| e.to_string())?.to_vec();
 
