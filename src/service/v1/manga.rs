@@ -877,18 +877,41 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32,
 /// Reuses the already-live pg_trgm `similar()` matching (title/alt_titles fuzzy match) to
 /// suggest "is this the same manga you already have?" for a title that isn't tracked
 /// locally yet (e.g. a fresh search result) - used by `SearchManga.suggested_manga_id`.
-pub async fn find_suggested_manga_id(db: &DatabaseConnection, title: &str) -> Result<Option<i32>, Status> {
-    entity::manga_source::Entity::find()
-        .filter(Expr::cust_with_values(
-            "$1 % any(manga_source.alt_titles || manga_source.title)",
-            [title.to_string()],
+/// Looks up every title in one query, keyed by title.
+pub async fn find_suggested_manga_ids(
+    db: &DatabaseConnection,
+    titles: Vec<String>,
+) -> Result<HashMap<String, i32>, Status> {
+    if titles.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = db
+        .query_all_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            r#"
+            SELECT t.title, s.manga_id
+            FROM unnest($1::text[]) AS t(title)
+            CROSS JOIN LATERAL (
+                SELECT manga_source.manga_id
+                FROM manga_source
+                WHERE t.title % any(manga_source.alt_titles || manga_source.title)
+                LIMIT 1
+            ) s
+            "#,
+            [titles.into()],
         ))
-        .select_only()
-        .column(entity::manga_source::Column::MangaId)
-        .into_tuple::<i32>()
-        .one(db)
         .await
-        .map_err(internal)
+        .map_err(internal)?;
+
+    rows.iter()
+        .map(|row| {
+            Ok((
+                row.try_get_by_index::<String>(0).map_err(internal)?,
+                row.try_get_by_index::<i32>(1).map_err(internal)?,
+            ))
+        })
+        .collect()
 }
 
 pub fn index_manga(logged_in: Option<&entity::user::Model>) -> Select<entity::manga::Entity> {
