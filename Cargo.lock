@@ -2390,15 +2390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2742,7 +2733,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#e4a179810d77df6ae87f08b696bbbecbe562f607"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#f40cf6c9e82f907da8dc926bec22fa7bc6bc0e28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2754,7 +2745,7 @@ dependencies = [
  "http",
  "http-cache-reqwest",
  "include_dir",
- "itertools 0.15.0",
+ "itertools",
  "kuchiki",
  "lazy_static",
  "log",
@@ -3687,8 +3678,8 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
- "heck 0.5.0",
- "itertools 0.14.0",
+ "heck 0.4.1",
+ "itertools",
  "log",
  "multimap",
  "petgraph",
@@ -3709,7 +3700,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4459,7 +4450,7 @@ dependencies = [
  "derive-where",
  "derive_more 2.1.1",
  "futures-util",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "mac_address",
  "ouroboros",
@@ -4521,7 +4512,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91fa8c81c20fc8cfe78d22d9a2721ca5ef151dc4a8a7b372de218aaba33733fa"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools",
  "pluralizer",
  "proc-macro2",
  "quote",
