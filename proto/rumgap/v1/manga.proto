@@ -19,6 +19,9 @@ message MangaSourceReply {
     bool is_primary = 5;
     int64 created_at = 6;
     int64 updated_at = 7;
+    // Every chapter of this source has all of its pages downloaded locally, so it can
+    // still be read if the site goes away. False for a source with no chapters.
+    bool fully_stored = 8;
 }
 
 // Progress ledger for an in-flight or completed `BackfillImages` walk.

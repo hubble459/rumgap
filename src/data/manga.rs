@@ -73,6 +73,7 @@ impl From<entity::manga_source::Model> for MangaSourceReply {
             is_primary: value.is_primary,
             created_at: value.created_at.and_utc().timestamp_millis(),
             updated_at: value.updated_at.and_utc().timestamp_millis(),
+            fully_stored: false,
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -81,11 +81,45 @@ pub async fn load_manga_sources(
         .await
         .map_err(internal)?;
 
+    let source_ids: Vec<i32> = sources.iter().map(|source| source.id).collect();
+    let fully_stored = fully_stored_source_ids(db, source_ids).await?;
+
     let mut map: HashMap<i32, Vec<MangaSourceReply>> = HashMap::new();
     for source in sources {
-        map.entry(source.manga_id).or_default().push(source.into());
+        let manga_id = source.manga_id;
+        let mut reply: MangaSourceReply = source.into();
+        reply.fully_stored = fully_stored.contains(&reply.id);
+        map.entry(manga_id).or_default().push(reply);
     }
     Ok(map)
+}
+
+/// The subset of `source_ids` where every chapter has `chapter_image` rows and all of them are
+/// `done`. A chapter whose pages were never listed counts as not stored.
+pub async fn fully_stored_source_ids(db: &DatabaseConnection, source_ids: Vec<i32>) -> Result<HashSet<i32>, Status> {
+    if source_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let rows = db
+        .query_all_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            r#"
+            SELECT chapter.manga_source_id
+            FROM chapter
+            LEFT JOIN chapter_image ON chapter_image.chapter_id = chapter.id
+            WHERE chapter.manga_source_id = ANY($1)
+            GROUP BY chapter.manga_source_id
+            HAVING bool_and(chapter_image.status IS NOT DISTINCT FROM 'done')
+            "#,
+            [source_ids.into()],
+        ))
+        .await
+        .map_err(internal)?;
+
+    rows.iter()
+        .map(|row| row.try_get_by_index::<i32>(0).map_err(internal))
+        .collect()
 }
 
 async fn load_manga_sources_for(db: &DatabaseConnection, manga_id: i32) -> Result<Vec<MangaSourceReply>, Status> {
