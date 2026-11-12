@@ -21,6 +21,7 @@ pub mod search_save;
 pub mod signed_url;
 pub mod stats;
 pub mod startup_banner;
+pub mod storage;
 pub mod title_match;
 pub mod updater;
 pub mod verify;

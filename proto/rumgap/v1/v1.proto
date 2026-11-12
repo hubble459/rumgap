@@ -145,6 +145,8 @@ service Admin {
     rpc CreateUser (AdminCreateUserRequest) returns (UserReply);
     rpc DeleteUser (AdminDeleteUserRequest) returns (Empty);
     rpc SetPassword (AdminSetPasswordRequest) returns (Empty);
+    // How much disk and database space rumgap takes up.
+    rpc Storage (Empty) returns (StorageReply);
 }
 
 message UpdateMangaRequest {

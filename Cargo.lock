@@ -4220,6 +4220,7 @@ dependencies = [
  "image",
  "jwt",
  "lazy_static",
+ "libc",
  "listenfd",
  "log",
  "log4rs",

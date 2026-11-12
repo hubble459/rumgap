@@ -17,3 +17,40 @@ message AdminSetPasswordRequest {
     int32 id = 1;
     string password = 2;
 }
+
+message StorageBucket {
+    string name = 1;
+    int64 bytes = 2;
+    int64 files = 3;
+}
+
+message StorageGroup {
+    // Hostname, or the manga's id as text.
+    string key = 1;
+    string title = 2;
+    optional string cover = 3;
+    int64 bytes = 4;
+    int64 pages = 5;
+    int64 chapters = 6;
+}
+
+message StorageReply {
+    // Everything under IMAGE_STORAGE_PATH, split into pages, resized copies, covers and other.
+    int64 disk_bytes = 1;
+    int64 disk_files = 2;
+    repeated StorageBucket disk = 3;
+    int64 database_bytes = 4;
+    // Biggest tables, indexes included.
+    repeated StorageBucket tables = 5;
+    // The volume IMAGE_STORAGE_PATH lives on, when the platform can tell.
+    optional int64 volume_total_bytes = 6;
+    optional int64 volume_free_bytes = 7;
+    // Stored page images per source site and the manga taking the most, from chapter_image.
+    repeated StorageGroup hosts = 8;
+    repeated StorageGroup manga = 9;
+    int64 pages_stored = 10;
+    int64 pages_pending = 11;
+    int64 pages_failed = 12;
+    int64 measured_at = 13;
+    int64 scan_millis = 14;
+}

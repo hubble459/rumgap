@@ -18,6 +18,7 @@ opt-level = 1
 opt-level = 3
 
 [dependencies]
+libc = "0.2"
 tonic = { version = "0.14", features = ["gzip", "tls-connect-info"] }
 tonic-prost = "0.14"
 tonic-reflection = "0.14"

@@ -1,14 +1,16 @@
-//! Admin-only user management.
+//! Admin-only user management and storage usage.
 
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, IntoActiveModel};
 use tonic::{Request, Response, Status};
 
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::admin_server::{Admin, AdminServer};
-use crate::proto::{AdminCreateUserRequest, AdminDeleteUserRequest, AdminSetPasswordRequest, Empty, UserReply};
+use crate::proto::{
+    AdminCreateUserRequest, AdminDeleteUserRequest, AdminSetPasswordRequest, Empty, StorageReply, UserReply,
+};
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
-use crate::util::{argon, verify};
+use crate::util::{argon, storage, verify};
 
 fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
@@ -97,6 +99,12 @@ impl Admin for AdminController {
         crate::util::session::revoke_all(db, req.id, None).await?;
 
         Ok(Response::new(Empty::default()))
+    }
+
+    /// Disk and database space rumgap takes up
+    async fn storage(&self, request: Request<Empty>) -> Result<Response<StorageReply>, Status> {
+        let db = request.db()?;
+        Ok(Response::new(storage::measure(db).await?))
     }
 }
 
