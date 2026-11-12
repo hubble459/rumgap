@@ -11,11 +11,10 @@ use std::collections::HashSet;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
-use migration::{Expr, JoinType};
 use rand::RngExt;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait,
+    RelationTrait, Statement,
 };
 use tonic::Status;
 
@@ -138,6 +137,13 @@ fn auto_backfill_failure_cooldown_ms() -> i64 {
         .unwrap_or(86_400_000)
 }
 
+fn auto_backfill_host_backoff_base_ms() -> u64 {
+    std::env::var("AUTO_BACKFILL_HOST_BACKOFF_BASE_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(600_000)
+}
+
 fn auto_backfill_batch_size() -> u64 {
     std::env::var("AUTO_BACKFILL_BATCH_SIZE")
         .ok()
@@ -188,33 +194,86 @@ pub async fn watch_auto_backfill(db: DatabaseConnection) {
 
 /// Chapters (across every manga source) that don't have a fully `done` set
 /// of `chapter_image` rows yet -- either none at all, or some still
-/// `pending`/`failed`. Ordered by id so the trickle makes steady forward
-/// progress through the whole table instead of re-rolling the same random
-/// sample every tick; a chapter stuck on a durably-failed page just rides
-/// along in the batch for free (`ensure_page_downloaded`'s own cooldown/
-/// attempt cap makes that a cheap no-op) without blocking the others.
+/// `pending`/`failed`.
+///
+/// Ordered least-recently-attempted first (never-attempted chapters before
+/// anything else), so chapters that keep failing sink to the back instead of
+/// hogging every tick just because they have the lowest ids. Two cooldowns
+/// keep failures from being retried too eagerly:
+/// - per chapter: a failed image listing is skipped for
+///   `AUTO_BACKFILL_FAILURE_COOLDOWN_MS`
+/// - per host: every minute with a `chapter_images` failure since the host's
+///   last success doubles how long the whole host is skipped, starting at
+///   `AUTO_BACKFILL_HOST_BACKOFF_BASE_MS` and uncapped (the exponent is
+///   clamped at 1000 only so `float8` can't overflow), so a dead site gets
+///   probed less and less instead of eating the whole trickle
+///
+/// A chapter stuck on a durably-failed page just rides along in the batch
+/// for free (`ensure_page_downloaded`'s own cooldown/attempt cap makes that
+/// a cheap no-op) without blocking the others.
 async fn incomplete_chapters(db: &DatabaseConnection, limit: u64) -> Result<Vec<entity::chapter::Model>, DbErr> {
-    let listing_failure_cutoff =
-        chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(auto_backfill_failure_cooldown_ms());
+    let now = chrono::Utc::now().naive_utc();
+    let listing_failure_cutoff = now - chrono::Duration::milliseconds(auto_backfill_failure_cooldown_ms());
 
-    entity::chapter::Entity::find()
-        .join(JoinType::LeftJoin, entity::chapter::Relation::ChapterImage.def())
-        .filter(Expr::cust_with_values(
-            "NOT EXISTS (SELECT 1 FROM scrape_log WHERE scrape_log.url = chapter.url \
-             AND scrape_log.operation = 'chapter_images' AND NOT scrape_log.success AND scrape_log.created_at > $1)",
-            [listing_failure_cutoff],
-        ))
-        .group_by(entity::chapter::Column::Id)
-        .having(Expr::cust_with_values(
-            "COUNT(chapter_image.chapter_id) = 0 \
-             OR COUNT(chapter_image.chapter_id) FILTER (WHERE chapter_image.status <> 'done' \
-                AND NOT (chapter_image.status = 'failed' AND chapter_image.attempts >= $1)) > 0",
-            [MAX_ATTEMPT_SESSIONS],
-        ))
-        .order_by_asc(entity::chapter::Column::Id)
-        .limit(limit)
-        .all(db)
-        .await
+    let statement = Statement::from_sql_and_values(
+        db.get_database_backend(),
+        r#"
+        WITH last_host_success AS (
+            SELECT hostname, max(created_at) AS succeeded_at
+            FROM scrape_log
+            WHERE operation = 'chapter_images' AND success
+            GROUP BY hostname
+        ),
+        host_failures AS (
+            SELECT l.hostname, count(DISTINCT date_trunc('minute', l.created_at)) AS failures,
+                max(l.created_at) AS failed_at
+            FROM scrape_log l
+            LEFT JOIN last_host_success s ON s.hostname = l.hostname
+            WHERE l.operation = 'chapter_images' AND NOT l.success
+              AND (s.succeeded_at IS NULL OR l.created_at > s.succeeded_at)
+            GROUP BY l.hostname
+        ),
+        backed_off_hosts AS (
+            SELECT hostname
+            FROM host_failures
+            WHERE extract(epoch FROM $2 - failed_at) < $1::float8 * power(2::float8, LEAST(failures, 1000) - 1)
+        ),
+        last_attempt AS (
+            SELECT url, max(created_at) AS attempted_at
+            FROM scrape_log
+            WHERE operation = 'chapter_images'
+            GROUP BY url
+        )
+        SELECT chapter.*
+        FROM chapter
+        LEFT JOIN chapter_image ON chapter_image.chapter_id = chapter.id
+        LEFT JOIN last_attempt ON last_attempt.url = chapter.url
+        WHERE NOT EXISTS (
+            SELECT 1 FROM backed_off_hosts
+            WHERE backed_off_hosts.hostname = lower(substring(chapter.url FROM '^[^:]+://(?:[^@/]*@)?([^/:?#]+)'))
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM scrape_log
+            WHERE scrape_log.url = chapter.url AND scrape_log.operation = 'chapter_images'
+              AND NOT scrape_log.success AND scrape_log.created_at > $3
+        )
+        GROUP BY chapter.id, last_attempt.attempted_at
+        HAVING COUNT(chapter_image.chapter_id) = 0
+            OR COUNT(chapter_image.chapter_id) FILTER (WHERE chapter_image.status <> 'done'
+                AND NOT (chapter_image.status = 'failed' AND chapter_image.attempts >= $4)) > 0
+        ORDER BY last_attempt.attempted_at ASC NULLS FIRST, chapter.id ASC
+        LIMIT $5
+        "#,
+        [
+            (auto_backfill_host_backoff_base_ms() as f64 / 1000.0).into(),
+            now.into(),
+            listing_failure_cutoff.into(),
+            MAX_ATTEMPT_SESSIONS.into(),
+            (limit as i64).into(),
+        ],
+    );
+
+    entity::chapter::Entity::find().from_raw_sql(statement).all(db).await
 }
 
 /// `images_downloaded`/`images_total` for `GetBackfillStatus` -- a cheap
