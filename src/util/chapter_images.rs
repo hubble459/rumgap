@@ -336,7 +336,7 @@ pub async fn refresh_chapter_images(
                 warn!("Failed to delete stored image {}: {}", storage_key, e);
             }
             // Cleans up every cached transcoded variant regardless of which
-            // (max_dim, quality) pairs clients have ever requested for this
+            // (bound, quality) pairs clients have ever requested for this
             // image -- those aren't enumerable up front since they're
             // client-supplied, not a fixed set of named modes.
             if let Err(e) = IMAGE_STORE.delete_prefix(storage_key).await {

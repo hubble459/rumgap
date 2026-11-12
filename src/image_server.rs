@@ -23,6 +23,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::util::chapter_images::{ensure_chapter_image_rows, ensure_page_downloaded};
 use crate::util::cover_images::ensure_cover_downloaded;
+use crate::util::image_transcode::{self, Bound};
 use crate::util::scraper_hostnames::is_allowed_hostname;
 use crate::util::signed_url;
 use crate::util::startup_banner;
@@ -62,7 +63,7 @@ pub async fn serve(db: DatabaseConnection) {
     }
 }
 
-/// Bounds for client-supplied `maxdim`/`quality` -- they aren't covered by
+/// Bounds for client-supplied `maxdim`/`maxwidth`/`quality` -- they aren't covered by
 /// the URL signature, so these clamp against a careless or malicious caller
 /// rather than reflecting any real use case.
 const MIN_DIM: u32 = 64;
@@ -75,17 +76,33 @@ const DEFAULT_QUALITY: u8 = 90;
 struct ImageQuery {
     /// Cap the image at `maxdim` pixels on its longest side (re-encoded as
     /// JPEG at `quality`, default 90 if omitted) -- only if it actually
-    /// exceeds that, otherwise served untouched. Omit both to get the
-    /// original bytes completely untouched. The client decides when a
-    /// transform is needed: data-saver mode always sends an aggressive
-    /// preset for bandwidth; Flutter Web sends a much larger "render-safe"
-    /// preset purely to avoid a CanvasKit GPU texture-size crash on
-    /// long-strip pages; native platforms (which never hit that crash) send
-    /// neither and always get the original.
+    /// exceeds that, otherwise served untouched. Omit all of them to get the
+    /// original bytes completely untouched. Meant for render-safety caps; for
+    /// reading, `maxwidth` is the one to use.
     maxdim: Option<u32>,
+    /// Cap only the width at `maxwidth` pixels, height following the aspect
+    /// ratio -- what the reader's quality setting sends, so long-strip pages
+    /// keep their width. Takes precedence over `maxdim` when both are given.
+    maxwidth: Option<u32>,
     quality: Option<u8>,
     exp: Option<i64>,
     sig: Option<String>,
+}
+
+impl ImageQuery {
+    /// The requested `(Bound, quality)` cap, clamped into sane bounds. `None`
+    /// means no transform was asked for and the original is served.
+    fn transform(&self) -> Option<(Bound, u8)> {
+        let bound = match (self.maxwidth, self.maxdim) {
+            (Some(width), _) => Bound::Width(width.clamp(MIN_DIM, MAX_DIM)),
+            (None, Some(max_dim)) => Bound::Longest(max_dim.clamp(MIN_DIM, MAX_DIM)),
+            (None, None) => return None,
+        };
+        Some((
+            bound,
+            self.quality.unwrap_or(DEFAULT_QUALITY).clamp(MIN_QUALITY, MAX_QUALITY),
+        ))
+    }
 }
 
 fn forbidden() -> Response {
@@ -120,14 +137,7 @@ async fn get_image(
         return (StatusCode::NOT_FOUND, "Page not found").into_response();
     };
 
-    // None => no transform requested at all (native platforms). Some =>
-    // clamp the caller's requested dimension/quality into sane bounds.
-    let transform = query.maxdim.map(|max_dim| {
-        (
-            max_dim.clamp(MIN_DIM, MAX_DIM),
-            query.quality.unwrap_or(DEFAULT_QUALITY).clamp(MIN_QUALITY, MAX_QUALITY),
-        )
-    });
+    let transform = query.transform();
 
     // Cheap conditional-GET short circuit before touching disk: these files
     // never change once downloaded, so a matching If-None-Match means the
@@ -141,9 +151,9 @@ async fn get_image(
                 // checksum. Unknown dimensions -> guess the transcoded
                 // etag; worst case a stale guess costs one full re-fetch
                 // instead of a 304, not a correctness issue.
-                Some((max_dim, quality)) => match (row.width, row.height) {
-                    (Some(w), Some(h)) if (w.max(h) as u32) <= max_dim => checksum.clone(),
-                    _ => crate::util::image_transcode::variant_etag(checksum, max_dim, quality),
+                Some((bound, quality)) => match (row.width, row.height) {
+                    (Some(w), Some(h)) if !bound.exceeded_by(w as u32, h as u32) => checksum.clone(),
+                    _ => image_transcode::variant_etag(checksum, bound, quality),
                 },
             };
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
@@ -167,7 +177,7 @@ async fn get_image(
         {
             return match transform {
                 None => serve_from_store(storage_key, content_type, checksum).await,
-                Some((max_dim, quality)) => serve_variant(storage_key, content_type, checksum, max_dim, quality).await,
+                Some((bound, quality)) => serve_variant(storage_key, content_type, checksum, bound, quality).await,
             };
         }
     }
@@ -206,7 +216,7 @@ async fn get_cover(
 }
 
 /// `GET /covers/source/{source_id}` -- same lazy pattern as `get_image`, but one cover per
-/// source rather than per page, and with the same optional `maxdim`/`quality` cap.
+/// source rather than per page, and with the same optional `maxdim`/`maxwidth`/`quality` cap.
 async fn get_source_cover(
     State(db): State<DatabaseConnection>,
     Path(source_id): Path<i32>,
@@ -234,12 +244,7 @@ async fn serve_cover(
         return (StatusCode::NOT_FOUND, "This source has no cover").into_response();
     }
 
-    let transform = query.maxdim.map(|max_dim| {
-        (
-            max_dim.clamp(MIN_DIM, MAX_DIM),
-            query.quality.unwrap_or(DEFAULT_QUALITY).clamp(MIN_QUALITY, MAX_QUALITY),
-        )
-    });
+    let transform = query.transform();
 
     if source.cover_status == "done" {
         if let Some(checksum) = &source.cover_checksum {
@@ -251,8 +256,8 @@ async fn serve_cover(
                 // already holding exactly what this URL serves.
                 let if_none_match = if_none_match.trim_matches('"');
                 let matches = if_none_match == checksum
-                    || transform.is_some_and(|(max_dim, quality)| {
-                        if_none_match == crate::util::image_transcode::variant_etag(checksum, max_dim, quality)
+                    || transform.is_some_and(|(bound, quality)| {
+                        if_none_match == image_transcode::variant_etag(checksum, bound, quality)
                     });
                 if matches {
                     return StatusCode::NOT_MODIFIED.into_response();
@@ -274,7 +279,7 @@ async fn serve_cover(
         ) {
             return match transform {
                 None => serve_from_store(storage_key, content_type, checksum).await,
-                Some((max_dim, quality)) => serve_variant(storage_key, content_type, checksum, max_dim, quality).await,
+                Some((bound, quality)) => serve_variant(storage_key, content_type, checksum, bound, quality).await,
             };
         }
     }
@@ -473,17 +478,15 @@ async fn serve_from_store(storage_key: &str, content_type: &str, checksum: &str)
     }
 }
 
-/// Serve a `(max_dim, quality)`-capped variant of the image at
+/// Serve a `(bound, quality)`-capped variant of the image at
 /// `storage_key`: a cached copy if one already exists, else transcode the
-/// original once (only if it actually exceeds `max_dim`) and cache it under
+/// original once (only if it actually exceeds `bound`) and cache it under
 /// a derived key (best-effort -- a failed cache write still lets this one
 /// request succeed). Falls back to the original bytes untouched if the
 /// image is already within the cap, or if it can't be decoded (e.g. AVIF).
-async fn serve_variant(storage_key: &str, content_type: &str, checksum: &str, max_dim: u32, quality: u8) -> Response {
-    use crate::util::image_transcode;
-
-    let cache_key = image_transcode::variant_key(storage_key, max_dim, quality);
-    let etag = image_transcode::variant_etag(checksum, max_dim, quality);
+async fn serve_variant(storage_key: &str, content_type: &str, checksum: &str, bound: Bound, quality: u8) -> Response {
+    let cache_key = image_transcode::variant_key(storage_key, bound, quality);
+    let etag = image_transcode::variant_etag(checksum, bound, quality);
 
     if IMAGE_STORE.exists(&cache_key).await {
         return match IMAGE_STORE.get(&cache_key).await {
@@ -503,7 +506,7 @@ async fn serve_variant(storage_key: &str, content_type: &str, checksum: &str, ma
         }
     };
 
-    match image_transcode::transcode_if_over(&original, max_dim, quality) {
+    match image_transcode::transcode_if_over(&original, bound, quality) {
         // Already within the cap -- serve untouched, nothing to cache.
         Ok(None) => build_image_response(original, content_type, checksum),
         Ok(Some(transcoded)) => {
@@ -514,8 +517,8 @@ async fn serve_variant(storage_key: &str, content_type: &str, checksum: &str, ma
         }
         Err(e) => {
             warn!(
-                "Transcode failed for {} (maxdim={}, quality={}), serving original: {}",
-                storage_key, max_dim, quality, e
+                "Transcode failed for {} ({:?}, quality={}), serving original: {}",
+                storage_key, bound, quality, e
             );
             build_image_response(original, content_type, checksum)
         }
