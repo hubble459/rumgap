@@ -2733,7 +2733,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#7d0e839742e011487ad7c83003c3cf3cb3cfdc3e"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#376b3c696ac8015f67a1d0d0e426ef46e1a5c227"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5333,7 +5333,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
