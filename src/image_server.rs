@@ -341,6 +341,7 @@ async fn get_proxy(Query(query): Query<ProxyQuery>) -> Response {
         .get(target)
         .header("Referer", query.referer.clone())
         .header("Origin", query.referer)
+        .headers(crate::util::download_headers::for_url(&query.url))
         .send()
         .await
     {
@@ -358,6 +359,10 @@ async fn get_proxy(Query(query): Query<ProxyQuery>) -> Response {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(';').next().unwrap_or(s).trim().to_string())
         .unwrap_or_else(|| "image/jpeg".to_string());
+    // A bot check or error page answered with 200 isn't an image; don't cache it.
+    if !content_type.starts_with("image/") {
+        return (StatusCode::BAD_GATEWAY, format!("not an image ({content_type})")).into_response();
+    }
 
     let bytes = match response.bytes().await {
         Ok(bytes) => bytes.to_vec(),

@@ -255,6 +255,7 @@ async fn download_page(
         .get(row.source_url.clone())
         .header("Referer", referer.clone())
         .header("Origin", referer)
+        .headers(crate::util::download_headers::for_url(&row.source_url))
         .timeout(Duration::from_secs(30))
         .send()
         .await
