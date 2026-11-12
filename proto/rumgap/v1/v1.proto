@@ -54,6 +54,9 @@ service Manga {
     // old manga, behaves like MergeManga for that one manga (reading progress folded in,
     // old manga deleted).
     rpc MoveSource (MoveSourceRequest) returns (MangaReply);
+    // Mod/admin-only. Deletes a manga outright, cascading away its sources, chapters
+    // and everyone's reading progress on it.
+    rpc Delete (DeleteMangaRequest) returns (Empty);
     // Kicks off (or resumes) a throttled background walk that downloads every
     // not-yet-`done` page of every chapter of that source.
     rpc BackfillImages (BackfillImagesRequest) returns (Empty);

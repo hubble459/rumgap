@@ -86,6 +86,10 @@ message MoveSourceRequest {
     int32 target_manga_id = 2;
 }
 
+message DeleteMangaRequest {
+    int32 id = 1;
+}
+
 message GetMangaRequest {
     int32 id = 1;
 }

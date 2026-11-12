@@ -20,7 +20,7 @@ use tonic::{Request, Response, Status};
 use crate::interceptor::auth::{UserHasPermissions, UserPermissions};
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
-    AddSourceRequest, BackfillImagesRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
+    AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
     MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
     PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
     UpdateMangaRequest,
@@ -1253,6 +1253,24 @@ impl Manga for MangaController {
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), req.target_manga_id).await?,
         ))
+    }
+
+    /// Mod/admin-only. Deletes a manga; its sources, chapters and reading rows cascade.
+    async fn delete(&self, request: Request<DeleteMangaRequest>) -> Result<Response<Empty>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
+        if !logged_in.has_permission(UserPermissions::MOD) && !logged_in.has_permission(UserPermissions::ADMIN) {
+            return Err(Status::permission_denied("Mod or admin permission required"));
+        }
+        let id = request.get_ref().id;
+
+        let result = entity::manga::Entity::delete_by_id(id).exec(db).await.map_err(internal)?;
+        if result.rows_affected == 0 {
+            return Err(Status::not_found("Manga not found"));
+        }
+
+        info!("User {} deleted manga {}", logged_in.id, id);
+        Ok(Response::new(Empty::default()))
     }
 
     /// Kicks off (or resumes) a throttled background walk downloading every
