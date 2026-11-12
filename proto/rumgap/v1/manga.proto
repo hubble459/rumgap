@@ -22,6 +22,21 @@ message MangaSourceReply {
     // Every chapter of this source has all of its pages downloaded locally, so it can
     // still be read if the site goes away. False for a source with no chapters.
     bool fully_stored = 8;
+    // This source's own details, as its last scrape found them.
+    string title = 9;
+    string description = 10;
+    optional string cover = 11;
+    repeated string genres = 12;
+    repeated string authors = 13;
+    repeated string alt_titles = 14;
+    string status = 15;
+    bool is_ongoing = 16;
+    int64 count_chapters = 17;
+    // Newest chapter's posted date.
+    optional int64 last = 18;
+    // When the details above were last scraped. Unset until this source has been scraped
+    // since sources got their own details; until then they're a copy of the primary's.
+    optional int64 details_updated_at = 19;
 }
 
 // Progress ledger for an in-flight or completed `BackfillImages` walk.
@@ -42,7 +57,7 @@ message MangaReply {
     repeated string genres = 7;
     repeated string authors = 8;
     repeated string alt_titles = 9;
-    // Computed from the primary source only.
+    // The details, chapter counts and dates come from `selected_source_id`.
     int64 count_chapters = 10;
     optional int64 next = 11;
     optional int64 last = 12;
@@ -57,6 +72,13 @@ message MangaReply {
     // exist). Compare against ChapterReply.ordinal to tell whether a specific chapter has
     // been read, regardless of which source it's from.
     optional double progress_ordinal = 18;
+    // The source this user sees for this manga: the one they last picked (SelectSource),
+    // otherwise their first preferred hostname, otherwise the primary.
+    int32 selected_source_id = 19;
+}
+
+message SelectSourceRequest {
+    int32 manga_source_id = 1;
 }
 
 message MangasReply {

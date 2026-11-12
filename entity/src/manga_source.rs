@@ -15,6 +15,25 @@ pub struct Model {
     pub is_primary: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub is_ongoing: bool,
+    pub genres: Vec<String>,
+    pub authors: Vec<String>,
+    pub alt_titles: Vec<String>,
+    /// When this source's details were last scraped; `None` if never since they moved here
+    /// from `manga` (until then they're a copy of the primary source's).
+    pub details_updated_at: Option<DateTime>,
+    /// Raw scraped cover URL - not what's served to clients. `MangaSourceReply.cover` points
+    /// at the locally-hosted copy instead, downloaded on first request (see
+    /// src/util/cover_images.rs).
+    pub cover_source_url: Option<String>,
+    pub cover_status: String,
+    pub cover_storage_key: Option<String>,
+    pub cover_content_type: Option<String>,
+    pub cover_checksum: Option<String>,
+    pub cover_attempts: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

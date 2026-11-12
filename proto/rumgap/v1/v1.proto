@@ -51,6 +51,9 @@ service Manga {
     rpc AddSource (AddSourceRequest) returns (MangaReply);
     rpc RemoveSource (RemoveSourceRequest) returns (MangaReply);
     rpc SetPrimarySource (SetPrimarySourceRequest) returns (MangaReply);
+    // Remember this source as the one the user sees for its manga (if it's in their
+    // reading list) and refresh its details when they're stale.
+    rpc SelectSource (SelectSourceRequest) returns (MangaReply);
     // Admin-only. Folds every source of source_manga_id into target_manga_id (reading
     // progress reconciled, canonical chapters relinked), then deletes source_manga_id.
     rpc MergeManga (MergeMangaRequest) returns (MangaReply);

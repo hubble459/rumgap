@@ -42,6 +42,7 @@ pub async fn serve(db: DatabaseConnection) {
     let app = Router::new()
         .route("/images/{chapter_id}/{page_index}", get(get_image))
         .route("/covers/{manga_id}", get(get_cover))
+        .route("/covers/source/{source_id}", get(get_source_cover))
         .route("/proxy", get(get_proxy))
         .layer(CorsLayer::permissive())
         .layer(middleware::from_fn(resource_policy))
@@ -180,11 +181,8 @@ async fn get_image(
     (StatusCode::NOT_FOUND, "Page could not be downloaded").into_response()
 }
 
-/// `GET /covers/{manga_id}` -- same lazy pattern as `get_image`, but 1:1 per
-/// manga rather than per-page, and with the same optional `maxdim`/`quality`
-/// cap. Referer for the download is the manga's primary source URL, matching
-/// the rule that only the primary source's scrape ever populates canonical
-/// cover data.
+/// `GET /covers/{manga_id}` -- the manga's primary source's cover. Kept for cover URLs
+/// clients cached before covers moved to `/covers/source/{source_id}`.
 async fn get_cover(
     State(db): State<DatabaseConnection>,
     Path(manga_id): Path<i32>,
@@ -195,15 +193,46 @@ async fn get_cover(
         return forbidden();
     }
 
-    let manga = match entity::manga::Entity::find_by_id(manga_id).one(&db).await {
-        Ok(Some(manga)) => manga,
-        Ok(None) => return (StatusCode::NOT_FOUND, "Manga not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    };
+    let primary_source = entity::manga_source::Entity::find()
+        .filter(entity::manga_source::Column::MangaId.eq(manga_id))
+        .filter(entity::manga_source::Column::IsPrimary.eq(true))
+        .one(&db)
+        .await;
+    match primary_source {
+        Ok(Some(source)) => serve_cover(&db, source, &query, &headers).await,
+        Ok(None) => (StatusCode::NOT_FOUND, "Manga not found").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
 
-    let Some(source_url) = manga.cover_source_url.clone() else {
-        return (StatusCode::NOT_FOUND, "This manga has no cover").into_response();
-    };
+/// `GET /covers/source/{source_id}` -- same lazy pattern as `get_image`, but one cover per
+/// source rather than per page, and with the same optional `maxdim`/`quality` cap.
+async fn get_source_cover(
+    State(db): State<DatabaseConnection>,
+    Path(source_id): Path<i32>,
+    Query(query): Query<ImageQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if !signed_url::verify(&format!("/covers/source/{source_id}"), query.exp, query.sig.as_deref()) {
+        return forbidden();
+    }
+
+    match entity::manga_source::Entity::find_by_id(source_id).one(&db).await {
+        Ok(Some(source)) => serve_cover(&db, source, &query, &headers).await,
+        Ok(None) => (StatusCode::NOT_FOUND, "Manga source not found").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn serve_cover(
+    db: &DatabaseConnection,
+    source: entity::manga_source::Model,
+    query: &ImageQuery,
+    headers: &HeaderMap,
+) -> Response {
+    if source.cover_source_url.is_none() {
+        return (StatusCode::NOT_FOUND, "This source has no cover").into_response();
+    }
 
     let transform = query.maxdim.map(|max_dim| {
         (
@@ -212,8 +241,8 @@ async fn get_cover(
         )
     });
 
-    if manga.cover_status == "done" {
-        if let Some(checksum) = &manga.cover_checksum {
+    if source.cover_status == "done" {
+        if let Some(checksum) = &source.cover_checksum {
             if let Some(if_none_match) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
                 // Cover dimensions aren't stored, so unlike `get_image` there's
                 // no telling up front whether a capped request gets the
@@ -232,26 +261,16 @@ async fn get_cover(
         }
     }
 
-    let primary_source = entity::manga_source::Entity::find()
-        .filter(entity::manga_source::Column::MangaId.eq(manga_id))
-        .filter(entity::manga_source::Column::IsPrimary.eq(true))
-        .one(&db)
-        .await;
-    let referer = match primary_source {
-        Ok(Some(source)) => source.url,
-        _ => source_url.clone(),
-    };
-
-    let manga = match ensure_cover_downloaded(&db, manga, &referer).await {
-        Ok(manga) => manga,
+    let source = match ensure_cover_downloaded(db, source).await {
+        Ok(source) => source,
         Err(status) => return status_to_response(status),
     };
 
-    if manga.cover_status == "done" {
+    if source.cover_status == "done" {
         if let (Some(storage_key), Some(content_type), Some(checksum)) = (
-            &manga.cover_storage_key,
-            &manga.cover_content_type,
-            &manga.cover_checksum,
+            &source.cover_storage_key,
+            &source.cover_content_type,
+            &source.cover_checksum,
         ) {
             return match transform {
                 None => serve_from_store(storage_key, content_type, checksum).await,

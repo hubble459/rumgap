@@ -91,14 +91,19 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
 
     use entity::{manga, reading};
 
-    let date_time = Utc::now().checked_sub_signed(chrono::Duration::milliseconds(min_interval));
+    let stale_before = Utc::now().naive_utc() - chrono::Duration::milliseconds(min_interval);
     let failure_cutoff = Utc::now().naive_utc() - chrono::Duration::milliseconds(min_interval);
 
     index_manga(None)
         .join(JoinType::LeftJoin, entity::reading::Relation::Manga.def().rev())
         .column_as(reading::Column::MangaId.count(), "count_reading")
         .group_by(manga::Column::Id)
-        .filter(manga::Column::UpdatedAt.lte(date_time))
+        // index_manga(None) joins each manga's primary source, the one refreshed here.
+        .filter(
+            sea_orm::Condition::any()
+                .add(entity::manga_source::Column::DetailsUpdatedAt.is_null())
+                .add(entity::manga_source::Column::DetailsUpdatedAt.lte(stale_before)),
+        )
         .filter(Expr::cust_with_values(
             "NOT EXISTS (SELECT 1 FROM scrape_log WHERE scrape_log.manga_id = manga.id \
              AND scrape_log.operation = 'manga' AND NOT scrape_log.success AND scrape_log.created_at > $1)",
@@ -106,7 +111,7 @@ async fn collect_priority_manga(db: &DatabaseConnection) -> Vec<data::manga::Ful
         ))
         .limit(limit)
         .order_by_desc(reading::Column::MangaId.count())
-        .order_by_asc(manga::Column::UpdatedAt)
+        .order_by_asc(entity::manga_source::Column::DetailsUpdatedAt)
         .having(Expr::cust("COUNT(reading.manga_id) > 0"))
         .into_model::<data::manga::Full>()
         .all(db)
@@ -174,7 +179,7 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
                 data: Some(data.clone()),
                 notification: Some(Notification {
                     title: Some("Manga Updated!".to_string()),
-                    body: Some(manga.title.to_string()),
+                    body: manga.title.clone(),
                     image: None,
                 }),
                 target: Target::Token(target),
@@ -194,5 +199,56 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
         }
     } else {
         info!("FCM Error: {:#?}", client.err().unwrap());
+    }
+}
+
+fn source_details_interval_ms() -> u64 {
+    std::env::var("SOURCE_DETAILS_INTERVAL_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60_000)
+}
+
+/// Slowly scrapes sources whose details were never scraped since sources got their own
+/// (until then they're a copy of the primary's), a few per tick. Sources that recently
+/// failed to scrape are skipped until `AUTO_BACKFILL_FAILURE_COOLDOWN_MS` passes.
+pub async fn watch_source_details(db: DatabaseConnection) {
+    let mut interval = time::interval(Duration::from_millis(source_details_interval_ms()));
+    let failure_cooldown_ms: i64 = std::env::var("AUTO_BACKFILL_FAILURE_COOLDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(86_400_000);
+
+    loop {
+        interval.tick().await;
+
+        let failure_cutoff = Utc::now().naive_utc() - chrono::Duration::milliseconds(failure_cooldown_ms);
+        let sources: Vec<i32> = match entity::manga_source::Entity::find()
+            .filter(entity::manga_source::Column::DetailsUpdatedAt.is_null())
+            .filter(Expr::cust_with_values(
+                "NOT EXISTS (SELECT 1 FROM scrape_log WHERE scrape_log.url = manga_source.url \
+                 AND scrape_log.operation = 'manga' AND NOT scrape_log.success AND scrape_log.created_at > $1)",
+                [failure_cutoff],
+            ))
+            .select_only()
+            .column(entity::manga_source::Column::Id)
+            .order_by_asc(entity::manga_source::Column::Id)
+            .limit(3)
+            .into_tuple()
+            .all(&db)
+            .await
+        {
+            Ok(sources) => sources,
+            Err(e) => {
+                error!("[Source Details] Failed to list unscraped sources: {:#?}", e);
+                continue;
+            }
+        };
+
+        for source_id in sources {
+            if let Err(e) = refresh_manga_source(&db, source_id, false).await {
+                warn!("[Source Details] Failed to scrape source {}: {}", source_id, e.message());
+            }
+        }
     }
 }

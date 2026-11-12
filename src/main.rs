@@ -80,6 +80,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         crate::util::backfill::watch_auto_backfill(auto_backfill_conn).await;
     });
 
+    // Scrape the details of sources that haven't been scraped since they got their own
+    let source_details_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::util::updater::watch_source_details(source_details_conn).await;
+    });
+
     // Start image server (separate plain-HTTP port, see src/image_server.rs)
     let image_server_conn = conn.clone();
     tokio::spawn(async move {

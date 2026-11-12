@@ -1,7 +1,7 @@
 //! Local image-hosting for manga covers (Phase A). Same lazy
 //! ensure-downloaded-then-serve pattern as [`crate::util::chapter_images`],
-//! but 1:1 per `manga_id` rather than 1:N per chapter, so state lives
-//! directly on the `manga` row instead of a separate table.
+//! but one cover per source rather than one image per page, so state lives
+//! directly on the `manga_source` row instead of a separate table.
 
 use std::time::Duration;
 
@@ -27,39 +27,38 @@ fn ext_for_content_type(content_type: &str) -> &'static str {
     }
 }
 
-/// Lazily download (and cache) a manga's cover. Never errors for a
-/// *download* failure -- that's represented in the returned model's
-/// `cover_status` field so callers (the `/covers/{manga_id}` route) can
-/// decide how to degrade, same convention as `ensure_page_downloaded`.
+/// Lazily download (and cache) a source's cover, with the source's own page as referer.
+/// Never errors for a *download* failure -- that's represented in the returned model's
+/// `cover_status` field so callers (the `/covers/...` routes) can decide how to degrade,
+/// same convention as `ensure_page_downloaded`.
 pub async fn ensure_cover_downloaded(
     db: &DatabaseConnection,
-    manga: entity::manga::Model,
-    referer: &str,
-) -> Result<entity::manga::Model, Status> {
-    if manga.cover_status == "done" {
-        return Ok(manga);
+    source: entity::manga_source::Model,
+) -> Result<entity::manga_source::Model, Status> {
+    if source.cover_status == "done" {
+        return Ok(source);
     }
 
-    let Some(source_url) = manga.cover_source_url.clone() else {
-        return Ok(manga);
+    let Some(cover_url) = source.cover_source_url.clone() else {
+        return Ok(source);
     };
 
-    if manga.cover_status == "failed" {
-        if manga.cover_attempts >= MAX_ATTEMPT_SESSIONS {
-            return Ok(manga);
+    if source.cover_status == "failed" {
+        if source.cover_attempts >= MAX_ATTEMPT_SESSIONS {
+            return Ok(source);
         }
-        let cooldown_until = manga.updated_at + chrono::Duration::minutes(RETRY_COOLDOWN_MINUTES);
+        let cooldown_until = source.updated_at + chrono::Duration::minutes(RETRY_COOLDOWN_MINUTES);
         if Utc::now().naive_utc() < cooldown_until {
-            return Ok(manga);
+            return Ok(source);
         }
     }
 
-    let mut active: entity::manga::ActiveModel = manga.clone().into();
+    let mut active: entity::manga_source::ActiveModel = source.clone().into();
 
-    match download(&source_url, referer).await {
+    match download(&cover_url, &source.url).await {
         Ok((bytes, content_type)) => {
             let ext = ext_for_content_type(&content_type);
-            let storage_key = format!("covers/{}.{}", manga.id, ext);
+            let storage_key = format!("covers/source/{}.{}", source.id, ext);
             let checksum = hex::encode(Sha256::digest(&bytes));
 
             IMAGE_STORE
@@ -73,9 +72,9 @@ pub async fn ensure_cover_downloaded(
             active.cover_checksum = Set(Some(checksum));
         }
         Err(e) => {
-            warn!("Failed to download cover for manga {}: {}", manga.id, e);
+            warn!("Failed to download cover for manga source {}: {}", source.id, e);
             active.cover_status = Set("failed".to_string());
-            active.cover_attempts = Set(manga.cover_attempts + 1);
+            active.cover_attempts = Set(source.cover_attempts + 1);
         }
     }
 

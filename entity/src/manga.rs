@@ -4,27 +4,13 @@ use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "manga")]
+/// Groups the sources of one manga. Its details (title, cover, ...) live on each
+/// `manga_source`, since every site has its own.
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub title: String,
-    pub description: String,
-    /// Raw scraped cover URL (set only by primary-source refreshes) - not what's served to
-    /// clients. `MangaReply.cover` is built from `cover_status`/`cover_storage_key` instead,
-    /// pointing at the locally-hosted copy once downloaded (see src/util/cover_images.rs).
-    pub cover_source_url: Option<String>,
-    pub cover_status: String,
-    pub cover_storage_key: Option<String>,
-    pub cover_content_type: Option<String>,
-    pub cover_checksum: Option<String>,
-    pub cover_attempts: i32,
-    pub is_ongoing: bool,
-    pub genres: Vec<String>,
-    pub authors: Vec<String>,
-    pub alt_titles: Vec<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    pub status: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

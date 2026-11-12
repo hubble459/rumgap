@@ -7,7 +7,7 @@ use futures::Stream;
 use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
 use migration::{Expr, ExprTrait, JoinType, OnConflict};
-use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
@@ -22,7 +22,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
     MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
-    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
+    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
     UpdateMangaRequest,
 };
 use crate::service::v1::reading::sync_reading_progress;
@@ -48,19 +48,87 @@ fn hostname_of(url: &Url) -> String {
     url.host_str().unwrap_or("unknown").to_string()
 }
 
-/// Restricts a manga -> manga_source join to just the primary source, since count_chapters/
-/// last/next are computed from the primary source only.
-fn join_primary_source_and_chapters(query: Select<entity::manga::Entity>) -> Select<entity::manga::Entity> {
+/// The one source a user sees a manga through: the one they last picked for it
+/// (`reading.preferred_source_id`), else the first of their preferred hostnames the manga
+/// has, else the primary. `$1` is the user's id, `$2` their preferred hostnames.
+const DISPLAY_SOURCE_QUERY: &str = r#"manga_source.id = (
+    SELECT s.id FROM manga_source s
+    LEFT JOIN reading r ON r.manga_id = s.manga_id AND r.user_id = $1
+    WHERE s.manga_id = manga.id
+    ORDER BY (s.id = r.preferred_source_id) DESC NULLS LAST,
+             array_position($2::text[], s.hostname::text) NULLS LAST,
+             s.is_primary DESC,
+             s.id
+    LIMIT 1
+)"#;
+
+/// The selected source's cover, or the primary's while the selected one has none yet.
+const COVER_SOURCE_QUERY: &str = r#"CASE WHEN manga_source.cover_source_url IS NOT NULL THEN manga_source.id ELSE (
+    SELECT p.id FROM manga_source p
+    WHERE p.manga_id = manga.id AND p.is_primary AND p.cover_source_url IS NOT NULL
+    LIMIT 1
+) END"#;
+
+/// Everything `data::manga::Full` needs, for `query`'s manga as `logged_in` sees them:
+/// details, chapter counts and dates come from the source picked by `DISPLAY_SOURCE_QUERY`.
+fn select_manga(
+    query: Select<entity::manga::Entity>,
+    logged_in: Option<&entity::user::Model>,
+) -> Select<entity::manga::Entity> {
+    use entity::manga_source::Column as Source;
+
+    let user_id = logged_in.map_or(-1, |user| user.id);
+    let hostnames = logged_in
+        .map(|user| user.preferred_hostnames.clone())
+        .unwrap_or_default();
     query
         .join(
             JoinType::LeftJoin,
-            entity::manga::Relation::MangaSource.def().on_condition(|_left, right| {
-                Expr::col((right, entity::manga_source::Column::IsPrimary))
-                    .eq(true)
+            entity::manga::Relation::MangaSource
+                .def()
+                .on_condition(move |_left, _right| {
+                    Expr::cust_with_values::<_, sea_orm::Value, _>(
+                        DISPLAY_SOURCE_QUERY,
+                        [user_id.into(), hostnames.clone().into()],
+                    )
                     .into()
-            }),
+                }),
         )
         .join(JoinType::LeftJoin, entity::manga_source::Relation::Chapter.def())
+        .column_as(Source::Id, "selected_source_id")
+        .column_as(Source::Title, "title")
+        .column_as(Source::Description, "description")
+        .column_as(Source::Status, "status")
+        .column_as(Source::IsOngoing, "is_ongoing")
+        .column_as(Source::Genres, "genres")
+        .column_as(Source::Authors, "authors")
+        .column_as(Source::AltTitles, "alt_titles")
+        .column_as(Expr::cust(COVER_SOURCE_QUERY), "cover_source_id")
+        .column_as(entity::chapter::Column::Id.count(), "count_chapters")
+        .column_as(entity::chapter::Column::Posted.max(), "last")
+        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
+        .group_by(entity::manga::Column::Id)
+        .group_by(Source::Id)
+        .column_as(Expr::cust("null"), "progress")
+        .column_as(Expr::cust("null"), "progress_ordinal")
+        .apply_if(logged_in.map(|user| user.id), |query, user_id| {
+            query
+                .join(
+                    JoinType::LeftJoin,
+                    entity::reading::Relation::Manga
+                        .def()
+                        .rev()
+                        .on_condition(move |_left, right| {
+                            Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
+                        }),
+                )
+                .join(JoinType::LeftJoin, entity::reading::Relation::CanonicalChapter.def())
+                .column_as(entity::reading::Column::Progress, "progress")
+                .column_as(entity::canonical_chapter::Column::Ordinal, "progress_ordinal")
+                .group_by(entity::reading::Column::UserId)
+                .group_by(entity::reading::Column::MangaId)
+                .group_by(entity::canonical_chapter::Column::Ordinal)
+        })
 }
 
 /// Batch-fetch every manga_source for the given manga ids, grouped by manga_id. Used to
@@ -82,16 +150,44 @@ pub async fn load_manga_sources(
         .map_err(internal)?;
 
     let source_ids: Vec<i32> = sources.iter().map(|source| source.id).collect();
-    let fully_stored = fully_stored_source_ids(db, source_ids).await?;
+    let fully_stored = fully_stored_source_ids(db, source_ids.clone()).await?;
+    let chapter_stats = source_chapter_stats(db, source_ids).await?;
 
     let mut map: HashMap<i32, Vec<MangaSourceReply>> = HashMap::new();
     for source in sources {
         let manga_id = source.manga_id;
         let mut reply: MangaSourceReply = source.into();
         reply.fully_stored = fully_stored.contains(&reply.id);
+        if let Some((count, last)) = chapter_stats.get(&reply.id) {
+            reply.count_chapters = *count;
+            reply.last = last.map(|date| date.timestamp_millis());
+        }
         map.entry(manga_id).or_default().push(reply);
     }
     Ok(map)
+}
+
+/// Chapter count and newest chapter's posted date per source.
+async fn source_chapter_stats(
+    db: &DatabaseConnection,
+    source_ids: Vec<i32>,
+) -> Result<HashMap<i32, (i64, Option<sea_orm::prelude::DateTimeWithTimeZone>)>, Status> {
+    if source_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    entity::chapter::Entity::find()
+        .select_only()
+        .column(entity::chapter::Column::MangaSourceId)
+        .column_as(entity::chapter::Column::Id.count(), "count")
+        .column_as(entity::chapter::Column::Posted.max(), "last")
+        .filter(entity::chapter::Column::MangaSourceId.is_in(source_ids))
+        .group_by(entity::chapter::Column::MangaSourceId)
+        .into_tuple::<(i32, i64, Option<sea_orm::prelude::DateTimeWithTimeZone>)>()
+        .all(db)
+        .await
+        .map_err(internal)
+        .map(|rows| rows.into_iter().map(|(id, count, last)| (id, (count, last))).collect())
 }
 
 /// The subset of `source_ids` where every chapter has `chapter_image` rows and all of them are
@@ -143,37 +239,12 @@ async fn attach_sources(db: &DatabaseConnection, items: Vec<data::manga::Full>) 
 }
 
 /// Get a "full" manga by it's ID
-#[rustfmt::skip]
-pub async fn get_manga_by_id(db: &DatabaseConnection, logged_in: Option<&entity::user::Model>, manga_id: i32) -> Result<MangaReply, Status> {
-    use entity::chapter::Column as ChapterColumn;
-
-    let manga = join_primary_source_and_chapters(entity::manga::Entity::find_by_id(manga_id))
-        .column_as(ChapterColumn::Id.count(), "count_chapters")
-        .column_as(ChapterColumn::Posted.max(), "last")
-        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
-        .group_by(entity::manga::Column::Id)
-        .column_as(Expr::cust("null"), "progress")
-        .column_as(Expr::cust("null"), "progress_ordinal")
-        .apply_if(logged_in, |query, logged_in| {
-            let user_id = logged_in.id;
-            query
-                .join(
-                JoinType::LeftJoin,
-                entity::reading::Relation::Manga.def().rev().on_condition(
-                        move |_left, right| {
-                            Expr::col((right, entity::reading::Column::UserId))
-                                .eq(user_id)
-                                .into()
-                        },
-                    ),
-                )
-                .join(JoinType::LeftJoin, entity::reading::Relation::CanonicalChapter.def())
-                .column_as(entity::reading::Column::Progress, "progress")
-                .column_as(entity::canonical_chapter::Column::Ordinal, "progress_ordinal")
-                .group_by(entity::reading::Column::UserId)
-                .group_by(entity::reading::Column::MangaId)
-                .group_by(entity::canonical_chapter::Column::Ordinal)
-        })
+pub async fn get_manga_by_id(
+    db: &DatabaseConnection,
+    logged_in: Option<&entity::user::Model>,
+    manga_id: i32,
+) -> Result<MangaReply, Status> {
+    let manga = select_manga(entity::manga::Entity::find_by_id(manga_id), logged_in)
         .into_model::<data::manga::Full>()
         .one(db)
         .await
@@ -328,8 +399,8 @@ async fn find_or_create_canonical_chapter<C: ConnectionTrait>(
 }
 
 /// If `manga_id` still has another source once `excluding_source_id` is removed/moved
-/// away, promotes it to primary - so canonical manga metadata is never left without a
-/// primary source backing it. No-op if that was the manga's only source.
+/// away, promotes it to primary - so a manga always has a primary source to fall back on.
+/// No-op if that was the manga's only source.
 async fn promote_replacement_primary<C: ConnectionTrait>(
     db: &C,
     manga_id: i32,
@@ -644,39 +715,76 @@ async fn sync_chapters_for_source(
     match_canonical_chapters(db, manga_id, &inserted).await
 }
 
-/// Create a brand-new canonical manga from a freshly-scraped URL, with this as its (first,
-/// and therefore primary) source.
+/// Sets the details `scraped` found on `source` (a new source when its `id` is `NotSet`).
+/// When the scraped cover differs from the stored one, the stored file is deleted and the
+/// cover is downloaded again on its next request. A scrape without a cover keeps the old one.
+async fn apply_scraped_details(
+    mut source: entity::manga_source::ActiveModel,
+    current: Option<&entity::manga_source::Model>,
+    scraped: &manga_parser::model::Manga,
+) -> entity::manga_source::ActiveModel {
+    source.title = Set(scraped.title.clone());
+    source.description = Set(scraped.description.clone());
+    source.is_ongoing = Set(scraped.is_ongoing);
+    source.authors = Set(scraped.authors.clone());
+    source.alt_titles = Set(scraped.alternative_titles.clone());
+    source.genres = Set(scraped.genres.clone());
+    if let Some(status) = &scraped.status {
+        source.status = Set(status.clone());
+    }
+    source.details_updated_at = Set(Some(Utc::now().naive_utc()));
+
+    // cover_url is optional in manga_parser's model (unlike title/description, which fail the
+    // whole scrape when missing), so a successful scrape without one must not wipe a cover.
+    if let Some(cover_url) = scraped.cover_url.as_ref().map(|url| url.to_string()) {
+        if current.and_then(|current| current.cover_source_url.as_deref()) != Some(cover_url.as_str()) {
+            if let Some(old_key) = current.and_then(|current| current.cover_storage_key.as_ref()) {
+                if let Err(e) = crate::IMAGE_STORE.delete(old_key).await {
+                    warn!("Failed to delete stale cover {}: {}", old_key, e);
+                }
+            }
+            source.cover_status = Set("pending".to_string());
+            source.cover_storage_key = Set(None);
+            source.cover_content_type = Set(None);
+            source.cover_checksum = Set(None);
+            source.cover_attempts = Set(0);
+            source.cover_source_url = Set(Some(cover_url));
+        }
+    }
+    source
+}
+
+/// Deletes the stored cover files of `sources`, e.g. right before deleting the sources.
+pub async fn delete_source_covers(sources: &[entity::manga_source::Model]) {
+    for key in sources.iter().filter_map(|source| source.cover_storage_key.as_ref()) {
+        if let Err(e) = crate::IMAGE_STORE.delete(key).await {
+            warn!("Failed to delete cover {}: {}", key, e);
+        }
+    }
+}
+
+/// Create a brand-new manga from a freshly-scraped URL, with this as its (first, and
+/// therefore primary) source.
 pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Status> {
     info!("Creating manga [{}]", url);
 
     let manga: manga_parser::model::Manga =
         crate::util::scrape_log::record(db, "manga", &url, None, None, MANGA_PARSER.manga(&url)).await?;
 
-    let saved_manga = entity::manga::ActiveModel {
-        title: Set(manga.title),
-        description: Set(manga.description),
-        is_ongoing: Set(manga.is_ongoing),
-        cover_source_url: Set(manga.cover_url.map(|url| url.to_string())),
-        authors: Set(manga.authors),
-        alt_titles: Set(manga.alternative_titles),
-        genres: Set(manga.genres),
-        status: manga.status.map_or(NotSet, Set),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(internal)?;
+    let saved_manga = entity::manga::ActiveModel { ..Default::default() }.insert(db).await.map_err(internal)?;
 
-    let saved_source = entity::manga_source::ActiveModel {
+    let source = entity::manga_source::ActiveModel {
         manga_id: Set(saved_manga.id),
         url: Set(manga.url.to_string()),
         hostname: Set(hostname_of(&manga.url)),
         is_primary: Set(true),
         ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(internal)?;
+    };
+    let saved_source = apply_scraped_details(source, None, &manga)
+        .await
+        .insert(db)
+        .await
+        .map_err(internal)?;
 
     sync_chapters_for_source(db, saved_manga.id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
@@ -684,9 +792,8 @@ pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Stat
 }
 
 /// Add a new (by default, secondary) source to an existing manga: scrapes via the existing
-/// call path, creates the manga_source row, inserts chapters against it, runs the matching
-/// heuristic. Only the *primary* source's scrape updates canonical manga fields, so a brand
-/// new non-primary source never touches them.
+/// call path, creates the manga_source row with the details it found, inserts chapters
+/// against it, runs the matching heuristic.
 pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) -> Result<i32, Status> {
     entity::manga::Entity::find_by_id(manga_id)
         .one(db)
@@ -708,25 +815,26 @@ pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) 
     let manga: manga_parser::model::Manga =
         crate::util::scrape_log::record(db, "manga", &url, Some(manga_id), None, MANGA_PARSER.manga(&url)).await?;
 
-    let saved_source = entity::manga_source::ActiveModel {
+    let source = entity::manga_source::ActiveModel {
         manga_id: Set(manga_id),
         url: Set(manga.url.to_string()),
         hostname: Set(hostname_of(&manga.url)),
         is_primary: Set(false),
         ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(internal)?;
+    };
+    let saved_source = apply_scraped_details(source, None, &manga)
+        .await
+        .insert(db)
+        .await
+        .map_err(internal)?;
 
     sync_chapters_for_source(db, manga_id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
     Ok(saved_source.id)
 }
 
-/// Refresh an existing manga_source in place (re-scrape its url). If it's the primary
-/// source, canonical manga.title/description/cover/etc are updated too - a secondary
-/// source's refresh must never stomp canonical metadata.
+/// Refresh an existing manga_source in place: re-scrape its url, update its details and
+/// sync its chapters.
 ///
 /// `force` bypasses the suspicious-chapter-drop safety net in `sync_chapters_for_source` --
 /// only the explicit user-triggered `Manga.Update` RPC should ever pass `true`, once someone
@@ -751,55 +859,15 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32,
     )
     .await?;
 
-    if source.is_primary {
-        // Only overwrite the cover when this scrape actually found one - cover_url is a
-        // genuinely optional field in manga_parser's model (unlike title/description, which
-        // are required on the builder and fail the whole scrape if unextractable), so a
-        // successful-but-cover-less scrape must not silently wipe a previously-good cover
-        // with NULL.
-        let new_cover_source_url = manga.cover_url.clone().map(|url| url.to_string());
-
-        let mut active = entity::manga::ActiveModel {
-            id: Set(source.manga_id),
-            title: Set(manga.title.clone()),
-            description: Set(manga.description.clone()),
-            is_ongoing: Set(manga.is_ongoing),
-            authors: Set(manga.authors.clone()),
-            alt_titles: Set(manga.alternative_titles.clone()),
-            genres: Set(manga.genres.clone()),
-            status: manga.status.clone().map_or(NotSet, Set),
-            ..Default::default()
-        };
-
-        if let Some(new_cover_source_url) = new_cover_source_url {
-            let current = entity::manga::Entity::find_by_id(source.manga_id)
-                .one(db)
-                .await
-                .map_err(internal)?
-                .ok_or(Status::not_found("Manga not found"))?;
-
-            // A source flip (e.g. SetPrimarySource) or the primary source's own cover
-            // changing means whatever's cached under the OLD cover_source_url no longer
-            // applies - reset the download state so the new URL actually gets fetched,
-            // instead of `cover_status == "done"` short-circuiting `ensure_cover_downloaded`
-            // forever under the now-wrong assumption that "done" still refers to this URL.
-            if current.cover_source_url.as_deref() != Some(new_cover_source_url.as_str()) {
-                if let Some(old_key) = &current.cover_storage_key {
-                    if let Err(e) = crate::IMAGE_STORE.delete(old_key).await {
-                        warn!("Failed to delete stale cover {}: {}", old_key, e);
-                    }
-                }
-                active.cover_status = Set("pending".to_string());
-                active.cover_storage_key = Set(None);
-                active.cover_content_type = Set(None);
-                active.cover_checksum = Set(None);
-                active.cover_attempts = Set(0);
-            }
-            active.cover_source_url = Set(Some(new_cover_source_url));
-        }
-
-        active.update(db).await.map_err(internal)?;
-    }
+    let active = entity::manga_source::ActiveModel {
+        id: Set(source.id),
+        ..Default::default()
+    };
+    apply_scraped_details(active, Some(&source), &manga)
+        .await
+        .update(db)
+        .await
+        .map_err(internal)?;
 
     sync_chapters_for_source(db, source.manga_id, manga_source_id, &source.url, force, &manga.chapters).await?;
 
@@ -810,46 +878,21 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32,
 /// suggest "is this the same manga you already have?" for a title that isn't tracked
 /// locally yet (e.g. a fresh search result) - used by `SearchManga.suggested_manga_id`.
 pub async fn find_suggested_manga_id(db: &DatabaseConnection, title: &str) -> Result<Option<i32>, Status> {
-    entity::manga::Entity::find()
+    entity::manga_source::Entity::find()
         .filter(Expr::cust_with_values(
-            "$1 % any(manga.alt_titles || manga.title)",
+            "$1 % any(manga_source.alt_titles || manga_source.title)",
             [title.to_string()],
         ))
         .select_only()
-        .column(entity::manga::Column::Id)
+        .column(entity::manga_source::Column::MangaId)
         .into_tuple::<i32>()
         .one(db)
         .await
         .map_err(internal)
 }
 
-pub fn index_manga(logged_in: Option<entity::user::Model>) -> Select<entity::manga::Entity> {
-    join_primary_source_and_chapters(entity::manga::Entity::find())
-        .column_as(entity::chapter::Column::Id.count(), "count_chapters")
-        .column_as(entity::chapter::Column::Posted.max(), "last")
-        .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
-        .group_by(entity::manga::Column::Id)
-        .column_as(Expr::cust("null"), "progress")
-        .column_as(Expr::cust("null"), "progress_ordinal")
-        .apply_if(logged_in, |query, logged_in| {
-            let user_id = logged_in.id;
-            query
-                .join(
-                    JoinType::LeftJoin,
-                    entity::reading::Relation::Manga
-                        .def()
-                        .rev()
-                        .on_condition(move |_left, right| {
-                            Expr::col((right, entity::reading::Column::UserId)).eq(user_id).into()
-                        }),
-                )
-                .join(JoinType::LeftJoin, entity::reading::Relation::CanonicalChapter.def())
-                .column_as(entity::reading::Column::Progress, "progress")
-                .column_as(entity::canonical_chapter::Column::Ordinal, "progress_ordinal")
-                .group_by(entity::reading::Column::MangaId)
-                .group_by(entity::reading::Column::UserId)
-                .group_by(entity::canonical_chapter::Column::Ordinal)
-        })
+pub fn index_manga(logged_in: Option<&entity::user::Model>) -> Select<entity::manga::Entity> {
+    select_manga(entity::manga::Entity::find(), logged_in)
 }
 
 #[derive(Debug, Default)]
@@ -942,53 +985,31 @@ impl Manga for MangaController {
         let req = request.get_ref();
         let manga_id = req.id;
 
-        let (updated_at,): (NaiveDateTime,) = entity::manga::Entity::find_by_id(manga_id)
-            .select_only()
-            .column(entity::manga::Column::UpdatedAt)
-            .into_values::<_, data::manga::Minimal>()
-            .one(db)
-            .await
-            .map_err(internal)?
-            .ok_or(Status::not_found("Manga not found"))?;
-
-        let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
-            .unwrap_or("3600000".to_string())
-            .parse()
-            .unwrap_or(3600000);
-
-        // Check if it should be updated
-        if (Utc::now().naive_utc() - chrono::Duration::milliseconds(interval_ms)) > updated_at {
-            if let Some(primary_source_id) = find_primary_source_id(db, manga_id).await? {
-                info!(
-                    "Updating manga with id '{}' (primary source {})",
-                    manga_id, primary_source_id
-                );
-                refresh_manga_source(db, primary_source_id, false).await?;
-            }
+        let manga = get_manga_by_id(db, Some(logged_in), manga_id).await?;
+        if refresh_if_stale(db, manga.selected_source_id).await? {
+            return Ok(Response::new(get_manga_by_id(db, Some(logged_in), manga_id).await?));
         }
 
-        Ok(Response::new(get_manga_by_id(db, Some(logged_in), manga_id).await?))
+        Ok(Response::new(manga))
     }
 
-    /// Force update a manga - refreshes its primary source (only a primary-source refresh
-    /// updates canonical manga.title/description/cover/etc). `force` also pushes a chapter
-    /// reset through even if it looks like a suspicious drop (see `sync_chapters_for_source`) --
-    /// for when someone has checked the source and confirmed the drop is real.
+    /// Force update a manga - refreshes the source this user sees it through. `force` also
+    /// pushes a chapter reset through even if it looks like a suspicious drop (see
+    /// `sync_chapters_for_source`) -- for when someone has checked the source and confirmed
+    /// the drop is real.
     async fn update(&self, request: Request<UpdateMangaRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
         let req = request.get_ref();
         let manga_id = req.id;
 
-        let primary_source_id = find_primary_source_id(db, manga_id)
-            .await?
-            .ok_or(Status::not_found("Manga has no primary source to refresh"))?;
+        let source_id = get_manga_by_id(db, Some(logged_in), manga_id).await?.selected_source_id;
+        if source_id == 0 {
+            return Err(Status::not_found("Manga has no source to refresh"));
+        }
 
-        info!(
-            "Updating manga with id '{}' (primary source {})",
-            manga_id, primary_source_id
-        );
-        refresh_manga_source(db, primary_source_id, req.force).await?;
+        info!("Updating manga with id '{}' (source {})", manga_id, source_id);
+        refresh_manga_source(db, source_id, req.force).await?;
 
         Ok(Response::new(get_manga_by_id(db, Some(logged_in), manga_id).await?))
     }
@@ -1028,7 +1049,7 @@ impl Manga for MangaController {
         let logged_in = request.authorize()?.clone();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
-        let mut paginate = index_manga(Some(logged_in));
+        let mut paginate = index_manga(Some(&logged_in));
 
         if let Some(search) = req.search.clone() {
             if !search.is_empty() {
@@ -1042,7 +1063,10 @@ impl Manga for MangaController {
                 paginate = paginate.order_by(column, order);
             }
         } else {
-            paginate = paginate.order_by(entity::manga::Column::Title, migration::Order::Asc);
+            paginate = paginate.order_by(
+                Expr::col((entity::manga_source::Entity, entity::manga_source::Column::Title)),
+                migration::Order::Asc,
+            );
         }
 
         let paginate = paginate.into_model::<data::manga::Full>().paginate(db, per_page);
@@ -1077,25 +1101,34 @@ impl Manga for MangaController {
         let logged_in = request.authorize()?.clone();
 
         let id = request.get_ref().id;
-        let (manga_title, alt_titles): (String, Vec<String>) = entity::manga::Entity::find_by_id(id)
+        let titles: Vec<(String, Vec<String>)> = entity::manga_source::Entity::find()
+            .filter(entity::manga_source::Column::MangaId.eq(id))
             .select_only()
-            .column(entity::manga::Column::Title)
-            .column(entity::manga::Column::AltTitles)
+            .column(entity::manga_source::Column::Title)
+            .column(entity::manga_source::Column::AltTitles)
             .into_tuple()
-            .one(db)
+            .all(db)
             .await
-            .map_err(internal)?
-            .ok_or(Status::not_found("Manga not found"))?;
+            .map_err(internal)?;
+        if titles.is_empty() {
+            return Err(Status::not_found("Manga not found"));
+        }
 
-        let title_matches = alt_titles
+        // Any title of any of this manga's sources against any title of any source of another.
+        let mut titles: Vec<String> = titles
             .into_iter()
-            .map(|alt_title| Expr::cust_with_values("$1 % any(manga.alt_titles || manga.title)", [alt_title]))
-            .fold(
-                Expr::cust_with_values("$1 % any(manga.alt_titles || manga.title)", [manga_title]),
-                |expr, alt_title_expr| expr.or(alt_title_expr),
-            );
+            .flat_map(|(title, alt_titles)| std::iter::once(title).chain(alt_titles))
+            .filter(|title| !title.is_empty())
+            .collect();
+        titles.sort();
+        titles.dedup();
+        let title_matches = Expr::cust_with_values::<_, sea_orm::Value, _>(
+            "EXISTS (SELECT 1 FROM manga_source s, unnest($1::text[]) t \
+             WHERE s.manga_id = manga.id AND t % any(s.alt_titles || s.title))",
+            [titles.into()],
+        );
 
-        let similar = index_manga(Some(logged_in))
+        let similar = index_manga(Some(&logged_in))
             .filter(entity::manga::Column::Id.ne(id).and(title_matches))
             .into_model::<data::manga::Full>()
             .all(db)
@@ -1128,9 +1161,8 @@ impl Manga for MangaController {
         ))
     }
 
-    /// Remove a source from a manga. If it's the primary source and another source
-    /// still exists, that other source is auto-promoted to primary first so canonical
-    /// manga metadata is never left without a primary source backing it.
+    /// Remove a source from a manga, and its stored cover. If it's the primary source and
+    /// another source still exists, that other source is auto-promoted to primary first.
     async fn remove_source(&self, request: Request<RemoveSourceRequest>) -> Result<Response<MangaReply>, Status> {
         let db = request.db()?;
         let logged_in = request
@@ -1153,6 +1185,7 @@ impl Manga for MangaController {
         }
 
         let manga_id = source.manga_id;
+        delete_source_covers(std::slice::from_ref(&source)).await;
         entity::manga_source::Entity::delete_by_id(req.manga_source_id)
             .exec(db)
             .await
@@ -1187,9 +1220,8 @@ impl Manga for MangaController {
         Ok(Response::new(get_manga_by_id(db, Some(&logged_in), manga_id).await?))
     }
 
-    /// Change which source is considered primary for a manga (the only source whose
-    /// refreshes update canonical manga.title/description/cover/etc, and whose chapters
-    /// back top-level count_chapters/last/next).
+    /// Change which source is primary for a manga: the one users see it through when they
+    /// haven't picked a source themselves, and the one the auto-updater refreshes.
     async fn set_primary_source(
         &self,
         request: Request<SetPrimarySourceRequest>,
@@ -1226,21 +1258,39 @@ impl Manga for MangaController {
         .await
         .map_err(internal)?;
 
-        // Refresh the newly-primary source's metadata immediately, rather than leaving
-        // canonical title/description/cover stale until the next scheduled scrape - the
-        // primary-source flag has already flipped by this point regardless of whether this
-        // refresh succeeds, so a failure here (e.g. the new primary is briefly unreachable)
-        // is logged, not fatal to the RPC.
-        if let Err(e) = refresh_manga_source(db, source.id, false).await {
-            warn!(
-                "Failed to immediately refresh newly-primary source {} for manga {}: {:#?}",
-                source.id, source.manga_id, e
-            );
-        }
-
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), source.manga_id).await?,
         ))
+    }
+
+    /// Remember a source as the one this user sees its manga through (only for manga in
+    /// their reading list, which is where the choice is stored) and refresh its details when
+    /// they're stale, so switching to it shows what that site has.
+    async fn select_source(&self, request: Request<SelectSourceRequest>) -> Result<Response<MangaReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?;
+        let source_id = request.get_ref().manga_source_id;
+
+        let source = entity::manga_source::Entity::find_by_id(source_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .ok_or(Status::not_found("Manga source not found"))?;
+
+        entity::reading::Entity::update_many()
+            .col_expr(entity::reading::Column::PreferredSourceId, Expr::value(source.id))
+            .filter(entity::reading::Column::UserId.eq(logged_in.id))
+            .filter(entity::reading::Column::MangaId.eq(source.manga_id))
+            .exec(db)
+            .await
+            .map_err(internal)?;
+
+        if let Err(e) = refresh_if_stale(db, source.id).await {
+            // Still switch to it: its chapters may be downloaded, or the site only briefly down.
+            warn!("Failed to refresh selected source {}: {:#?}", source.id, e);
+        }
+
+        Ok(Response::new(get_manga_by_id(db, Some(logged_in), source.manga_id).await?))
     }
 
     /// Admin-only. Folds every source of `source_manga_id` into `target_manga_id` -
@@ -1289,7 +1339,8 @@ impl Manga for MangaController {
         ))
     }
 
-    /// Mod/admin-only. Deletes a manga; its sources, chapters and reading rows cascade.
+    /// Mod/admin-only. Deletes a manga and its sources' stored covers; its sources, chapters
+    /// and reading rows cascade.
     async fn delete(&self, request: Request<DeleteMangaRequest>) -> Result<Response<Empty>, Status> {
         let db = request.db()?;
         let logged_in = request.authorize()?;
@@ -1298,7 +1349,13 @@ impl Manga for MangaController {
         }
         let id = request.get_ref().id;
 
+        let sources = entity::manga_source::Entity::find()
+            .filter(entity::manga_source::Column::MangaId.eq(id))
+            .all(db)
+            .await
+            .map_err(internal)?;
         let result = entity::manga::Entity::delete_by_id(id).exec(db).await.map_err(internal)?;
+        delete_source_covers(&sources).await;
         if result.rows_affected == 0 {
             return Err(Status::not_found("Manga not found"));
         }
@@ -1336,16 +1393,32 @@ impl Manga for MangaController {
     }
 }
 
-async fn find_primary_source_id(db: &DatabaseConnection, manga_id: i32) -> Result<Option<i32>, Status> {
-    entity::manga_source::Entity::find()
-        .filter(entity::manga_source::Column::MangaId.eq(manga_id))
-        .filter(entity::manga_source::Column::IsPrimary.eq(true))
+/// Refreshes source `source_id` when its details are older than `MANGA_UPDATE_INTERVAL_MS`
+/// or were never scraped since sources got their own. Returns whether it refreshed.
+async fn refresh_if_stale(db: &DatabaseConnection, source_id: i32) -> Result<bool, Status> {
+    let Some(details_updated_at) = entity::manga_source::Entity::find_by_id(source_id)
         .select_only()
-        .column(entity::manga_source::Column::Id)
-        .into_tuple::<i32>()
+        .column(entity::manga_source::Column::DetailsUpdatedAt)
+        .into_tuple::<Option<NaiveDateTime>>()
         .one(db)
         .await
-        .map_err(internal)
+        .map_err(internal)?
+    else {
+        return Ok(false);
+    };
+
+    let interval_ms: i64 = std::env::var("MANGA_UPDATE_INTERVAL_MS")
+        .unwrap_or("3600000".to_string())
+        .parse()
+        .unwrap_or(3600000);
+    let stale_before = Utc::now().naive_utc() - chrono::Duration::milliseconds(interval_ms);
+    if details_updated_at.is_some_and(|updated_at| updated_at > stale_before) {
+        return Ok(false);
+    }
+
+    info!("Updating stale manga source {}", source_id);
+    refresh_manga_source(db, source_id, false).await?;
+    Ok(true)
 }
 
 crate::export_service!(MangaServer, MangaController, auth = UserPermissions::USER);
@@ -1380,16 +1453,8 @@ mod matching_heuristic_tests {
         let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
         let db = Database::connect(db_url).await.unwrap();
 
-        let manga = entity::manga::ActiveModel {
-            title: Set("Test Manga".into()),
-            description: Set("".into()),
-            is_ongoing: Set(true),
-            authors: Set(vec![]),
-            alt_titles: Set(vec![]),
-            genres: Set(vec![]),
-            ..Default::default()
-        }
-        .insert(&db)
+        let manga = entity::manga::ActiveModel { ..Default::default() }
+            .insert(&db)
         .await
         .unwrap();
 
@@ -1533,17 +1598,9 @@ mod matching_heuristic_tests {
         entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
     }
 
-    async fn make_manga(db: &sea_orm::DatabaseConnection, title: &str) -> entity::manga::Model {
-        entity::manga::ActiveModel {
-            title: Set(title.into()),
-            description: Set("".into()),
-            is_ongoing: Set(true),
-            authors: Set(vec![]),
-            alt_titles: Set(vec![]),
-            genres: Set(vec![]),
-            ..Default::default()
-        }
-        .insert(db)
+    async fn make_manga(db: &sea_orm::DatabaseConnection, _title: &str) -> entity::manga::Model {
+        entity::manga::ActiveModel { ..Default::default() }
+            .insert(db)
         .await
         .unwrap()
     }

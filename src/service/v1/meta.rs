@@ -108,10 +108,12 @@ impl Meta for MetaController {
         let db = req.db()?;
         let logged_in = req.authorize()?;
         let request = req.get_ref();
+        // Genres of every source of every manga: each site tags a manga its own way.
         let query = entity::manga::Entity::find()
+            .join(JoinType::InnerJoin, entity::manga::Relation::MangaSource.def())
             .select_only()
-            .column_as(Expr::cust("distinct unnest(manga.genres)"), QueryAs::Strings)
-            .order_by_asc(Expr::cust("unnest(manga.genres)"));
+            .column_as(Expr::cust("distinct unnest(manga_source.genres)"), QueryAs::Strings)
+            .order_by_asc(Expr::cust("unnest(manga_source.genres)"));
         Ok(Response::new(
             get_reply(
                 db,

@@ -15,6 +15,8 @@ pub struct Model {
     /// Cached rank of the last-read canonical chapter, kept in sync with `progress`
     /// via one shared service function whenever either changes.
     pub last_canonical_chapter_id: Option<i32>,
+    /// The source this user last picked for this manga.
+    pub preferred_source_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
