@@ -87,7 +87,7 @@ service Manga {
     rpc GetBackfillStatus (GetBackfillStatusRequest) returns (BackfillStatusReply);
     // Manga the user isn't reading and hasn't dismissed lately, best match to their reading
     // first (genres and description keywords). Ranked fresh on every call.
-    rpc ForYou (PaginateQuery) returns (MangasReply);
+    rpc ForYou (ForYouRequest) returns (MangasReply);
     // "Not interested": hides the manga from ForYou for a while (FOR_YOU_DISMISS_DAYS) and
     // ranks similar manga lower until then. Dismissing again restarts the cooldown.
     rpc Dismiss (DismissMangaRequest) returns (Empty);

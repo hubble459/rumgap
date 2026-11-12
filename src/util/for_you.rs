@@ -172,9 +172,13 @@ async fn query(
         .map_err(internal)
 }
 
-/// Every manga `user_id` isn't reading and hasn't dismissed within the cooldown, best match
-/// first.
-pub async fn ranked_for_user(db: &DatabaseConnection, user: &entity::user::Model) -> Result<Vec<i32>, Status> {
+/// Every manga `user` isn't reading and hasn't dismissed within the cooldown (and, when given,
+/// is in `allowed`), best match first.
+pub async fn ranked_for_user(
+    db: &DatabaseConnection,
+    user: &entity::user::Model,
+    allowed: Option<&HashSet<i32>>,
+) -> Result<Vec<i32>, Status> {
     let user_id = user.id;
     let now = Utc::now().naive_utc();
     let cooldown_days = dismiss_days();
@@ -247,11 +251,17 @@ pub async fn ranked_for_user(db: &DatabaseConnection, user: &entity::user::Model
         popularity.insert(manga_id, readers as f64);
     }
 
+    // Filtering only narrows the candidates; the vectors still come from the whole catalog so
+    // feature weights don't shift with the filter.
     let excluded: HashSet<i32> = liked.iter().chain(&disliked).map(|(manga_id, _)| *manga_id).collect();
     let mut candidates: Vec<i32> = features
         .keys()
         .copied()
-        .filter(|manga_id| !excluded.contains(manga_id) && (user.show_nsfw || !nsfw.contains(manga_id)))
+        .filter(|manga_id| {
+            !excluded.contains(manga_id)
+                && (user.show_nsfw || !nsfw.contains(manga_id))
+                && allowed.is_none_or(|allowed| allowed.contains(manga_id))
+        })
         .collect();
     candidates.sort();
 
