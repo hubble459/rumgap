@@ -8,6 +8,7 @@ pub mod chapter_image;
 pub mod chapter_offset;
 pub mod friend;
 pub mod manga;
+pub mod manga_dismissal;
 pub mod manga_source;
 pub mod reading;
 pub mod scrape_log;

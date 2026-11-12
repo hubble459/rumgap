@@ -20,9 +20,9 @@ use tonic::{Request, Response, Status};
 use crate::interceptor::auth::{UserHasPermissions, UserPermissions};
 use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
-    AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
+    AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, DismissMangaRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
     MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
-    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
+    PaginateQuery, PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
     UpdateMangaRequest,
 };
 use crate::service::v1::reading::sync_reading_progress;
@@ -1426,6 +1426,83 @@ impl Manga for MangaController {
             images_downloaded,
             images_total,
         }))
+    }
+
+    async fn for_you(&self, request: Request<PaginateQuery>) -> Result<Response<MangasReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?.clone();
+        let req = request.get_ref();
+        let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
+        let page = req.page.unwrap_or(0);
+
+        let ranked = util::for_you::ranked_for_user(db, logged_in.id).await?;
+        let total = ranked.len() as u64;
+        let ids: Vec<i32> = ranked
+            .into_iter()
+            .skip((page * per_page) as usize)
+            .take(per_page as usize)
+            .collect();
+
+        let mut items = index_manga(Some(&logged_in))
+            .filter(entity::manga::Column::Id.is_in(ids.clone()))
+            .into_model::<data::manga::Full>()
+            .all(db)
+            .await
+            .map_err(internal)?;
+        items.sort_by_key(|item| ids.iter().position(|id| *id == item.id));
+
+        Ok(Response::new(MangasReply {
+            pagination: Some(PaginateReply {
+                page,
+                per_page,
+                max_page: total.saturating_sub(1) / per_page,
+                total,
+            }),
+            items: attach_sources(db, items).await?,
+        }))
+    }
+
+    async fn dismiss(&self, request: Request<DismissMangaRequest>) -> Result<Response<Empty>, Status> {
+        let db = request.db()?;
+        let user_id = request.authorize()?.id;
+        let manga_id = request.get_ref().id;
+
+        entity::manga::Entity::find_by_id(manga_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .ok_or(Status::not_found("Manga not found"))?;
+
+        entity::manga_dismissal::Entity::insert(entity::manga_dismissal::ActiveModel {
+            user_id: Set(user_id),
+            manga_id: Set(manga_id),
+            created_at: Set(Utc::now().naive_utc()),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                entity::manga_dismissal::Column::UserId,
+                entity::manga_dismissal::Column::MangaId,
+            ])
+            .update_column(entity::manga_dismissal::Column::CreatedAt)
+            .to_owned(),
+        )
+        .exec(db)
+        .await
+        .map_err(internal)?;
+
+        Ok(Response::new(Empty::default()))
+    }
+
+    async fn undismiss(&self, request: Request<DismissMangaRequest>) -> Result<Response<Empty>, Status> {
+        let db = request.db()?;
+        let user_id = request.authorize()?.id;
+
+        entity::manga_dismissal::Entity::delete_by_id((user_id, request.get_ref().id))
+            .exec(db)
+            .await
+            .map_err(internal)?;
+
+        Ok(Response::new(Empty::default()))
     }
 }
 

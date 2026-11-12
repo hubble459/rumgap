@@ -4,6 +4,7 @@ pub mod backfill;
 pub mod chapter_images;
 pub mod cover_images;
 pub mod db;
+pub mod for_you;
 pub mod image_dimensions;
 pub mod image_store;
 pub mod image_transcode;

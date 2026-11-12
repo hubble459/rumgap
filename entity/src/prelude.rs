@@ -6,6 +6,7 @@ pub use super::chapter_image::Entity as ChapterImage;
 pub use super::chapter_offset::Entity as ChapterOffset;
 pub use super::friend::Entity as Friend;
 pub use super::manga::Entity as Manga;
+pub use super::manga_dismissal::Entity as MangaDismissal;
 pub use super::manga_source::Entity as MangaSource;
 pub use super::reading::Entity as Reading;
 pub use super::scrape_log::Entity as ScrapeLog;

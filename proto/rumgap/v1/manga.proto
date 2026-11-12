@@ -123,6 +123,10 @@ message SimilarMangaRequest {
     int32 id = 1;
 }
 
+message DismissMangaRequest {
+    int32 id = 1;
+}
+
 message BackfillImagesRequest {
     int32 manga_source_id = 1;
 }
