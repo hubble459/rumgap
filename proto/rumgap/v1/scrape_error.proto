@@ -16,6 +16,8 @@ enum ScrapeErrorType {
     SearchNotSupported = 10;
     MultipleScrapingErrors = 11;
     CloudflareIUAM = 12;
+    // The site wants an account for this, e.g. an early-access chapter.
+    LoginRequired = 13;
 }
 
 message ScrapeError {
