@@ -86,6 +86,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         crate::util::updater::watch_source_details(source_details_conn).await;
     });
 
+    // Bring stored genres in line with the current normalization rules
+    let genres_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::util::genres::normalize_stored(&genres_conn).await;
+    });
+
     // Start image server (separate plain-HTTP port, see src/image_server.rs)
     let image_server_conn = conn.clone();
     tokio::spawn(async move {

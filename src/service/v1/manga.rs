@@ -748,7 +748,7 @@ async fn apply_scraped_details(
     source.is_ongoing = Set(scraped.is_ongoing);
     source.authors = Set(scraped.authors.clone());
     source.alt_titles = Set(scraped.alternative_titles.clone());
-    source.genres = Set(scraped.genres.clone());
+    source.genres = Set(util::genres::normalize(&scraped.genres));
     if let Some(status) = &scraped.status {
         source.status = Set(status.clone());
     }
