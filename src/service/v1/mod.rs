@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod chapter;
+pub mod comment;
 pub mod friend;
 pub mod manga;
 pub mod meta;

@@ -61,6 +61,8 @@ message StatsFriend {
     int32 longest_streak = 7;
     int64 shared_count = 8;
     repeated string shared_titles = 9;
+    // A private user: everything but the username is left empty.
+    bool is_private = 10;
 }
 
 message StatsYear {
@@ -125,6 +127,8 @@ message DetailedStatsReply {
     repeated StatsSeries abandoned = 52;
     optional StatsSeries fastest_finish = 53;
     optional StatsSeries longest_relationship = 54;
+    // Unfinished series with progress, most recently read first: amount = progress, at = last read.
+    repeated StatsSeries currently_reading = 55;
 
     repeated StatsFriend friends = 60;
     optional StatsYear year = 70;

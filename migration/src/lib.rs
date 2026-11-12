@@ -30,6 +30,7 @@ mod m20261113_120001_drop_manga_details;
 mod m20261113_120002_unbounded_source_details;
 mod m20261114_120000_create_manga_dismissal;
 mod m20261114_120001_nsfw;
+mod m20261115_120000_social;
 
 pub struct Migrator;
 
@@ -65,6 +66,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_120002_unbounded_source_details::Migration),
             Box::new(m20261114_120000_create_manga_dismissal::Migration),
             Box::new(m20261114_120001_nsfw::Migration),
+            Box::new(m20261115_120000_social::Migration),
         ]
     }
 }

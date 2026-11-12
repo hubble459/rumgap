@@ -6,6 +6,7 @@ use sea_orm::{
 use tonic::{Request, Response, Status};
 
 use crate::data;
+use crate::interceptor::auth::{UserHasPermissions, UserPermissions};
 use crate::proto::user_request::Identifier;
 use crate::proto::user_server::{User, UserServer};
 use crate::proto::{
@@ -47,20 +48,28 @@ pub async fn get_user_by_id(db: &DatabaseConnection, user_id: i32) -> Result<dat
 #[derive(Debug, Default)]
 pub struct UserController;
 
+fn require_admin(user: &entity::user::Model) -> Result<(), Status> {
+    if user.has_permission(UserPermissions::ADMIN) {
+        Ok(())
+    } else {
+        Err(Status::permission_denied("Admin permission required"))
+    }
+}
+
 #[tonic::async_trait]
 impl User for UserController {
-    /// Get a single user
+    /// Admin-only: get a single user
     async fn get(&self, request: Request<GetUserRequest>) -> Result<Response<UserFullReply>, Status> {
-        request.authorize()?;
+        require_admin(request.authorize()?)?;
         let db = request.db()?;
         let req = request.get_ref();
         let full_user = get_user_by_id(db, req.id).await?;
         Ok(Response::new(full_user.into()))
     }
 
-    /// Get paginated users
+    /// Admin-only: get paginated users. Everyone else finds users by exact username.
     async fn index(&self, request: Request<PaginateQuery>) -> Result<Response<UsersReply>, Status> {
-        request.authorize()?;
+        require_admin(request.authorize()?)?;
         let db = request.db()?;
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
@@ -186,6 +195,10 @@ impl User for UserController {
         }
         if let Some(show_nsfw) = req.show_nsfw {
             active_user.show_nsfw = ActiveValue::Set(show_nsfw);
+        }
+
+        if let Some(is_private) = req.is_private {
+            active_user.is_private = ActiveValue::Set(is_private);
         }
 
         active_user.update(db).await.map_err(|e| {

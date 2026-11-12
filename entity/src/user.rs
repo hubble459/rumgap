@@ -18,6 +18,7 @@ pub struct Model {
     pub updated_at: DateTime,
     pub device_ids: Vec<String>,
     pub show_nsfw: bool,
+    pub is_private: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

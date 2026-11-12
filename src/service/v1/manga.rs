@@ -565,6 +565,15 @@ async fn move_source_to_manga<C: ConnectionTrait>(db: &C, manga_source_id: i32, 
 
     match_canonical_chapters(db, target_manga_id, &chapters).await?;
 
+    // Reading history of this source's chapters moves along with them.
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(
+        db.get_database_backend(),
+        "UPDATE read_event SET manga_id = $1 WHERE chapter_id IN (SELECT id FROM chapter WHERE manga_source_id = $2)",
+        [target_manga_id.into(), manga_source_id.into()],
+    ))
+    .await
+    .map_err(internal)?;
+
     let remaining_sources = entity::manga_source::Entity::find()
         .filter(entity::manga_source::Column::MangaId.eq(old_manga_id))
         .count(db)
@@ -573,6 +582,17 @@ async fn move_source_to_manga<C: ConnectionTrait>(db: &C, manga_source_id: i32, 
 
     if remaining_sources == 0 {
         merge_reading_progress(db, old_manga_id, target_manga_id).await?;
+
+        // Whatever is left on the husk (progress events, comments) belongs to the target now.
+        for table in ["read_event", "comment"] {
+            db.execute_raw(sea_orm::Statement::from_sql_and_values(
+                db.get_database_backend(),
+                format!("UPDATE {table} SET manga_id = $1 WHERE manga_id = $2"),
+                [target_manga_id.into(), old_manga_id.into()],
+            ))
+            .await
+            .map_err(internal)?;
+        }
 
         entity::manga::Entity::delete_by_id(old_manga_id)
             .exec(db)

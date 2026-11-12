@@ -34,6 +34,7 @@ message UserUpdateRequest {
     // Required when changing password
     optional string current_password = 6;
     optional bool show_nsfw = 7;
+    optional bool is_private = 8;
 }
 
 message UserReply {
@@ -60,6 +61,8 @@ message UserFullReply {
     int64 updated_at = 10;
     // Whether 18+ manga show up outside the user's own reading list.
     bool show_nsfw = 11;
+    // Private profiles show only their username to other users.
+    bool is_private = 12;
 }
 
 message UserTokenReply {

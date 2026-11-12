@@ -1,0 +1,62 @@
+syntax = "proto3";
+package rumgap.v1;
+
+import "rumgap/v1/paginate.proto";
+
+message CommentReply {
+    int32 id = 1;
+    int32 manga_id = 2;
+    optional int32 parent_id = 3;
+    // Unset once the author's account is gone.
+    optional int32 user_id = 4;
+    string username = 5;
+    // Empty when deleted.
+    string body = 6;
+    int64 created_at = 7;
+    optional int64 edited_at = 8;
+    bool deleted = 9;
+    // Direct replies only.
+    int64 reply_count = 10;
+    bool is_mine = 11;
+    bool can_delete = 12;
+}
+
+message ListCommentsRequest {
+    int32 manga_id = 1;
+    // Replies to this comment, oldest first; top-level comments (newest first) when unset.
+    optional int32 parent_id = 2;
+    optional uint64 page = 3;
+    optional uint64 per_page = 4;
+}
+
+message CommentsReply {
+    PaginateReply pagination = 1;
+    repeated CommentReply items = 2;
+    // Every comment on the manga, replies included.
+    int64 total_comments = 3;
+}
+
+message GetCommentRequest {
+    int32 id = 1;
+}
+
+message CommentThreadReply {
+    CommentReply comment = 1;
+    // From the top-level comment down to `comment`'s parent.
+    repeated CommentReply ancestors = 2;
+}
+
+message CreateCommentRequest {
+    int32 manga_id = 1;
+    optional int32 parent_id = 2;
+    string body = 3;
+}
+
+message EditCommentRequest {
+    int32 id = 1;
+    string body = 2;
+}
+
+message DeleteCommentRequest {
+    int32 id = 1;
+}

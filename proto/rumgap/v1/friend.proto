@@ -1,6 +1,47 @@
 syntax = "proto3";
 package rumgap.v1;
 
+import "rumgap/v1/paginate.proto";
+import "rumgap/v1/meta.proto";
+
 message FriendRequest {
     int32 user_id = 1;
+    // Takes precedence over `user_id`: users are found by their exact username only.
+    optional string username = 2;
+}
+
+// What any user may know about another user.
+message UserSummary {
+    int32 id = 1;
+    string username = 2;
+    bool is_private = 3;
+    bool followed_by_me = 4;
+    bool follows_me = 5;
+    // Epoch millis the listed follow started, 0 outside a following/followers list.
+    int64 since = 6;
+}
+
+message UserSummariesReply {
+    PaginateReply pagination = 1;
+    repeated UserSummary items = 2;
+}
+
+message ProfileRequest {
+    oneof user {
+        int32 user_id = 1;
+        string username = 2;
+    }
+    // Minutes to add to UTC for the viewer's local time, as in `DetailedStatsRequest`.
+    int32 utc_offset_minutes = 3;
+}
+
+message ProfileReply {
+    UserSummary user = 1;
+    int64 count_following = 2;
+    int64 count_followers = 3;
+    int64 member_since = 4;
+    bool is_me = 5;
+    // Whether `stats` is filled in: the user is public, or it's the viewer.
+    bool visible = 6;
+    optional DetailedStatsReply stats = 7;
 }

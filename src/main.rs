@@ -103,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(async_interceptor(logger))
         .add_service(service::v1::user::server())
         .add_service(service::v1::friend::server())
+        .add_service(service::v1::comment::server())
         .add_service(service::v1::manga::server())
         .add_service(service::v1::chapter::server())
         .add_service(service::v1::reading::server())

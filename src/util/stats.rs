@@ -1,10 +1,10 @@
-//! Everything behind the statistics page: one call that sums up a user's library, their reading
-//! activity (from `chapter_offset`, one row per chapter they opened) and how they compare with the
-//! people they follow.
+//! Everything behind the statistics page and profiles: one call that sums up a user's library,
+//! their reading activity (from the `read_event` log) and how they compare with the people they
+//! follow.
 //!
-//! `chapter_offset` only exists for chapters opened in the reader, while `reading.progress` also
-//! counts chapters marked read, so totals (time, pages, distance) are extrapolated from
-//! `progress` with the per-chapter rates measured from the offsets and the stored page images.
+//! The log only goes back as far as chapters opened in the reader, while `reading.progress` also
+//! counts imported and marked-read chapters, so totals (time, pages, distance) are extrapolated
+//! from `progress` with the pace measured from `chapter_offset` and the stored page images.
 
 use std::collections::{HashMap, HashSet};
 
@@ -89,21 +89,11 @@ impl Series {
     }
 }
 
-/// One opened chapter.
+/// One `open` read event.
 struct Open {
     manga_id: i32,
     title: String,
     created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
-}
-
-impl Open {
-    /// How long this chapter is assumed to have taken.
-    fn minutes(&self) -> i64 {
-        (self.updated_at - self.created_at)
-            .num_minutes()
-            .clamp(MIN_CHAPTER_MINUTES, MAX_CHAPTER_MINUTES)
-    }
 }
 
 fn millis(at: NaiveDateTime) -> i64 {
@@ -158,11 +148,9 @@ async fn library(db: &DatabaseConnection, user: &entity::user::Model) -> Result<
             WHERE c.manga_source_id = lib.source_id
         ) pages ON true
         LEFT JOIN LATERAL (
-            SELECT MIN(co.created_at) AS first_at, MAX(co.updated_at) AS last_at
-            FROM chapter_offset co
-            JOIN chapter c ON c.id = co.chapter_id
-            JOIN manga_source s ON s.id = c.manga_source_id
-            WHERE co.user_id = $1 AND s.manga_id = lib.manga_id
+            SELECT MIN(e.created_at) AS first_at, MAX(e.created_at) AS last_at
+            FROM read_event e
+            WHERE e.user_id = $1 AND e.manga_id = lib.manga_id
         ) opened ON true
         "#,
         vec![
@@ -202,12 +190,11 @@ async fn opens(db: &DatabaseConnection, user_id: i32) -> Result<Vec<Open>, Statu
     let rows = query(
         db,
         r#"
-        SELECT s.manga_id, s.title, co.created_at, co.updated_at
-        FROM chapter_offset co
-        JOIN chapter c ON c.id = co.chapter_id
-        JOIN manga_source s ON s.id = c.manga_source_id
-        WHERE co.user_id = $1
-        ORDER BY co.created_at
+        SELECT e.manga_id, COALESCE(s.title, '') AS title, e.created_at
+        FROM read_event e
+        LEFT JOIN manga_source s ON s.manga_id = e.manga_id AND s.is_primary
+        WHERE e.user_id = $1 AND e.kind = 'open'
+        ORDER BY e.created_at
         "#,
         vec![user_id.into()],
     )
@@ -219,11 +206,36 @@ async fn opens(db: &DatabaseConnection, user_id: i32) -> Result<Vec<Open>, Statu
                 manga_id: row.try_get("", "manga_id")?,
                 title: row.try_get("", "title")?,
                 created_at: row.try_get("", "created_at")?,
-                updated_at: row.try_get("", "updated_at")?,
             })
         })
         .collect::<Result<_, sea_orm::DbErr>>()
         .map_err(internal)
+}
+
+/// When every read event happened, oldest first: the input for reading sessions.
+async fn event_times(db: &DatabaseConnection, user_id: i32) -> Result<Vec<NaiveDateTime>, Status> {
+    query(
+        db,
+        "SELECT created_at FROM read_event WHERE user_id = $1 ORDER BY created_at",
+        vec![user_id.into()],
+    )
+    .await?
+    .into_iter()
+    .map(|row| row.try_get("", "created_at").map_err(internal))
+    .collect()
+}
+
+/// Minutes between opening a chapter and last scrolling it, per chapter: the user's pace.
+async fn chapter_durations(db: &DatabaseConnection, user_id: i32) -> Result<Vec<i64>, Status> {
+    query(
+        db,
+        "SELECT (EXTRACT(EPOCH FROM updated_at - created_at) / 60)::int8 AS minutes FROM chapter_offset WHERE user_id = $1",
+        vec![user_id.into()],
+    )
+    .await?
+    .into_iter()
+    .map(|row| row.try_get("", "minutes").map_err(internal))
+    .collect()
 }
 
 /// Current and longest run of consecutive days in `days`, the current one counting from today
@@ -318,10 +330,13 @@ impl Tally {
     }
 }
 
+/// `user`'s stats; `with_friends` adds the leaderboard of the people they follow, which only
+/// they get to see.
 pub async fn detailed(
     db: &DatabaseConnection,
     user: &entity::user::Model,
     utc_offset_minutes: i32,
+    with_friends: bool,
 ) -> Result<DetailedStatsReply, Status> {
     let offset = Duration::minutes(utc_offset_minutes.clamp(-14 * 60, 14 * 60) as i64);
     let now = Utc::now().naive_utc();
@@ -356,8 +371,7 @@ pub async fn detailed(
         .map(|s| s.progress as f64 * s.screens_per_chapter.unwrap_or(average_screens))
         .sum::<f64>();
 
-    let durations: Vec<i64> = opens.iter().map(|open| (open.updated_at - open.created_at).num_minutes()).collect();
-    let minutes_per_chapter = minutes_per_chapter(&durations);
+    let minutes_per_chapter = minutes_per_chapter(&chapter_durations(db, user.id).await?);
 
     // Activity
     let mut per_day: HashMap<i32, HashMap<i32, i64>> = HashMap::new();
@@ -386,7 +400,12 @@ pub async fn detailed(
     let active_days: HashSet<i32> = per_day.keys().copied().collect();
     let (current_streak, longest_streak) = streaks(&active_days, epoch_day(today));
 
-    let timed: Vec<(NaiveDateTime, i64)> = opens.iter().map(|open| (open.created_at, open.minutes())).collect();
+    let chapter_minutes = (minutes_per_chapter.round() as i64).clamp(MIN_CHAPTER_MINUTES, MAX_CHAPTER_MINUTES);
+    let timed: Vec<(NaiveDateTime, i64)> = event_times(db, user.id)
+        .await?
+        .into_iter()
+        .map(|at| (at, chapter_minutes))
+        .collect();
     let all_sessions = sessions(&timed);
     let longest_session_minutes = all_sessions
         .iter()
@@ -456,6 +475,9 @@ pub async fn detailed(
     let mut most_read: Vec<&Series> = library.iter().filter(|s| s.progress > 0).collect();
     most_read.sort_by_key(|s| (-s.progress, s.manga_id));
 
+    let mut reading_now: Vec<&Series> = library.iter().filter(|s| s.progress > 0 && !s.is_completed()).collect();
+    reading_now.sort_by_key(|s| (std::cmp::Reverse(s.last_activity()), s.manga_id));
+
     let mut finished: Vec<&Series> = library.iter().filter(|s| s.is_completed()).collect();
     finished.sort_by_key(|s| std::cmp::Reverse(s.last_activity()));
 
@@ -480,7 +502,11 @@ pub async fn detailed(
         .map(|s| s.reply((now - s.created_at).num_days(), s.created_at));
 
     let year = year_stats(&library, &opens, &by_manga, local, today.year(), minutes_per_chapter, &series_reply);
-    let friends = friends(db, user, &library, local, epoch_day(today), now).await?;
+    let friends = if with_friends {
+        friends(db, user, &library, local, epoch_day(today), now).await?
+    } else {
+        Vec::new()
+    };
 
     Ok(DetailedStatsReply {
         chapters_read,
@@ -524,6 +550,11 @@ pub async fn detailed(
             .collect(),
         fastest_finish,
         longest_relationship,
+        currently_reading: reading_now
+            .iter()
+            .take(5)
+            .map(|s| s.reply(s.progress, s.last_activity()))
+            .collect(),
         friends,
         year: Some(year),
     })
@@ -563,7 +594,7 @@ fn year_stats(
             let last = this_year
                 .iter()
                 .filter(|open| open.manga_id == id)
-                .map(|open| open.updated_at)
+                .map(|open| open.created_at)
                 .max()
                 .unwrap_or_default();
             series_reply(id, count, last)
@@ -593,7 +624,8 @@ fn year_stats(
     }
 }
 
-/// The user and everyone they follow, most chapters this month first.
+/// The user and everyone they follow, most chapters this month first. Private users only show
+/// their name, after everyone else.
 async fn friends(
     db: &DatabaseConnection,
     user: &entity::user::Model,
@@ -605,7 +637,7 @@ async fn friends(
     let followed = query(
         db,
         r#"
-        SELECT u.id, u.username
+        SELECT u.id, u.username, u.is_private
         FROM friend f
         JOIN "user" u ON u.id = f.friend_id
         WHERE f.user_id = $1 AND u.id <> $1
@@ -619,20 +651,25 @@ async fn friends(
         return Ok(Vec::new());
     }
 
-    let mut people: Vec<(i32, String)> = vec![(user.id, user.username.clone())];
+    let mut people: Vec<(i32, String, bool)> = vec![(user.id, user.username.clone(), false)];
     for row in followed {
         people.push((
             row.try_get("", "id").map_err(internal)?,
             row.try_get("", "username").map_err(internal)?,
+            row.try_get("", "is_private").map_err(internal)?,
         ));
     }
-    let ids: Vec<i32> = people.iter().map(|(id, _)| *id).collect();
+    let ids: Vec<i32> = people
+        .iter()
+        .filter(|(_, _, is_private)| !is_private)
+        .map(|(id, _, _)| *id)
+        .collect();
 
     let mut days: HashMap<i32, HashSet<i32>> = HashMap::new();
     let mut recent: HashMap<i32, i64> = HashMap::new();
     for row in query(
         db,
-        "SELECT user_id, created_at FROM chapter_offset WHERE user_id = ANY($1::int4[])",
+        "SELECT user_id, created_at FROM read_event WHERE user_id = ANY($1::int4[]) AND kind = 'open'",
         vec![ids.clone().into()],
     )
     .await?
@@ -679,7 +716,15 @@ async fn friends(
 
     let mut friends: Vec<StatsFriend> = people
         .into_iter()
-        .map(|(id, username)| {
+        .map(|(id, username, is_private)| {
+            if is_private {
+                return StatsFriend {
+                    user_id: id,
+                    username,
+                    is_private,
+                    ..Default::default()
+                };
+            }
             let (current_streak, longest_streak) = streaks(days.get(&id).unwrap_or(&HashSet::new()), today);
             let mut together = shared.remove(&id).unwrap_or_default();
             together.sort_by_key(|s| (-s.progress, s.manga_id));
@@ -693,10 +738,11 @@ async fn friends(
                 longest_streak,
                 shared_count: together.len() as i64,
                 shared_titles: together.iter().take(3).map(|s| s.title.clone()).collect(),
+                is_private,
             }
         })
         .collect();
-    friends.sort_by_key(|f| (-f.chapters_30d, -f.chapters_total, f.user_id));
+    friends.sort_by_key(|f| (f.is_private, -f.chapters_30d, -f.chapters_total, f.user_id));
     Ok(friends)
 }
 

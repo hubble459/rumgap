@@ -217,7 +217,7 @@ impl Meta for MetaController {
         let logged_in = req.authorize()?;
         let db = req.db()?;
         Ok(Response::new(
-            stats::detailed(db, logged_in, req.get_ref().utc_offset_minutes).await?,
+            stats::detailed(db, logged_in, req.get_ref().utc_offset_minutes, true).await?,
         ))
     }
 }

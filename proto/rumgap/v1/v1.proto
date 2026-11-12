@@ -14,6 +14,7 @@ import "rumgap/v1/paginate.proto";
 import "rumgap/v1/meta.proto";
 import "rumgap/v1/scraper.proto";
 import "rumgap/v1/admin.proto";
+import "rumgap/v1/comment.proto";
 
 service User {
     // Always denied; accounts are created through Admin.CreateUser.
@@ -32,10 +33,23 @@ service User {
 }
 
 service Friend {
-    rpc Follow (FriendRequest) returns (UserFullReply);
-    rpc Unfollow (FriendRequest) returns (UserFullReply);
-    rpc Following (PaginateQuery) returns (UsersReply);
-    rpc Followers (PaginateQuery) returns (UsersReply);
+    rpc Follow (FriendRequest) returns (UserSummary);
+    rpc Unfollow (FriendRequest) returns (UserSummary);
+    rpc Following (PaginateQuery) returns (UserSummariesReply);
+    rpc Followers (PaginateQuery) returns (UserSummariesReply);
+    // A user's profile; stats only when they're public or it's the viewer.
+    rpc Profile (ProfileRequest) returns (ProfileReply);
+}
+
+service Comment {
+    rpc List (ListCommentsRequest) returns (CommentsReply);
+    // One comment with the comments above it, for opening a deep reply on its own.
+    rpc Thread (GetCommentRequest) returns (CommentThreadReply);
+    rpc Create (CreateCommentRequest) returns (CommentReply);
+    // Author only.
+    rpc Edit (EditCommentRequest) returns (CommentReply);
+    // Author or admin. A comment with replies stays as "[deleted]".
+    rpc Delete (DeleteCommentRequest) returns (Empty);
 }
 
 service Manga {

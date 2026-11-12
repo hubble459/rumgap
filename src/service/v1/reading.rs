@@ -15,6 +15,7 @@ use crate::proto::{
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
+use crate::util::read_event;
 
 fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
@@ -99,6 +100,7 @@ impl Reading for ReadingController {
             reading.progress = Set(req.progress);
             reading.update(db).await.map_err(internal)?;
         }
+        read_event::record_progress(db, logged_in.id, req.manga_id, req.chapter_id).await?;
 
         Ok(Response::new(get_manga_by_id(db, Some(logged_in), req.manga_id).await?))
     }
@@ -157,6 +159,8 @@ impl Reading for ReadingController {
             .one(db)
             .await
             .map_err(internal)?;
+
+        read_event::record_open(db, logged_in.id, req.chapter_id, model.as_ref().map(|m| m.updated_at)).await?;
 
         // Save offset
         if let Some(model) = model {
