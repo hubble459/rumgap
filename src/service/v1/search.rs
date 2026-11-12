@@ -5,6 +5,7 @@ use log::warn;
 use manga_parser::error::ScrapeError;
 use manga_parser::model::SearchManga as ScrapedSearchManga;
 use manga_parser::scraper::MangaScraper;
+use manga_parser::Url;
 use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QuerySelect, RelationTrait};
 use tokio::time::timeout;
@@ -128,7 +129,7 @@ impl Search for SearchController {
             .collect();
         let suggestions = find_suggested_manga_ids(db, unknown_titles).await?;
 
-        let items = search_results
+        let items: Vec<SearchManga> = search_results
             .into_iter()
             .map(|item| {
                 let existing = exists.iter().find(|(_id, url, ..)| &item.url.to_string() == url);
@@ -152,6 +153,14 @@ impl Search for SearchController {
                 }
             })
             .collect();
+
+        crate::util::search_save::enqueue(
+            db,
+            items
+                .iter()
+                .filter(|item| item.manga_id.is_none())
+                .filter_map(|item| Url::parse(&item.url).ok()),
+        );
 
         Ok(Response::new(SearchReply { items }))
     }

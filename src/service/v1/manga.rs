@@ -763,32 +763,60 @@ pub async fn delete_source_covers(sources: &[entity::manga_source::Model]) {
     }
 }
 
-/// Create a brand-new manga from a freshly-scraped URL, with this as its (first, and
-/// therefore primary) source.
+/// Create a manga from a freshly-scraped URL, with this as its (first, and therefore
+/// primary) source - or, when its titles match a manga the catalog already has
+/// (`title_match`), add it to that manga as a secondary source instead.
 pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Status> {
     info!("Creating manga [{}]", url);
 
     let manga: manga_parser::model::Manga =
         crate::util::scrape_log::record(db, "manga", &url, None, None, MANGA_PARSER.manga(&url)).await?;
 
-    let saved_manga = entity::manga::ActiveModel { ..Default::default() }.insert(db).await.map_err(internal)?;
+    if let Some(manga_id) = util::title_match::find_title_match(db, &manga).await? {
+        insert_scraped_source(db, manga_id, &manga, false).await?;
+        return Ok(manga_id);
+    }
 
+    let saved_manga = entity::manga::ActiveModel { ..Default::default() }.insert(db).await.map_err(internal)?;
+    if let Err(e) = insert_scraped_source(db, saved_manga.id, &manga, true).await {
+        // Don't leave a manga without sources behind. The usual cause is the same url
+        // being saved meanwhile (the search saver, another user); then that one is it.
+        entity::manga::Entity::delete_by_id(saved_manga.id).exec(db).await.map_err(internal)?;
+        let existing = entity::manga_source::Entity::find()
+            .filter(entity::manga_source::Column::Url.eq(manga.url.to_string()))
+            .one(db)
+            .await
+            .map_err(internal)?;
+        return existing.map(|source| source.manga_id).ok_or(e);
+    }
+
+    Ok(saved_manga.id)
+}
+
+/// Stores `manga` as a source of `manga_id` with the details it was scraped with, inserts
+/// its chapters and runs the matching heuristic.
+async fn insert_scraped_source(
+    db: &DatabaseConnection,
+    manga_id: i32,
+    manga: &manga_parser::model::Manga,
+    is_primary: bool,
+) -> Result<i32, Status> {
     let source = entity::manga_source::ActiveModel {
-        manga_id: Set(saved_manga.id),
+        manga_id: Set(manga_id),
         url: Set(manga.url.to_string()),
         hostname: Set(hostname_of(&manga.url)),
-        is_primary: Set(true),
+        is_primary: Set(is_primary),
         ..Default::default()
     };
-    let saved_source = apply_scraped_details(source, None, &manga)
+    let saved_source = apply_scraped_details(source, None, manga)
         .await
         .insert(db)
         .await
         .map_err(internal)?;
 
-    sync_chapters_for_source(db, saved_manga.id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
+    sync_chapters_for_source(db, manga_id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
-    Ok(saved_manga.id)
+    Ok(saved_source.id)
 }
 
 /// Add a new (by default, secondary) source to an existing manga: scrapes via the existing
@@ -815,22 +843,7 @@ pub async fn add_manga_source(db: &DatabaseConnection, manga_id: i32, url: Url) 
     let manga: manga_parser::model::Manga =
         crate::util::scrape_log::record(db, "manga", &url, Some(manga_id), None, MANGA_PARSER.manga(&url)).await?;
 
-    let source = entity::manga_source::ActiveModel {
-        manga_id: Set(manga_id),
-        url: Set(manga.url.to_string()),
-        hostname: Set(hostname_of(&manga.url)),
-        is_primary: Set(false),
-        ..Default::default()
-    };
-    let saved_source = apply_scraped_details(source, None, &manga)
-        .await
-        .insert(db)
-        .await
-        .map_err(internal)?;
-
-    sync_chapters_for_source(db, manga_id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
-
-    Ok(saved_source.id)
+    insert_scraped_source(db, manga_id, &manga, false).await
 }
 
 /// Refresh an existing manga_source in place: re-scrape its url, update its details and
