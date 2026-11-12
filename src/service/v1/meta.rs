@@ -54,10 +54,13 @@ async fn get_reply(
         MetaOption::Reading => {
             let user_id = logged_in.id;
 
+            // Inner join with the user check in the join condition: only manga in
+            // this user's reading list. A right join would keep every other user's
+            // reading rows too, with NULL manga columns.
             MetaReply {
                 items: query
                     .join(
-                        JoinType::RightJoin,
+                        JoinType::InnerJoin,
                         entity::reading::Relation::Manga
                             .def()
                             .rev()
