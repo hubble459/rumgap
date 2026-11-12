@@ -25,6 +25,7 @@ pub struct Full {
     pub alt_titles: Option<Vec<String>>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub nsfw: bool,
     // special
     // NOTE: count_chapters/last/next are computed from the selected source's chapters only.
     pub count_chapters: i64,
@@ -53,6 +54,7 @@ impl Full {
             genres: self.genres.unwrap_or_default(),
             authors: self.authors.unwrap_or_default(),
             alt_titles: self.alt_titles.unwrap_or_default(),
+            nsfw: self.nsfw,
             count_chapters: self.count_chapters,
             reading_progress: self.progress,
             progress_ordinal: self.progress_ordinal.and_then(|o| o.to_string().parse().ok()),

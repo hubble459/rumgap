@@ -75,6 +75,8 @@ message MangaReply {
     // The source this user sees for this manga: the one they last picked (SelectSource),
     // otherwise their first preferred hostname, otherwise the primary.
     int32 selected_source_id = 19;
+    // 18+. Hidden outside the reading list for users who turned off show_nsfw.
+    bool nsfw = 20;
 }
 
 message SelectSourceRequest {
@@ -125,6 +127,11 @@ message SimilarMangaRequest {
 
 message DismissMangaRequest {
     int32 id = 1;
+}
+
+message SetNsfwRequest {
+    int32 manga_id = 1;
+    bool nsfw = 2;
 }
 
 message BackfillImagesRequest {

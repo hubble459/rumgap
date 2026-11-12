@@ -33,6 +33,7 @@ message UserUpdateRequest {
     repeated string device_ids = 5;
     // Required when changing password
     optional string current_password = 6;
+    optional bool show_nsfw = 7;
 }
 
 message UserReply {
@@ -57,6 +58,8 @@ message UserFullReply {
     int64 count_followers = 8;
     int64 created_at = 9;
     int64 updated_at = 10;
+    // Whether 18+ manga show up outside the user's own reading list.
+    bool show_nsfw = 11;
 }
 
 message UserTokenReply {

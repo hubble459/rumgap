@@ -8,6 +8,7 @@ pub mod for_you;
 pub mod image_dimensions;
 pub mod image_store;
 pub mod image_transcode;
+pub mod nsfw;
 pub mod order;
 pub mod scrape_error_proto;
 pub mod scrape_log;

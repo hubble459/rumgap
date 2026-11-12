@@ -14,7 +14,7 @@ use tonic::{Request, Response, Status};
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::search_server::{Search, SearchServer};
 use crate::proto::{SearchManga, SearchReply, SearchRequest};
-use crate::service::v1::manga::find_suggested_manga_ids;
+use crate::util;
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
 use crate::util::scrape_error_proto::StatusWrapper;
@@ -32,6 +32,7 @@ enum QueryAs {
     MangaId,
     Url,
     Progress,
+    Nsfw,
 }
 
 /// Searches each hostname on its own task with its own timeout, so a slow, hanging or
@@ -84,7 +85,8 @@ impl Search for SearchController {
     /// Search for manga
     async fn manga(&self, request: Request<SearchRequest>) -> Result<Response<SearchReply>, Status> {
         let db = request.db()?;
-        let user_id = request.authorize()?.id;
+        let logged_in = request.authorize()?.clone();
+        let user_id = logged_in.id;
         let req = request.get_ref();
 
         let hostnames = if req.hostnames.is_empty() {
@@ -101,7 +103,7 @@ impl Search for SearchController {
         // to get it - only to bring in this user's reading progress, which takes hopping
         // manga_source -> manga -> reading since `reading` only has a direct FK to `manga`,
         // not `manga_source`.
-        let exists: Vec<(i32, String, Option<i32>)> = entity::manga_source::Entity::find()
+        let exists: Vec<(i32, String, Option<i32>, bool)> = entity::manga_source::Entity::find()
             .join(JoinType::LeftJoin, entity::manga_source::Relation::Manga.def())
             .join(
                 JoinType::LeftJoin,
@@ -116,6 +118,7 @@ impl Search for SearchController {
             .column(entity::manga_source::Column::MangaId)
             .column(entity::manga_source::Column::Url)
             .column_as(entity::reading::Column::Progress, "progress")
+            .column(entity::manga::Column::Nsfw)
             .filter(entity::manga_source::Column::Url.is_in(urls))
             .into_values::<_, QueryAs>()
             .all(db)
@@ -127,10 +130,17 @@ impl Search for SearchController {
             .filter(|item| !exists.iter().any(|(_id, url, ..)| &item.url.to_string() == url))
             .map(|item| item.title.clone())
             .collect();
-        let suggestions = find_suggested_manga_ids(db, unknown_titles).await?;
+        let suggestions = util::title_match::find_title_matches(db, unknown_titles).await?;
 
         let items: Vec<SearchManga> = search_results
             .into_iter()
+            .filter(|item| {
+                logged_in.show_nsfw
+                    || !(item.url.host_str().is_some_and(util::nsfw::is_nsfw_hostname)
+                        || exists.iter().any(|(_id, url, progress, nsfw)| {
+                            *nsfw && progress.is_none() && &item.url.to_string() == url
+                        }))
+            })
             .map(|item| {
                 let existing = exists.iter().find(|(_id, url, ..)| &item.url.to_string() == url);
                 let manga_id = existing.map(|(id, ..)| *id);
@@ -146,7 +156,7 @@ impl Search for SearchController {
                         .cover_url
                         .map(|cover| signed_url::proxy_url(cover.as_ref(), item.url.as_ref())),
                     posted: item.posted.map(|date| date.timestamp_millis()),
-                    is_reading: existing.is_some_and(|(_id, _url, progress)| progress.is_some()),
+                    is_reading: existing.is_some_and(|(_id, _url, progress, _nsfw)| progress.is_some()),
                     title: item.title,
                     manga_id,
                     suggested_manga_id,

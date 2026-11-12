@@ -174,13 +174,19 @@ async fn query(
 
 /// Every manga `user_id` isn't reading and hasn't dismissed within the cooldown, best match
 /// first.
-pub async fn ranked_for_user(db: &DatabaseConnection, user_id: i32) -> Result<Vec<i32>, Status> {
+pub async fn ranked_for_user(db: &DatabaseConnection, user: &entity::user::Model) -> Result<Vec<i32>, Status> {
+    let user_id = user.id;
     let now = Utc::now().naive_utc();
     let cooldown_days = dismiss_days();
 
     let mut features: HashMap<i32, HashSet<String>> = HashMap::new();
-    for row in query(db, "SELECT id FROM manga", vec![]).await? {
-        features.entry(row.try_get_by_index(0).map_err(internal)?).or_default();
+    let mut nsfw = HashSet::new();
+    for row in query(db, "SELECT id, nsfw FROM manga", vec![]).await? {
+        let manga_id: i32 = row.try_get_by_index(0).map_err(internal)?;
+        if row.try_get_by_index::<bool>(1).map_err(internal)? {
+            nsfw.insert(manga_id);
+        }
+        features.entry(manga_id).or_default();
     }
     let feature_rows = query(
         db,
@@ -245,7 +251,7 @@ pub async fn ranked_for_user(db: &DatabaseConnection, user_id: i32) -> Result<Ve
     let mut candidates: Vec<i32> = features
         .keys()
         .copied()
-        .filter(|manga_id| !excluded.contains(manga_id))
+        .filter(|manga_id| !excluded.contains(manga_id) && (user.show_nsfw || !nsfw.contains(manga_id)))
         .collect();
     candidates.sort();
 

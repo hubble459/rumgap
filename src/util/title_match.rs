@@ -66,8 +66,40 @@ pub fn pick_match(titles: &[String], chapters: i64, candidates: &[Candidate]) ->
     }
 }
 
-/// The existing manga `scraped` belongs to, if any. Candidates are narrowed with the
-/// pg_trgm `%` operator first, then compared exactly in Rust.
+/// Every source sharing a trigram-similar title (pg_trgm `%`) with one of `titles`: the
+/// candidates `pick_match` compares exactly.
+async fn load_candidates(db: &DatabaseConnection, titles: &[String]) -> Result<Vec<Candidate>, Status> {
+    let rows = db
+        .query_all_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            r#"
+            SELECT s.manga_id, s.title, s.alt_titles,
+                   (SELECT count(*) FROM chapter c WHERE c.manga_source_id = s.id) AS chapters
+            FROM manga_source s
+            WHERE EXISTS (
+                SELECT 1 FROM unnest($1::text[]) t WHERE t % any(s.alt_titles || s.title)
+            )
+            "#,
+            [titles.to_vec().into()],
+        ))
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?;
+
+    rows.iter()
+        .map(|row| {
+            let title: String = row.try_get_by_index(1)?;
+            let alt_titles: Vec<String> = row.try_get_by_index(2)?;
+            Ok(Candidate {
+                manga_id: row.try_get_by_index(0)?,
+                titles: std::iter::once(title).chain(alt_titles).collect(),
+                chapters: row.try_get_by_index(3)?,
+            })
+        })
+        .collect::<Result<Vec<_>, sea_orm::DbErr>>()
+        .map_err(|e| Status::internal(e.to_string()))
+}
+
+/// The existing manga `scraped` belongs to, if any.
 pub async fn find_title_match(
     db: &DatabaseConnection,
     scraped: &manga_parser::model::Manga,
@@ -81,41 +113,30 @@ pub async fn find_title_match(
         return Ok(None);
     }
 
-    let rows = db
-        .query_all_raw(sea_orm::Statement::from_sql_and_values(
-            db.get_database_backend(),
-            r#"
-            SELECT s.manga_id, s.title, s.alt_titles,
-                   (SELECT count(*) FROM chapter c WHERE c.manga_source_id = s.id) AS chapters
-            FROM manga_source s
-            WHERE EXISTS (
-                SELECT 1 FROM unnest($1::text[]) t WHERE t % any(s.alt_titles || s.title)
-            )
-            "#,
-            [titles.clone().into()],
-        ))
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?;
-
-    let candidates = rows
-        .iter()
-        .map(|row| {
-            let title: String = row.try_get_by_index(1)?;
-            let alt_titles: Vec<String> = row.try_get_by_index(2)?;
-            Ok(Candidate {
-                manga_id: row.try_get_by_index(0)?,
-                titles: std::iter::once(title).chain(alt_titles).collect(),
-                chapters: row.try_get_by_index(3)?,
-            })
-        })
-        .collect::<Result<Vec<_>, sea_orm::DbErr>>()
-        .map_err(|e| Status::internal(e.to_string()))?;
-
+    let candidates = load_candidates(db, &titles).await?;
     let matched = pick_match(&titles, scraped.chapters.len() as i64, &candidates);
     if let Some(manga_id) = matched {
         info!("[{}] matches manga {} by title", scraped.url, manga_id);
     }
     Ok(matched)
+}
+
+/// For each of `titles` (e.g. search results, which only have a title), the existing manga
+/// it matches, if any. Chapter counts aren't known here, so they aren't compared.
+pub async fn find_title_matches(db: &DatabaseConnection, titles: Vec<String>) -> Result<HashMap<String, i32>, Status> {
+    let titles: Vec<String> = titles.into_iter().filter(|title| !title.trim().is_empty()).collect();
+    if titles.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let candidates = load_candidates(db, &titles).await?;
+    Ok(titles
+        .into_iter()
+        .filter_map(|title| {
+            let matched = pick_match(std::slice::from_ref(&title), 0, &candidates)?;
+            Some((title, matched))
+        })
+        .collect())
 }
 
 #[cfg(test)]

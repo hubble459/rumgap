@@ -22,7 +22,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, DismissMangaRequest, BackfillStatusReply, Empty, GetBackfillStatusRequest, GetMangaRequest,
     MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
-    PaginateQuery, PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetPrimarySourceRequest, SimilarMangaRequest,
+    PaginateQuery, PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetNsfwRequest, SetPrimarySourceRequest, SimilarMangaRequest,
     UpdateMangaRequest,
 };
 use crate::service::v1::reading::sync_reading_progress;
@@ -816,7 +816,33 @@ async fn insert_scraped_source(
 
     sync_chapters_for_source(db, manga_id, saved_source.id, &saved_source.url, false, &manga.chapters).await?;
 
+    if manga.nsfw {
+        set_manga_nsfw(db, manga_id, true).await?;
+    }
+
     Ok(saved_source.id)
+}
+
+async fn set_manga_nsfw(db: &DatabaseConnection, manga_id: i32, nsfw: bool) -> Result<(), Status> {
+    entity::manga::ActiveModel {
+        id: Set(manga_id),
+        nsfw: Set(nsfw),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .map_err(internal)?;
+    Ok(())
+}
+
+/// For a user who turned off 18+ manga: leaves them out, except the ones they read.
+/// Needs `select_manga`'s join on the user's reading row.
+fn hide_nsfw_for(query: Select<entity::manga::Entity>, user: &entity::user::Model) -> Select<entity::manga::Entity> {
+    if user.show_nsfw {
+        query
+    } else {
+        query.filter(Expr::cust("(NOT manga.nsfw OR reading.manga_id IS NOT NULL)"))
+    }
 }
 
 /// Add a new (by default, secondary) source to an existing manga: scrapes via the existing
@@ -884,47 +910,11 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32,
 
     sync_chapters_for_source(db, source.manga_id, manga_source_id, &source.url, force, &manga.chapters).await?;
 
-    Ok(source.manga_id)
-}
-
-/// Reuses the already-live pg_trgm `similar()` matching (title/alt_titles fuzzy match) to
-/// suggest "is this the same manga you already have?" for a title that isn't tracked
-/// locally yet (e.g. a fresh search result) - used by `SearchManga.suggested_manga_id`.
-/// Looks up every title in one query, keyed by title.
-pub async fn find_suggested_manga_ids(
-    db: &DatabaseConnection,
-    titles: Vec<String>,
-) -> Result<HashMap<String, i32>, Status> {
-    if titles.is_empty() {
-        return Ok(HashMap::new());
+    if manga.nsfw {
+        set_manga_nsfw(db, source.manga_id, true).await?;
     }
 
-    let rows = db
-        .query_all_raw(sea_orm::Statement::from_sql_and_values(
-            db.get_database_backend(),
-            r#"
-            SELECT t.title, s.manga_id
-            FROM unnest($1::text[]) AS t(title)
-            CROSS JOIN LATERAL (
-                SELECT manga_source.manga_id
-                FROM manga_source
-                WHERE t.title % any(manga_source.alt_titles || manga_source.title)
-                LIMIT 1
-            ) s
-            "#,
-            [titles.into()],
-        ))
-        .await
-        .map_err(internal)?;
-
-    rows.iter()
-        .map(|row| {
-            Ok((
-                row.try_get_by_index::<String>(0).map_err(internal)?,
-                row.try_get_by_index::<i32>(1).map_err(internal)?,
-            ))
-        })
-        .collect()
+    Ok(source.manga_id)
 }
 
 pub fn index_manga(logged_in: Option<&entity::user::Model>) -> Select<entity::manga::Entity> {
@@ -1085,7 +1075,7 @@ impl Manga for MangaController {
         let logged_in = request.authorize()?.clone();
         let req = request.get_ref();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
-        let mut paginate = index_manga(Some(&logged_in));
+        let mut paginate = hide_nsfw_for(index_manga(Some(&logged_in)), &logged_in);
 
         if let Some(search) = req.search.clone() {
             if !search.is_empty() {
@@ -1164,7 +1154,7 @@ impl Manga for MangaController {
             [titles.into()],
         );
 
-        let similar = index_manga(Some(&logged_in))
+        let similar = hide_nsfw_for(index_manga(Some(&logged_in)), &logged_in)
             .filter(entity::manga::Column::Id.ne(id).and(title_matches))
             .into_model::<data::manga::Full>()
             .all(db)
@@ -1435,7 +1425,7 @@ impl Manga for MangaController {
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
         let page = req.page.unwrap_or(0);
 
-        let ranked = util::for_you::ranked_for_user(db, logged_in.id).await?;
+        let ranked = util::for_you::ranked_for_user(db, &logged_in).await?;
         let total = ranked.len() as u64;
         let ids: Vec<i32> = ranked
             .into_iter()
@@ -1491,6 +1481,25 @@ impl Manga for MangaController {
         .map_err(internal)?;
 
         Ok(Response::new(Empty::default()))
+    }
+
+    async fn set_nsfw(&self, request: Request<SetNsfwRequest>) -> Result<Response<MangaReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?.clone();
+        if !logged_in.has_permission(UserPermissions::MOD) && !logged_in.has_permission(UserPermissions::ADMIN) {
+            return Err(Status::permission_denied("Mod or admin permission required"));
+        }
+        let req = request.get_ref();
+
+        entity::manga::Entity::find_by_id(req.manga_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .ok_or(Status::not_found("Manga not found"))?;
+        set_manga_nsfw(db, req.manga_id, req.nsfw).await?;
+        info!("User {} set manga {} nsfw to {}", logged_in.id, req.manga_id, req.nsfw);
+
+        Ok(Response::new(get_manga_by_id(db, Some(&logged_in), req.manga_id).await?))
     }
 
     async fn undismiss(&self, request: Request<DismissMangaRequest>) -> Result<Response<Empty>, Status> {

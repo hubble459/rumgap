@@ -184,6 +184,9 @@ impl User for UserController {
         if !req.device_ids.is_empty() {
             active_user.device_ids = ActiveValue::Set(req.device_ids.clone());
         }
+        if let Some(show_nsfw) = req.show_nsfw {
+            active_user.show_nsfw = ActiveValue::Set(show_nsfw);
+        }
 
         active_user.update(db).await.map_err(|e| {
             if verify::is_conflict(&e) {

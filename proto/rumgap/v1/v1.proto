@@ -78,6 +78,10 @@ service Manga {
     // ranks similar manga lower until then. Dismissing again restarts the cooldown.
     rpc Dismiss (DismissMangaRequest) returns (Empty);
     rpc Undismiss (DismissMangaRequest) returns (Empty);
+    // Mod/admin-only. Marks a manga 18+ or not. A source scraped as nsfw (an adult-only
+    // site, `nsfw: true` in its manga_parser config, or a mangadex adult rating) marks
+    // its manga 18+ by itself.
+    rpc SetNsfw (SetNsfwRequest) returns (MangaReply);
 }
 
 service Chapter {
