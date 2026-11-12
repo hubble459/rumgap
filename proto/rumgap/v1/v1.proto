@@ -106,6 +106,7 @@ service Meta {
     rpc Hostnames (MetaHostnamesRequest) returns (MetaReply);
     rpc Genres (MetaGenresRequest) returns (MetaReply);
     rpc Stats (Empty) returns (StatsReply);
+    rpc DetailedStats (DetailedStatsRequest) returns (DetailedStatsReply);
 }
 
 // Admin-only: per-hostname scraper health, backing an admin status page for keeping track of

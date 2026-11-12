@@ -9,10 +9,12 @@ use tonic::{Request, Response, Status};
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::meta_server::{Meta, MetaServer};
 use crate::proto::{
-    Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption, MetaHostnamesRequest, MetaReply, StatsReply,
+    DetailedStatsReply, DetailedStatsRequest, Empty, MetaGenresOption, MetaGenresRequest, MetaHostnamesOption,
+    MetaHostnamesRequest, MetaReply, StatsReply,
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
+use crate::util::stats;
 use crate::MANGA_PARSER;
 
 #[derive(Debug, Default)]
@@ -190,7 +192,13 @@ impl Meta for MetaController {
         .select_only()
         .column_as(Expr::cust("COUNT(DISTINCT reading.manga_id)"), StatsCount::TotalReading)
         .column_as(Expr::cust("COUNT(DISTINCT chapter.id)"), StatsCount::TotalChapters)
-        .column_as(Expr::cust("SUM(DISTINCT reading.progress)"), StatsCount::Chapters)
+        .column_as(
+            Expr::cust_with_values(
+                "(SELECT COALESCE(SUM(progress), 0) FROM reading WHERE user_id = $1)",
+                [user_id],
+            ),
+            StatsCount::Chapters,
+        )
         .into_values::<_, StatsCount>()
         .one(db)
         .await
@@ -203,6 +211,14 @@ impl Meta for MetaController {
             count_reading,
             count_chapters: stats.2,
         }))
+    }
+
+    async fn detailed_stats(&self, req: Request<DetailedStatsRequest>) -> Result<Response<DetailedStatsReply>, Status> {
+        let logged_in = req.authorize()?;
+        let db = req.db()?;
+        Ok(Response::new(
+            stats::detailed(db, logged_in, req.get_ref().utc_offset_minutes).await?,
+        ))
     }
 }
 

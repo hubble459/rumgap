@@ -15,6 +15,7 @@ pub mod session;
 pub mod search;
 pub mod search_save;
 pub mod signed_url;
+pub mod stats;
 pub mod startup_banner;
 pub mod title_match;
 pub mod updater;

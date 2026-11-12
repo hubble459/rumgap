@@ -20,6 +20,116 @@ message StatsReply {
     int64 count_chapters = 4;
 }
 
+message DetailedStatsRequest {
+    // Minutes to add to UTC for the viewer's local time, so days, hours and streaks follow
+    // their own clock rather than the server's.
+    int32 utc_offset_minutes = 1;
+}
+
+message StatsDay {
+    // Days since 1970-01-01, in the viewer's local time.
+    int32 day = 1;
+    int64 chapters = 2;
+}
+
+message StatsCount {
+    string name = 1;
+    int64 series = 2;
+    int64 chapters = 3;
+}
+
+message StatsSeries {
+    int32 manga_id = 1;
+    string title = 2;
+    optional string cover = 3;
+    int64 progress = 4;
+    int64 total = 5;
+    // Days idle, days to finish, days together or chapters in one day - depends on the field.
+    int64 amount = 6;
+    // Epoch millis of the moment the field is about (finished, last read...). For a day
+    // (`biggest_binge`) it's that local date's midnight as UTC.
+    int64 at = 7;
+}
+
+message StatsFriend {
+    int32 user_id = 1;
+    string username = 2;
+    bool is_me = 3;
+    int64 chapters_30d = 4;
+    int64 chapters_total = 5;
+    int32 current_streak = 6;
+    int32 longest_streak = 7;
+    int64 shared_count = 8;
+    repeated string shared_titles = 9;
+}
+
+message StatsYear {
+    int32 year = 1;
+    int64 chapters = 2;
+    int64 minutes = 3;
+    int64 new_series = 4;
+    int64 finished_series = 5;
+    int64 active_days = 6;
+    optional StatsSeries top_series = 7;
+    optional string top_genre = 8;
+    // 1-12, 0 when nothing was read this year.
+    int32 top_month = 9;
+    int64 top_month_chapters = 10;
+    repeated int64 months = 11;
+}
+
+message DetailedStatsReply {
+    // Sum of reading progress.
+    int64 chapters_read = 1;
+    // Chapters the reader actually opened (one per chapter, rereads included once).
+    int64 chapters_opened = 2;
+    // `chapters_read` times each series' average pages per chapter.
+    int64 pages_read = 3;
+    // Same, summing each page's height/width: multiply by a screen width for a distance.
+    double screens_scrolled = 4;
+    // `chapters_read` at the pace measured from when chapters were opened and last scrolled.
+    int64 minutes_read = 5;
+    int64 series_total = 6;
+    int64 series_completed = 7;
+    int64 series_in_progress = 8;
+    int64 series_not_started = 9;
+    int64 series_dropped = 10;
+    int64 series_ongoing = 11;
+    int64 backlog_chapters = 12;
+    int64 library_chapters = 13;
+    // The user's typical minutes per chapter that `minutes_read` is based on.
+    double minutes_per_chapter = 14;
+
+    repeated StatsDay days = 20;
+    // 24 entries, local hour of day.
+    repeated int64 hours = 21;
+    // 7 entries, Monday first.
+    repeated int64 weekdays = 22;
+    int32 current_streak = 23;
+    int32 longest_streak = 24;
+    int64 sessions = 25;
+    int64 longest_session_minutes = 26;
+    // The day with the most chapters opened: amount = chapters, at = that day.
+    optional StatsSeries biggest_binge = 27;
+    optional int64 first_read_at = 28;
+    int64 member_since = 29;
+    int64 chapters_30d = 30;
+
+    repeated StatsCount genres = 40;
+    repeated StatsCount authors = 41;
+    repeated StatsCount hosts = 42;
+    repeated StatsCount languages = 43;
+
+    repeated StatsSeries most_read = 50;
+    repeated StatsSeries recently_finished = 51;
+    repeated StatsSeries abandoned = 52;
+    optional StatsSeries fastest_finish = 53;
+    optional StatsSeries longest_relationship = 54;
+
+    repeated StatsFriend friends = 60;
+    optional StatsYear year = 70;
+}
+
 enum MetaHostnamesOption {
     HostnamesReading = 0;
     HostnamesManga = 1;
