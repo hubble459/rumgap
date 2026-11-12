@@ -27,6 +27,7 @@ mod m20261112_120000_index_chapter_manga_source_id;
 mod m20261112_120001_create_session;
 mod m20261113_120000_manga_source_details;
 mod m20261113_120001_drop_manga_details;
+mod m20261113_120002_unbounded_source_details;
 
 pub struct Migrator;
 
@@ -59,6 +60,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261112_120001_create_session::Migration),
             Box::new(m20261113_120000_manga_source_details::Migration),
             Box::new(m20261113_120001_drop_manga_details::Migration),
+            Box::new(m20261113_120002_unbounded_source_details::Migration),
         ]
     }
 }
