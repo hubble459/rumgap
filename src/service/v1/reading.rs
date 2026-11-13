@@ -1,4 +1,4 @@
-use migration::{Expr, JoinType};
+use migration::{Expr, JoinType, OnConflict};
 use sea_orm::ActiveValue::{self, Set};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
@@ -111,16 +111,28 @@ impl Reading for ReadingController {
         let logged_in = request.authorize()?;
         let req = request.get_ref();
 
-        let saved = entity::reading::ActiveModel {
+        entity::manga::Entity::find_by_id(req.manga_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .ok_or(Status::not_found("Manga not found"))?;
+
+        // Adding a manga that's already in the reading list just returns it.
+        entity::reading::Entity::insert(entity::reading::ActiveModel {
             manga_id: Set(req.manga_id),
             user_id: Set(logged_in.id),
             ..Default::default()
-        }
-        .insert(db)
+        })
+        .on_conflict(
+            OnConflict::columns([entity::reading::Column::UserId, entity::reading::Column::MangaId])
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_without_returning(db)
         .await
         .map_err(internal)?;
 
-        let reading = get_manga_by_id(db, Some(logged_in), saved.manga_id).await?;
+        let reading = get_manga_by_id(db, Some(logged_in), req.manga_id).await?;
 
         Ok(Response::new(reading))
     }
