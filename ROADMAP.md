@@ -18,7 +18,9 @@ Covers both rumgap (this repo) and the [wuxia](https://github.com/hubble459/wuxi
   ongoing/finished and how often a manga updates.
 - Cover cache-busting: put a version in cover urls so a broken cover cached by clients
   (`Cache-Control: immutable`) can't outlive a re-download
-- Format tags in genres (Long Strip, Full Color, Web Comic, Manhwa/Manhua/Manga, Completed, ...)
+- Source languages, once a non-English site is added: a `language` per scraper config,
+  stored on each source, a `language:` filter, and a "my languages" setting that hides
+  sources and manga in languages you can't read
 - Tests (rumgap + wuxia)
 - Periodic backups
 - API documentation and code comments (rumgap)
@@ -37,7 +39,8 @@ Covers both rumgap (this repo) and the [wuxia](https://github.com/hubble459/wuxi
   slow host can't fail a search; preferred sources moved to settings
 - Online search results saved to the catalog in the background, added to an existing manga
   when their title matches exactly
-- Genre normalization (one spelling per genre, aliases such as Sci-Fi and Reincarnation)
+- Genre normalization (one spelling per genre, aliases such as Sci-Fi and Reincarnation),
+  format and status tags (Long Strip, Full Color, Completed, ...) dropped from genres
 - One url and hostname for MangaDex; honest User-Agent for MangaDex image downloads
 - Chapters a site keeps behind a login (early access) reported as such
 - Social: friends, follow by username, profiles with read history, private profiles,
