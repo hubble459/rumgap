@@ -41,6 +41,8 @@ Covers both rumgap (this repo) and the [wuxia](https://github.com/hubble459/wuxi
   when their title matches exactly
 - Genre normalization (one spelling per genre, aliases such as Sci-Fi and Reincarnation),
   format and status tags (Long Strip, Full Color, Completed, ...) dropped from genres
+- Manga origin (manga, manhwa, manhua, unknown): detected from MangaDex, genre tags or title
+  script, settable by mods, filterable with `origin:`
 - One url and hostname for MangaDex; honest User-Agent for MangaDex image downloads
 - Chapters a site keeps behind a login (early access) reported as such
 - Social: friends, follow by username, profiles with read history, private profiles,
