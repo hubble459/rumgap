@@ -1,7 +1,7 @@
 use sea_orm::prelude::{DateTime, DateTimeWithTimeZone, Decimal};
 use sea_orm::FromQueryResult;
 
-use crate::proto::{MangaReply, MangaSourceReply};
+use crate::proto::{MangaOrigin, MangaReply, MangaSourceReply};
 
 /// A manga as one user sees it: its details come from the source they see it through
 /// (`selected_source_id`, see `DISPLAY_SOURCE_QUERY` in `service::v1::manga`).
@@ -26,6 +26,8 @@ pub struct Full {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub nsfw: bool,
+    pub origin: String,
+    pub origin_set_by_hand: bool,
     // special
     // NOTE: count_chapters/last/next are computed from the selected source's chapters only.
     pub count_chapters: i64,
@@ -55,6 +57,14 @@ impl Full {
             authors: self.authors.unwrap_or_default(),
             alt_titles: self.alt_titles.unwrap_or_default(),
             nsfw: self.nsfw,
+            origin: match self.origin.as_str() {
+                crate::util::origin::MANGA => MangaOrigin::OriginManga,
+                crate::util::origin::MANHWA => MangaOrigin::OriginManhwa,
+                crate::util::origin::MANHUA => MangaOrigin::OriginManhua,
+                _ => MangaOrigin::OriginUnknown,
+            }
+            .into(),
+            origin_set_by_hand: self.origin_set_by_hand,
             count_chapters: self.count_chapters,
             reading_progress: self.progress,
             progress_ordinal: self.progress_ordinal.and_then(|o| o.to_string().parse().ok()),

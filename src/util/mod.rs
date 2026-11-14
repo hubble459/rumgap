@@ -11,6 +11,7 @@ pub mod image_dimensions;
 pub mod image_store;
 pub mod image_transcode;
 pub mod nsfw;
+pub mod origin;
 pub mod order;
 pub mod read_event;
 pub mod scrape_error_proto;

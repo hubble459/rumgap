@@ -2742,7 +2742,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#54f40af9dea275e898700a680f532558633d0922"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#9fb70218baa3f0585e38a6cbe0358ef070baff62"
 dependencies = [
  "anyhow",
  "async-trait",

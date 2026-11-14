@@ -12,6 +12,9 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub nsfw: bool,
+    /// manga, manhwa, manhua or unknown
+    pub origin: String,
+    pub origin_set_by_hand: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

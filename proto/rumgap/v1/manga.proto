@@ -77,6 +77,17 @@ message MangaReply {
     int32 selected_source_id = 19;
     // 18+. Hidden outside the reading list for users who turned off show_nsfw.
     bool nsfw = 20;
+    MangaOrigin origin = 21;
+    // A mod set the origin; it's not detected from the sources anymore.
+    bool origin_set_by_hand = 22;
+}
+
+// Where a manga comes from. Prefixed, since enum values share the package's namespace.
+enum MangaOrigin {
+    ORIGIN_UNKNOWN = 0;
+    ORIGIN_MANGA = 1;
+    ORIGIN_MANHWA = 2;
+    ORIGIN_MANHUA = 3;
 }
 
 message SelectSourceRequest {
@@ -132,6 +143,12 @@ message ForYouRequest {
     // Only manga matching this filter, in the same syntax as Manga.Index's search
     // (e.g. `genre:"Action" -host:"hentai20.io"`).
     optional string search = 3;
+}
+
+message SetOriginRequest {
+    int32 manga_id = 1;
+    // Unset: detect it from the sources again.
+    optional MangaOrigin origin = 2;
 }
 
 message DismissMangaRequest {

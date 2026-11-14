@@ -96,6 +96,8 @@ service Manga {
     // site, `nsfw: true` in its manga_parser config, or a mangadex adult rating) marks
     // its manga 18+ by itself.
     rpc SetNsfw (SetNsfwRequest) returns (MangaReply);
+    // Mod/admin-only. Sets where a manga comes from by hand, or back to detecting it.
+    rpc SetOrigin (SetOriginRequest) returns (MangaReply);
 }
 
 service Chapter {

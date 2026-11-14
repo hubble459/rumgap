@@ -34,6 +34,8 @@ pub struct Model {
     pub cover_content_type: Option<String>,
     pub cover_checksum: Option<String>,
     pub cover_attempts: i32,
+    /// The language the manga was first published in, when the site says (e.g. `ko`).
+    pub original_language: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

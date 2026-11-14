@@ -19,6 +19,7 @@ static SEARCH_FIELDS: phf::Map<&'static str, SearchField> = phf_map! {
     "description" => SearchField::Text("(SELECT string_agg(s.description, ' ') FROM manga_source s WHERE s.manga_id = manga.id)"),
     // Resolves through the source `index_manga` shows each manga through.
     "url" => SearchField::Equals("manga_source.url"),
+    "origin" => SearchField::Text("manga.origin"),
     "host" => SearchField::Text("(SELECT string_agg(s.hostname, ' ') FROM manga_source s WHERE s.manga_id = manga.id)"),
     "genres" => SearchField::Array("(SELECT array_agg(g) FROM manga_source s, unnest(s.genres) g WHERE s.manga_id = manga.id)"),
     "genre" => SearchField::Array("(SELECT array_agg(g) FROM manga_source s, unnest(s.genres) g WHERE s.manga_id = manga.id)"),

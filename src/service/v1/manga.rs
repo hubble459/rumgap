@@ -22,7 +22,7 @@ use crate::proto::manga_server::{Manga, MangaServer};
 use crate::proto::{
     AddSourceRequest, BackfillImagesRequest, DeleteMangaRequest, DismissMangaRequest, BackfillStatusReply, Empty, ForYouRequest, GetBackfillStatusRequest, GetMangaRequest,
     MangaReply, MangaRequest, MangaSourceReply, MangasReply, MangasRequest, MergeMangaRequest, MoveSourceRequest,
-    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetNsfwRequest, SetPrimarySourceRequest, SimilarMangaRequest,
+    PaginateReply, PaginateSearchQuery, RemoveSourceRequest, SelectSourceRequest, SetNsfwRequest, SetOriginRequest, MangaOrigin, SetPrimarySourceRequest, SimilarMangaRequest,
     UpdateMangaRequest,
 };
 use crate::service::v1::reading::sync_reading_progress;
@@ -749,6 +749,7 @@ async fn apply_scraped_details(
     source.authors = Set(scraped.authors.clone());
     source.alt_titles = Set(scraped.alternative_titles.clone());
     source.genres = Set(util::genres::normalize(&scraped.genres));
+    source.original_language = Set(scraped.original_language.clone());
     if let Some(status) = &scraped.status {
         source.status = Set(status.clone());
     }
@@ -839,6 +840,7 @@ async fn insert_scraped_source(
     if manga.nsfw {
         set_manga_nsfw(db, manga_id, true).await?;
     }
+    util::origin::update(db, Some(manga_id)).await?;
 
     Ok(saved_source.id)
 }
@@ -933,6 +935,7 @@ pub async fn refresh_manga_source(db: &DatabaseConnection, manga_source_id: i32,
     if manga.nsfw {
         set_manga_nsfw(db, source.manga_id, true).await?;
     }
+    util::origin::update(db, Some(source.manga_id)).await?;
 
     Ok(source.manga_id)
 }
@@ -1359,6 +1362,7 @@ impl Manga for MangaController {
         let txn = db.begin().await.map_err(internal)?;
         merge_manga_sources(&txn, req.source_manga_id, req.target_manga_id).await?;
         txn.commit().await.map_err(internal)?;
+        util::origin::update(db, Some(req.target_manga_id)).await?;
 
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), req.target_manga_id).await?,
@@ -1376,9 +1380,18 @@ impl Manga for MangaController {
         }
         let req = request.get_ref();
 
+        let old_manga_id = entity::manga_source::Entity::find_by_id(req.manga_source_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .map(|source| source.manga_id);
         let txn = db.begin().await.map_err(internal)?;
         move_source_to_manga(&txn, req.manga_source_id, req.target_manga_id).await?;
         txn.commit().await.map_err(internal)?;
+        util::origin::update(db, Some(req.target_manga_id)).await?;
+        if let Some(old_manga_id) = old_manga_id {
+            util::origin::update(db, Some(old_manga_id)).await?;
+        }
 
         Ok(Response::new(
             get_manga_by_id(db, Some(&logged_in), req.target_manga_id).await?,
@@ -1515,6 +1528,43 @@ impl Manga for MangaController {
         .map_err(internal)?;
 
         Ok(Response::new(Empty::default()))
+    }
+
+    async fn set_origin(&self, request: Request<SetOriginRequest>) -> Result<Response<MangaReply>, Status> {
+        let db = request.db()?;
+        let logged_in = request.authorize()?.clone();
+        if !logged_in.has_permission(UserPermissions::MOD) && !logged_in.has_permission(UserPermissions::ADMIN) {
+            return Err(Status::permission_denied("Mod or admin permission required"));
+        }
+        let req = request.get_ref();
+
+        entity::manga::Entity::find_by_id(req.manga_id)
+            .one(db)
+            .await
+            .map_err(internal)?
+            .ok_or(Status::not_found("Manga not found"))?;
+
+        let mut manga = entity::manga::ActiveModel {
+            id: Set(req.manga_id),
+            origin_set_by_hand: Set(req.origin.is_some()),
+            ..Default::default()
+        };
+        if let Some(origin) = req.origin {
+            let origin = match MangaOrigin::try_from(origin).unwrap_or_default() {
+                MangaOrigin::OriginManga => util::origin::MANGA,
+                MangaOrigin::OriginManhwa => util::origin::MANHWA,
+                MangaOrigin::OriginManhua => util::origin::MANHUA,
+                MangaOrigin::OriginUnknown => util::origin::UNKNOWN,
+            };
+            manga.origin = Set(origin.to_string());
+        }
+        manga.update(db).await.map_err(internal)?;
+        if req.origin.is_none() {
+            util::origin::update(db, Some(req.manga_id)).await?;
+        }
+        info!("User {} set manga {} origin to {:?}", logged_in.id, req.manga_id, req.origin);
+
+        Ok(Response::new(get_manga_by_id(db, Some(&logged_in), req.manga_id).await?))
     }
 
     async fn set_nsfw(&self, request: Request<SetNsfwRequest>) -> Result<Response<MangaReply>, Status> {
