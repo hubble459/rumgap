@@ -23,7 +23,20 @@ const ALIASES: &[(&str, &str)] = &[
     ("vampires", "Vampire"),
     ("demons", "Demon"),
     ("videogames", "Video Game"),
-    ("webtoons", "Webtoon"),
+];
+
+/// Tags sites list as genres that describe the format or status instead, by `key`; dropped.
+const NOT_GENRES: &[&str] = &[
+    "longstrip",
+    "fullcolor",
+    "fullcolour",
+    "officialcolored",
+    "fancolored",
+    "webcomic",
+    "webtoon",
+    "webtoons",
+    "completed",
+    "100chapter",
 ];
 
 /// Words kept lowercase inside a genre ("Slice of Life").
@@ -65,7 +78,7 @@ pub fn normalize(genres: &[String]) -> Vec<String> {
         .filter_map(|genre| {
             let genre = genre.trim();
             let key = key(genre);
-            if key.is_empty() {
+            if key.is_empty() || NOT_GENRES.contains(&key.as_str()) {
                 return None;
             }
             let normalized = match ALIASES.iter().find(|(alias, _)| *alias == key) {
@@ -127,7 +140,6 @@ mod tests {
         assert_eq!(normalized(&["sci-fi"]), ["Sci-Fi"]);
         assert_eq!(normalized(&["Vampires", "Vampire"]), ["Vampire"]);
         assert_eq!(normalized(&["Video Games"]), ["Video Game"]);
-        assert_eq!(normalized(&["Webtoons", "Webtoon"]), ["Webtoon"]);
         assert_eq!(normalized(&["Demons"]), ["Demon"]);
     }
 
@@ -152,11 +164,19 @@ mod tests {
         assert_eq!(normalized(&["slice of life"]), ["Slice of Life"]);
         assert_eq!(normalized(&["martial arts"]), ["Martial Arts"]);
         assert_eq!(normalized(&["Genius MC"]), ["Genius MC"]);
-        assert_eq!(
-            normalized(&["Boys' Love", "4-Koma", "+100 Chapter"]),
-            ["Boys' Love", "4-Koma", "+100 Chapter"]
-        );
+        assert_eq!(normalized(&["Boys' Love", "4-Koma"]), ["Boys' Love", "4-Koma"]);
         assert_eq!(normalized(&["The Hero"]), ["The Hero"]);
+    }
+
+    #[test]
+    fn drops_format_and_status_tags() {
+        assert_eq!(
+            normalized(&[
+                "Action", "Long Strip", "Full Color", "Official Colored", "Fan Colored", "Web Comic", "Webtoon",
+                "Webtoons", "Completed", "+100 Chapter", "Manhwa",
+            ]),
+            ["Action", "Manhwa"]
+        );
     }
 
     #[test]
