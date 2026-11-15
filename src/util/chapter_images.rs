@@ -341,6 +341,12 @@ pub async fn refresh_chapter_images(
     db: &DatabaseConnection,
     chapter: &entity::chapter::Model,
 ) -> Result<Vec<entity::chapter_image::Model>, Status> {
+    if chapter.removed_at.is_some() {
+        return Err(Status::failed_precondition(
+            "This chapter was removed from its site; its stored pages are the only copy",
+        ));
+    }
+
     let existing = find_rows(db, chapter.id).await?;
 
     for row in &existing {

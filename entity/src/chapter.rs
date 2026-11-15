@@ -19,6 +19,9 @@ pub struct Model {
     /// NULL is reserved for the manual `UnlinkChapter` override case - every other
     /// chapter always ends up linked, even if only to a solo canonical row.
     pub canonical_chapter_id: Option<i32>,
+    /// When the chapter disappeared from its source site. Such a chapter is only kept
+    /// because every page of it is stored here.
+    pub removed_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

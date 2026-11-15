@@ -661,15 +661,32 @@ async fn sync_chapters_for_source(
         return Ok(());
     }
 
-    let count_chapters = entity::chapter::Entity::find()
+    let existing: Vec<(i32, String, Option<NaiveDateTime>)> = entity::chapter::Entity::find()
+        .select_only()
+        .column(entity::chapter::Column::Id)
+        .column(entity::chapter::Column::Url)
+        .column(entity::chapter::Column::RemovedAt)
         .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
-        .count(db)
+        .into_tuple()
+        .all(db)
         .await
         .map_err(internal)?;
+    let scraped_urls: HashSet<String> = scraped_chapters.iter().map(|chapter| chapter.url.to_string()).collect();
+    let listed = existing.iter().filter(|(_, _, removed_at)| removed_at.is_none()).count();
+    let vanished: Vec<i32> = existing
+        .iter()
+        .filter(|(_, url, removed_at)| removed_at.is_none() && !scraped_urls.contains(url))
+        .map(|(id, ..)| *id)
+        .collect();
+    let returned: Vec<i32> = existing
+        .iter()
+        .filter(|(_, url, removed_at)| removed_at.is_some() && scraped_urls.contains(url))
+        .map(|(id, ..)| *id)
+        .collect();
 
-    if (scraped_chapters.len() as u64) < count_chapters {
-        let dropped = count_chapters - scraped_chapters.len() as u64;
-        let drop_ratio = dropped as f64 / count_chapters as f64;
+    if !vanished.is_empty() {
+        let count_chapters = listed as u64;
+        let drop_ratio = vanished.len() as f64 / listed as f64;
 
         if drop_ratio > SUSPICIOUS_CHAPTER_DROP_RATIO && !force {
             // Too big a drop to trust - don't touch existing chapters, just flag it so a
@@ -703,13 +720,16 @@ async fn sync_chapters_for_source(
             );
         }
 
-        // A modest drop in chapter count (or a forced refresh) - reset our chapters to match the source.
-        let res = entity::chapter::Entity::delete_many()
-            .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
+        retire_vanished_chapters(db, manga_source_id, &vanished).await?;
+    }
+
+    if !returned.is_empty() {
+        entity::chapter::Entity::update_many()
+            .col_expr(entity::chapter::Column::RemovedAt, Expr::value(Option::<NaiveDateTime>::None))
+            .filter(entity::chapter::Column::Id.is_in(returned))
             .exec(db)
             .await
             .map_err(internal)?;
-        info!("Cleared {} chapter(s)", res.rows_affected);
     }
 
     let mut chapters = vec![];
@@ -737,6 +757,41 @@ async fn sync_chapters_for_source(
     info!("Inserted {} unique chapter(s)", inserted.len());
 
     match_canonical_chapters(db, manga_id, &inserted).await
+}
+
+/// Handles chapters their source site no longer lists: one with every page stored here is
+/// kept and marked `removed_at` (its pages are still served), any other is deleted.
+async fn retire_vanished_chapters<C: ConnectionTrait>(
+    db: &C,
+    manga_source_id: i32,
+    chapter_ids: &[i32],
+) -> Result<(), Status> {
+    let kept = db
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "UPDATE chapter SET removed_at = now() \
+             WHERE id = ANY($1) \
+               AND EXISTS (SELECT 1 FROM chapter_image i WHERE i.chapter_id = chapter.id) \
+               AND NOT EXISTS (SELECT 1 FROM chapter_image i WHERE i.chapter_id = chapter.id AND i.status <> 'done')",
+            [chapter_ids.to_vec().into()],
+        ))
+        .await
+        .map_err(internal)?
+        .rows_affected();
+    let deleted = db
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "DELETE FROM chapter WHERE id = ANY($1) AND removed_at IS NULL",
+            [chapter_ids.to_vec().into()],
+        ))
+        .await
+        .map_err(internal)?
+        .rows_affected();
+    info!(
+        "manga_source {manga_source_id}: {} chapter(s) no longer listed - kept {kept} with stored pages, deleted {deleted}",
+        chapter_ids.len()
+    );
+    Ok(())
 }
 
 /// Sets the details `scraped` found on `source` (a new source when its `id` is `NotSet`).
@@ -2169,5 +2224,98 @@ mod matching_heuristic_tests {
         // Cleanup
         entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
         entity::user::Entity::delete_by_id(user.id).exec(&db).await.unwrap();
+    }
+
+    async fn add_pages(db: &sea_orm::DatabaseConnection, chapter_id: i32, statuses: &[&str]) {
+        for (page_index, status) in statuses.iter().enumerate() {
+            entity::chapter_image::ActiveModel {
+                chapter_id: Set(chapter_id),
+                page_index: Set(page_index as i32),
+                source_url: Set(format!("https://img.test/{chapter_id}/{page_index}.jpg")),
+                status: Set(status.to_string()),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+
+    /// A chapter the site stops listing is kept (marked `removed_at`) only when every page
+    /// of it is stored; chapters still listed keep their row and stored pages; a removed
+    /// chapter the site lists again is un-marked. Requires DATABASE_URL to point at a
+    /// throwaway, already-migrated test database (never the real one). Run with:
+    ///   DATABASE_URL=postgres://... cargo test -p rumgap vanished_chapters -- --ignored --nocapture
+    #[ignore]
+    #[tokio::test]
+    async fn vanished_chapters_are_kept_only_when_stored() {
+        let db_url = std::env::var("DATABASE_URL").expect("set DATABASE_URL to a throwaway test DB");
+        let db = Database::connect(db_url).await.unwrap();
+
+        let manga = make_manga(&db, "Vanished Chapters Manga").await;
+        let source = make_source(&db, manga.id, "vanished.test", true).await;
+        let all: Vec<Chapter> = (1..=10).map(|i| chapter("vanished", i as f32)).collect();
+        sync_chapters_for_source(&db, manga.id, source.id, &source.url, false, &all)
+            .await
+            .unwrap();
+
+        let by_number = |chapters: &[entity::chapter::Model], number: f32| {
+            chapters.iter().find(|c| c.number == number).cloned()
+        };
+        let before = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source.id))
+            .all(&db)
+            .await
+            .unwrap();
+        let (c1, c3, c4) = (
+            by_number(&before, 1.0).unwrap(),
+            by_number(&before, 3.0).unwrap(),
+            by_number(&before, 4.0).unwrap(),
+        );
+        add_pages(&db, c1.id, &["done", "done"]).await;
+        add_pages(&db, c3.id, &["done", "done", "done"]).await;
+        add_pages(&db, c4.id, &["done", "failed"]).await;
+
+        // The site drops chapters 3 (fully stored), 4 (partly stored) and 5 (nothing stored).
+        let without: Vec<Chapter> = all.iter().filter(|c| ![3.0, 4.0, 5.0].contains(&c.number)).cloned().collect();
+        sync_chapters_for_source(&db, manga.id, source.id, &source.url, false, &without)
+            .await
+            .unwrap();
+
+        let after = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(after.len(), 8, "chapters 4 and 5 should be deleted, 3 kept");
+        let kept = by_number(&after, 3.0).expect("fully stored chapter 3 must be kept");
+        assert_eq!(kept.id, c3.id);
+        assert!(kept.removed_at.is_some(), "kept chapter 3 must be marked removed");
+        assert!(by_number(&after, 4.0).is_none(), "partly stored chapter 4 must be deleted");
+        assert!(by_number(&after, 5.0).is_none(), "unstored chapter 5 must be deleted");
+        let still_listed = by_number(&after, 1.0).unwrap();
+        assert_eq!(still_listed.id, c1.id, "a chapter still listed keeps its row");
+        assert!(still_listed.removed_at.is_none());
+        let c1_pages = entity::chapter_image::Entity::find()
+            .filter(entity::chapter_image::Column::ChapterId.eq(c1.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(c1_pages, 2, "a chapter still listed keeps its stored pages");
+
+        // Chapter 3 comes back.
+        sync_chapters_for_source(&db, manga.id, source.id, &source.url, false, &all)
+            .await
+            .unwrap();
+        let returned = entity::chapter::Entity::find_by_id(c3.id).one(&db).await.unwrap().unwrap();
+        assert!(returned.removed_at.is_none(), "a chapter listed again is no longer removed");
+        let count = entity::chapter::Entity::find()
+            .filter(entity::chapter::Column::MangaSourceId.eq(source.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(count, 10, "chapters 4 and 5 are re-added, chapter 3 is not duplicated");
+
+        entity::manga::Entity::delete_by_id(manga.id).exec(&db).await.unwrap();
     }
 }
