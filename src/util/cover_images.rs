@@ -86,7 +86,6 @@ async fn download(url: &str, referer: &str) -> Result<(Vec<u8>, String), String>
     let response = manga_parser::HTTP_CLIENT
         .get(url)
         .header("Referer", referer)
-        .header("Origin", referer)
         .headers(crate::util::download_headers::for_url(url))
         .timeout(Duration::from_secs(30))
         .send()

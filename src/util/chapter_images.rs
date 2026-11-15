@@ -237,7 +237,7 @@ pub async fn ensure_page_downloaded(
     active.update(db).await.map_err(|e| Status::internal(e.to_string()))
 }
 
-/// Build the Referer/Origin used for an image download (a chapter page or a cover),
+/// Build the Referer used for an image download (a chapter page or a cover),
 /// replicating wuxia's `getReferer()` special case: manhuagui.com's CDN rejects a
 /// Referer pointing at the chapter page, and instead wants the image's own URL.
 /// Sites in `ROOT_REFERER_HOSTNAMES` get their root instead.
@@ -267,8 +267,7 @@ async fn download_page(
 
     let response = manga_parser::HTTP_CLIENT
         .get(row.source_url.clone())
-        .header("Referer", referer.clone())
-        .header("Origin", referer)
+        .header("Referer", referer)
         .headers(crate::util::download_headers::for_url(&row.source_url))
         .timeout(Duration::from_secs(30))
         .send()
