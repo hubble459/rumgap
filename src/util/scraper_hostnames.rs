@@ -43,11 +43,26 @@ fn load_allowed_hostnames() -> HashSet<String> {
     hostnames
 }
 
-/// Whether `hostname` is a recognized manga-scraping target. Case-sensitive
-/// exact match against the loaded allowlist (hostnames in configs/*.yaml are
-/// already lowercase) - callers should lowercase the incoming host first.
+/// Whether `hostname` is a recognized manga-scraping target, or a subdomain of one
+/// (sites serve covers from CDN hosts like `static.asurascans.my`). An allowlisted
+/// `www.` host also covers its domain's other subdomains. Case-sensitive (hostnames
+/// in configs/*.yaml are already lowercase) - callers should lowercase the incoming
+/// host first.
 pub fn is_allowed_hostname(hostname: &str) -> bool {
-    ALLOWED_HOSTNAMES.contains(hostname)
+    if ALLOWED_HOSTNAMES.contains(hostname) {
+        return true;
+    }
+    let mut rest = hostname;
+    while let Some((_, parent)) = rest.split_once('.') {
+        if !parent.contains('.') {
+            return false;
+        }
+        if ALLOWED_HOSTNAMES.contains(parent) || ALLOWED_HOSTNAMES.contains(&format!("www.{parent}")) {
+            return true;
+        }
+        rest = parent;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -61,9 +76,18 @@ mod tests {
     }
 
     #[test]
+    fn subdomains_of_scraper_hostnames_allowed() {
+        assert!(is_allowed_hostname("static.asurascans.my"));
+        assert!(is_allowed_hostname("img.mangatown.com"));
+    }
+
+    #[test]
     fn unrelated_hostnames_rejected() {
         assert!(!is_allowed_hostname("169.254.169.254"));
         assert!(!is_allowed_hostname("localhost"));
         assert!(!is_allowed_hostname("example.com"));
+        assert!(!is_allowed_hostname("asurascans.my.example.com"));
+        assert!(!is_allowed_hostname("notasurascans.my"));
+        assert!(!is_allowed_hostname("static.my"));
     }
 }
