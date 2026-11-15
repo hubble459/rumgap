@@ -71,3 +71,33 @@ message SetAnilistMatchRequest {
     // Clear a manual pick and let title matching find the entry again.
     bool rematch = 3;
 }
+
+// The statuses of an AniList list entry. NONE: not on the list.
+enum AnilistListStatus {
+    ANILIST_LIST_NONE = 0;
+    ANILIST_LIST_CURRENT = 1;
+    ANILIST_LIST_PLANNING = 2;
+    ANILIST_LIST_COMPLETED = 3;
+    ANILIST_LIST_DROPPED = 4;
+    ANILIST_LIST_PAUSED = 5;
+    ANILIST_LIST_REPEATING = 6;
+}
+
+message AnilistListEntryRequest {
+    int32 manga_id = 1;
+}
+
+message AnilistListEntryReply {
+    // The user connected AniList.
+    bool connected = 1;
+    // The manga has an AniList entry.
+    bool matched = 2;
+    AnilistListStatus status = 3;
+    int32 progress = 4;
+}
+
+message SetAnilistListStatusRequest {
+    int32 manga_id = 1;
+    // NONE removes it from the user's AniList list.
+    AnilistListStatus status = 2;
+}

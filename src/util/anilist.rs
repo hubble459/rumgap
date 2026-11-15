@@ -325,6 +325,26 @@ pub async fn save_progress(token: &str, media_id: i32, entry: &ListEntry) -> Res
     Ok(())
 }
 
+/// Removes the media from the viewer's list. Nothing to do when it isn't on it.
+pub async fn delete_entry(token: &str, media_id: i32) -> Result<(), AnilistError> {
+    let data = graphql(
+        "query ($id: Int) { Media(id: $id) { mediaListEntry { id } } }",
+        json!({ "id": media_id }),
+        Some(token),
+    )
+    .await?;
+    let Some(entry_id) = data["Media"]["mediaListEntry"]["id"].as_i64() else {
+        return Ok(());
+    };
+    graphql(
+        "mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }",
+        json!({ "id": entry_id }),
+        Some(token),
+    )
+    .await?;
+    Ok(())
+}
+
 pub fn authorize_url(state: &str) -> Result<String, AnilistError> {
     let config = config()?;
     let mut url = reqwest::Url::parse(AUTHORIZE_URL).expect("valid AniList authorize url");

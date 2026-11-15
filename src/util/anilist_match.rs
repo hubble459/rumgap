@@ -76,6 +76,7 @@ pub async fn match_manga(db: &DatabaseConnection, manga_id: i32) -> Result<Optio
     match &found {
         Some(media) => {
             anilist::set_match(db, manga_id, Some(media), AnilistMatch::Auto).await.map_err(db_err)?;
+            crate::util::anilist_sync::sync_readers(db.clone(), manga_id);
             debug!("[AniList] Matched manga {manga_id} to {}", media.id);
         }
         None => {

@@ -88,7 +88,9 @@ async fn anilist_callback(
 
     let result = match (query.code.as_deref(), query.error.as_deref()) {
         (_, Some(error)) => Err(format!("AniList said: {error}")),
-        (Some(code), None) => anilist::connect(&db, user_id, code).await.map_err(|e| {
+        (Some(code), None) => anilist::connect(&db, user_id, code).await.inspect(|_| {
+            crate::util::anilist_sync::sync_user(db.clone(), user_id);
+        }).map_err(|e| {
             warn!("[AniList] Connecting user {user_id} failed: {e}");
             e.to_string()
         }),

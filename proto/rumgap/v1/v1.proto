@@ -152,6 +152,11 @@ service Anilist {
     rpc Search (AnilistSearchRequest) returns (AnilistSearchReply);
     // Any user can correct a manga's match; it's shared by everyone.
     rpc SetMatch (SetAnilistMatchRequest) returns (MangaReply);
+    // The user's AniList list entry for a manga.
+    rpc ListEntry (AnilistListEntryRequest) returns (AnilistListEntryReply);
+    // Sets the status of the user's AniList list entry, adding it with their progress
+    // when it isn't on their list yet.
+    rpc SetListStatus (SetAnilistListStatusRequest) returns (AnilistListEntryReply);
 }
 
 // Admin-only: user management.
