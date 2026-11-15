@@ -1,0 +1,73 @@
+syntax = "proto3";
+package rumgap.v1;
+
+message AnilistInfo {
+    int32 id = 1;
+    string url = 2;
+    optional string title = 3;
+    optional string description = 4;
+    optional string cover = 5;
+    optional string banner = 6;
+    // 0-100
+    optional int32 score = 7;
+    repeated string genres = 8;
+    // FINISHED, RELEASING, NOT_YET_RELEASED, CANCELLED or HIATUS
+    optional string status = 9;
+    // Picked by a user instead of matched by title; title matching leaves it alone.
+    bool match_manual = 10;
+}
+
+enum AnilistReturnTarget {
+    // Ends on a page saying the account is connected, for the apps.
+    ANILIST_RETURN_APP = 0;
+    // Redirects back to the web app's settings.
+    ANILIST_RETURN_WEB = 1;
+}
+
+message AnilistConnectUrlRequest {
+    AnilistReturnTarget return_target = 1;
+}
+
+message AnilistConnectUrlReply {
+    string url = 1;
+}
+
+message AnilistStatusReply {
+    bool connected = 1;
+    optional int32 user_id = 2;
+    optional string user_name = 3;
+    // Epoch millis. Tokens last a year and can't be refreshed; connect again to renew.
+    optional int64 expires_at = 4;
+    // Less than ANILIST_EXPIRY_WARN_DAYS left.
+    bool expires_soon = 5;
+}
+
+message AnilistSearchRequest {
+    string query = 1;
+}
+
+message AnilistMedia {
+    int32 id = 1;
+    string url = 2;
+    optional string title_romaji = 3;
+    optional string title_english = 4;
+    optional string title_native = 5;
+    repeated string synonyms = 6;
+    optional string cover = 7;
+    optional int32 chapters = 8;
+    optional string status = 9;
+    optional string format = 10;
+    optional int32 start_year = 11;
+}
+
+message AnilistSearchReply {
+    repeated AnilistMedia items = 1;
+}
+
+message SetAnilistMatchRequest {
+    int32 manga_id = 1;
+    // Unset: this manga has no AniList entry (title matching won't set one either).
+    optional int32 anilist_id = 2;
+    // Clear a manual pick and let title matching find the entry again.
+    bool rematch = 3;
+}

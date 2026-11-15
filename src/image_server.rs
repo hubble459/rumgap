@@ -11,7 +11,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::middleware::{self, Next};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH};
-use axum::http::header::REFERER;
+use axum::http::header::{self, REFERER};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -45,6 +45,7 @@ pub async fn serve(db: DatabaseConnection) {
         .route("/covers/{manga_id}", get(get_cover))
         .route("/covers/source/{source_id}", get(get_source_cover))
         .route("/proxy", get(get_proxy))
+        .route("/anilist/callback", get(anilist_callback))
         .layer(CorsLayer::permissive())
         .layer(middleware::from_fn(resource_policy))
         .with_state(db);
@@ -61,6 +62,72 @@ pub async fn serve(db: DatabaseConnection) {
     if let Err(e) = axum::serve(listener, app).await {
         error!("Image server crashed: {}", e);
     }
+}
+
+#[derive(Deserialize)]
+struct AnilistCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+/// Where AniList redirects to after the user approves (or denies) rumgap. The signed
+/// `state` says who is connecting, since a browser redirect carries no gRPC session.
+async fn anilist_callback(
+    State(db): State<DatabaseConnection>,
+    Query(query): Query<AnilistCallbackQuery>,
+) -> Response {
+    use crate::util::anilist::{self, ReturnTarget};
+
+    let Some((user_id, target)) = query.state.as_deref().and_then(anilist::verify_state) else {
+        return anilist_page(
+            StatusCode::BAD_REQUEST,
+            "This link expired. Go back to wuxia and press Connect AniList again.",
+        );
+    };
+
+    let result = match (query.code.as_deref(), query.error.as_deref()) {
+        (_, Some(error)) => Err(format!("AniList said: {error}")),
+        (Some(code), None) => anilist::connect(&db, user_id, code).await.map_err(|e| {
+            warn!("[AniList] Connecting user {user_id} failed: {e}");
+            e.to_string()
+        }),
+        (None, None) => Err("AniList sent no code".to_string()),
+    };
+
+    match target {
+        ReturnTarget::Web => {
+            let base = std::env::var("WEB_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let outcome = if result.is_ok() { "connected" } else { "error" };
+            let location = format!("{}/?anilist={outcome}#settings", base.trim_end_matches('/'));
+            match HeaderValue::from_str(&location) {
+                Ok(location) => (StatusCode::FOUND, [(header::LOCATION, location)]).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        ReturnTarget::App => match result {
+            Ok(name) => anilist_page(
+                StatusCode::OK,
+                &format!("Connected to AniList as {name}. You can close this tab and go back to wuxia."),
+            ),
+            Err(e) => anilist_page(StatusCode::BAD_GATEWAY, &format!("Couldn't connect to AniList: {e}")),
+        },
+    }
+}
+
+fn anilist_page(status: StatusCode, message: &str) -> Response {
+    let message = message
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let html = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>AniList · wuxia</title><style>body{{font-family:system-ui,sans-serif;\
+         background:#121212;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0;\
+         padding:0 16px;text-align:center}}</style></head><body><p>{message}</p></body></html>"
+    );
+    (status, [(CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response()
 }
 
 /// Bounds for client-supplied `maxdim`/`maxwidth`/`quality` -- they aren't covered by

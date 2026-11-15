@@ -1,6 +1,8 @@
 syntax = "proto3";
 package rumgap.v1;
 
+import "rumgap/v1/anilist.proto";
+
 import "rumgap/v1/paginate.proto";
 
 message MangaRequest {
@@ -80,6 +82,7 @@ message MangaReply {
     MangaOrigin origin = 21;
     // A mod set the origin; it's not detected from the sources anymore.
     bool origin_set_by_hand = 22;
+    optional AnilistInfo anilist = 23;
 }
 
 // Where a manga comes from. Prefixed, since enum values share the package's namespace.

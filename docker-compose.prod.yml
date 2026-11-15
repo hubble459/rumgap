@@ -11,6 +11,10 @@ services:
       MANGA_UPDATE_INTERVAL_MS: 600000
       DATABASE_URL: "postgres://postgres:postgres@db/rust_manga"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set}
+      ANILIST_CLIENT_ID: ${ANILIST_CLIENT_ID:-}
+      ANILIST_CLIENT_SECRET: ${ANILIST_CLIENT_SECRET:-}
+      ANILIST_REDIRECT_URI: "https://api.manga.quentincorreia.nl/anilist/callback"
+      WEB_BASE_URL: "https://manga.quentincorreia.nl"
       RUST_LOG: trace
       RUST_BACKTRACE: "1"
 

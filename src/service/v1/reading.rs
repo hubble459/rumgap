@@ -15,7 +15,7 @@ use crate::proto::{
 };
 use crate::util::auth::Authorize;
 use crate::util::db::DatabaseRequest;
-use crate::util::read_event;
+use crate::util::{anilist_sync, read_event};
 
 fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
@@ -101,6 +101,7 @@ impl Reading for ReadingController {
             reading.update(db).await.map_err(internal)?;
         }
         read_event::record_progress(db, logged_in.id, req.manga_id, req.chapter_id).await?;
+        anilist_sync::schedule(db.clone(), logged_in, req.manga_id);
 
         Ok(Response::new(get_manga_by_id(db, Some(logged_in), req.manga_id).await?))
     }

@@ -94,6 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         crate::util::origin::update_all(&genres_conn).await;
     });
 
+    // Match manga to AniList and keep their AniList details fresh
+    let anilist_conn = conn.clone();
+    tokio::spawn(async move {
+        crate::util::anilist_match::watch(anilist_conn).await;
+    });
+
     // Start image server (separate plain-HTTP port, see src/image_server.rs)
     let image_server_conn = conn.clone();
     tokio::spawn(async move {
@@ -119,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(service::v1::meta::server())
         .add_service(service::v1::scraper::server())
         .add_service(service::v1::admin::server())
+        .add_service(service::v1::anilist::server())
         .add_service(
             Builder::configure()
                 .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)

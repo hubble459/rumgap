@@ -1,7 +1,9 @@
 use sea_orm::prelude::{DateTime, DateTimeWithTimeZone, Decimal};
 use sea_orm::FromQueryResult;
 
-use crate::proto::{MangaOrigin, MangaReply, MangaSourceReply};
+use entity::manga::AnilistMatch;
+
+use crate::proto::{AnilistInfo, MangaOrigin, MangaReply, MangaSourceReply};
 
 /// A manga as one user sees it: its details come from the source they see it through
 /// (`selected_source_id`, see `DISPLAY_SOURCE_QUERY` in `service::v1::manga`).
@@ -28,6 +30,15 @@ pub struct Full {
     pub nsfw: bool,
     pub origin: String,
     pub origin_set_by_hand: bool,
+    pub anilist_id: Option<i32>,
+    pub anilist_match: Option<AnilistMatch>,
+    pub anilist_title: Option<String>,
+    pub anilist_description: Option<String>,
+    pub anilist_cover: Option<String>,
+    pub anilist_banner: Option<String>,
+    pub anilist_score: Option<i32>,
+    pub anilist_genres: Option<Vec<String>>,
+    pub anilist_status: Option<String>,
     // special
     // NOTE: count_chapters/last/next are computed from the selected source's chapters only.
     pub count_chapters: i64,
@@ -44,7 +55,20 @@ impl Full {
     /// `sources` has to be fetched (and, for `Manga.Index`/`Manga.Similar`, batched) separately
     /// since it's a one-to-many list, not something that fits this struct's flat-row shape.
     pub fn into_manga_reply(self, sources: Vec<MangaSourceReply>) -> MangaReply {
+        let anilist = self.anilist_id.map(|id| AnilistInfo {
+            id,
+            url: format!("https://anilist.co/manga/{id}"),
+            title: self.anilist_title,
+            description: self.anilist_description,
+            cover: self.anilist_cover,
+            banner: self.anilist_banner,
+            score: self.anilist_score,
+            genres: self.anilist_genres.unwrap_or_default(),
+            status: self.anilist_status,
+            match_manual: self.anilist_match == Some(AnilistMatch::Manual),
+        });
         MangaReply {
+            anilist,
             id: self.id,
             title: self.title.unwrap_or_default(),
             description: self.description.unwrap_or_default(),

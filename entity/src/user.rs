@@ -19,6 +19,11 @@ pub struct Model {
     pub device_ids: Vec<String>,
     pub show_nsfw: bool,
     pub is_private: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub anilist_token: Option<String>,
+    pub anilist_token_expires_at: Option<DateTime>,
+    pub anilist_user_id: Option<i32>,
+    pub anilist_user_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

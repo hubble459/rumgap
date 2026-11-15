@@ -15,6 +15,7 @@ import "rumgap/v1/meta.proto";
 import "rumgap/v1/scraper.proto";
 import "rumgap/v1/admin.proto";
 import "rumgap/v1/comment.proto";
+import "rumgap/v1/anilist.proto";
 
 service User {
     // Always denied; accounts are created through Admin.CreateUser.
@@ -140,6 +141,17 @@ service Meta {
 // which sites' scrapers are currently broken.
 service Scraper {
     rpc Status (ScraperStatusRequest) returns (ScraperStatusReply);
+}
+
+service Anilist {
+    // Where to send the user to connect their AniList account. AniList redirects back to
+    // rumgap's /anilist/callback, which stores the token.
+    rpc ConnectUrl (AnilistConnectUrlRequest) returns (AnilistConnectUrlReply);
+    rpc Status (Empty) returns (AnilistStatusReply);
+    rpc Disconnect (Empty) returns (Empty);
+    rpc Search (AnilistSearchRequest) returns (AnilistSearchReply);
+    // Any user can correct a manga's match; it's shared by everyone.
+    rpc SetMatch (SetAnilistMatchRequest) returns (MangaReply);
 }
 
 // Admin-only: user management.

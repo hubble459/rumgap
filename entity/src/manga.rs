@@ -15,6 +15,34 @@ pub struct Model {
     /// manga, manhwa, manhua or unknown
     pub origin: String,
     pub origin_set_by_hand: bool,
+    pub anilist_id: Option<i32>,
+    /// Null when title matching never ran for it.
+    pub anilist_match: Option<AnilistMatch>,
+    pub anilist_matched_at: Option<DateTime>,
+    pub anilist_title: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub anilist_description: Option<String>,
+    pub anilist_cover: Option<String>,
+    pub anilist_banner: Option<String>,
+    pub anilist_score: Option<i32>,
+    pub anilist_genres: Option<Vec<String>>,
+    pub anilist_status: Option<String>,
+    pub anilist_fetched_at: Option<DateTime>,
+}
+
+/// How a manga got its `anilist_id`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
+pub enum AnilistMatch {
+    /// Title matching found it.
+    #[sea_orm(string_value = "auto")]
+    Auto,
+    /// A user picked it (or picked "not on AniList"); title matching leaves it alone.
+    #[sea_orm(string_value = "manual")]
+    Manual,
+    /// Title matching found nothing.
+    #[sea_orm(string_value = "none")]
+    None,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

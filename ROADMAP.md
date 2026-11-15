@@ -8,11 +8,13 @@ Covers both rumgap (this repo) and the [wuxia](https://github.com/hubble459/wuxi
   switch-source UI) instead of relying on canonical_chapter linking. Requires pulling group
   info out of the scraper and reworking the source/switcher model. Also covers crediting the
   scanlation groups, which MangaDex's API usage policy requires.
+- **Test the AniList integration in prod**: connect on web and Android, read a chapter of a
+  matched manga, check AniList after ~30s; then regenerate the client secret.
 - **Try For You on a real device**: swipe feel, chapter-1 preview, filters, skip, 18+ chip.
 
 ## Wishlist
 - Social: custom avatar, ratings
-- MAL / AniList integration
+- MAL integration (AniList is done)
 - Priority calculator for the background updater. Today it picks the manga with the most
   readers, then the longest-unrefreshed; a real one would weigh the expected next release,
   ongoing/finished and how often a manga updates.

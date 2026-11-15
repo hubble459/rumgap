@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod anilist;
 pub mod chapter;
 pub mod comment;
 pub mod friend;

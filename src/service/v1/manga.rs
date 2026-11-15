@@ -811,6 +811,13 @@ pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Stat
         return existing.map(|source| source.manga_id).ok_or(e);
     }
 
+    let match_db = db.clone();
+    tokio::spawn(async move {
+        if let Err(e) = util::anilist_match::match_manga(&match_db, saved_manga.id).await {
+            warn!("[AniList] Failed to match new manga {}: {e}", saved_manga.id);
+        }
+    });
+
     Ok(saved_manga.id)
 }
 

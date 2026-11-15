@@ -1,3 +1,6 @@
+pub mod anilist;
+pub mod anilist_match;
+pub mod anilist_sync;
 pub mod argon;
 pub mod auth;
 pub mod backfill;
