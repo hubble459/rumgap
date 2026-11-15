@@ -34,6 +34,7 @@ mod m20261115_120000_social;
 mod m20261116_120000_mangadex_hostname;
 mod m20261117_120000_origin;
 mod m20261118_120000_anilist;
+mod m20261119_120000_index_chapter_canonical;
 
 pub struct Migrator;
 
@@ -73,6 +74,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261116_120000_mangadex_hostname::Migration),
             Box::new(m20261117_120000_origin::Migration),
             Box::new(m20261118_120000_anilist::Migration),
+            Box::new(m20261119_120000_index_chapter_canonical::Migration),
         ]
     }
 }
