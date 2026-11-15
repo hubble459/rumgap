@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use futures::stream::{self, StreamExt};
+use manga_parser::error::ScrapeError;
 use manga_parser::scraper::MangaScraper;
 use manga_parser::Url;
 use migration::OnConflict;
@@ -95,7 +96,13 @@ pub async fn ensure_chapter_image_rows(
         &url,
         None,
         Some(chapter.manga_source_id),
-        MANGA_PARSER.chapter_images(&url),
+        async {
+            let images = MANGA_PARSER.chapter_images(&url).await?;
+            if images.is_empty() {
+                return Err(ScrapeError::WebScrapingError("No images found for this chapter".to_string()));
+            }
+            Ok(images)
+        },
     )
     .await?;
 
@@ -105,10 +112,6 @@ pub async fn ensure_chapter_image_rows(
         chapter.id,
         chapter.url
     );
-
-    if images.is_empty() {
-        return Ok(vec![]);
-    }
 
     let rows: Vec<entity::chapter_image::ActiveModel> = images
         .iter()
