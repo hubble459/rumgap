@@ -1673,7 +1673,7 @@ impl Manga for MangaController {
 
 /// Refreshes source `source_id` when its details are older than `MANGA_UPDATE_INTERVAL_MS`
 /// or were never scraped since sources got their own. Returns whether it refreshed.
-async fn refresh_if_stale(db: &DatabaseConnection, source_id: i32) -> Result<bool, Status> {
+pub async fn refresh_if_stale(db: &DatabaseConnection, source_id: i32) -> Result<bool, Status> {
     let Some(details_updated_at) = entity::manga_source::Entity::find_by_id(source_id)
         .select_only()
         .column(entity::manga_source::Column::DetailsUpdatedAt)

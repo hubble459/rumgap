@@ -58,6 +58,31 @@ lazy_static! {
     /// Process-global bound on how many images download *at once*, shared by
     /// the lazy on-demand path, eager prefetch, and backfill alike.
     static ref DOWNLOAD_SEMAPHORE: Semaphore = Semaphore::new(download_concurrency());
+    /// When a failed image scrape last triggered a refresh of each source.
+    static ref SOURCE_REFRESHES: std::sync::Mutex<HashMap<i32, std::time::Instant>> =
+        std::sync::Mutex::new(HashMap::new());
+}
+
+/// A failed image scrape often means the site removed the chapter, so refresh its source
+/// in the background (which retires chapters it no longer lists) - at most once per source
+/// every 10 minutes, so a site that's down or blocking isn't hammered.
+fn refresh_source_soon(db: &DatabaseConnection, manga_source_id: i32) {
+    {
+        let mut refreshes = SOURCE_REFRESHES.lock().unwrap();
+        if refreshes
+            .get(&manga_source_id)
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(600))
+        {
+            return;
+        }
+        refreshes.insert(manga_source_id, std::time::Instant::now());
+    }
+    let db = db.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::service::v1::manga::refresh_if_stale(&db, manga_source_id).await {
+            warn!("Failed to refresh manga_source {manga_source_id} after a failed image scrape: {e}");
+        }
+    });
 }
 
 fn download_concurrency() -> usize {
@@ -104,7 +129,8 @@ pub async fn ensure_chapter_image_rows(
             Ok(images)
         },
     )
-    .await?;
+    .await
+    .inspect_err(|_| refresh_source_soon(db, chapter.manga_source_id))?;
 
     debug!(
         "Scraped {} image(s) for chapter {} [{}]",
