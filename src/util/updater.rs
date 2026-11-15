@@ -172,7 +172,8 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
     if let Ok(client) = client {
         info!("Sending notifications to {} users", ids.len());
 
-        let data = json!({ "manga_id": manga.id });
+        // FCM only accepts string values in `data`.
+        let data = json!({ "manga_id": manga.id.to_string() });
 
         for target in ids.iter().cloned() {
             let message = Message {
@@ -193,7 +194,8 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
             };
 
             match client.send(message).await {
-                Ok(response) => info!("Sent: {:?}", response),
+                Ok(response) if response.error().is_none() => info!("Sent: {:?}", response),
+                Ok(response) => error!("FCM rejected a notification: {:?}", response),
                 Err(err) => error!("Failed to send notification: {:#?}", err),
             }
         }
