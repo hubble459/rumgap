@@ -2390,15 +2390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2731,7 +2722,7 @@ dependencies = [
 [[package]]
 name = "manga_parser"
 version = "0.1.0"
-source = "git+https://github.com/hubble459/manga_parser?branch=main#9fb70218baa3f0585e38a6cbe0358ef070baff62"
+source = "git+https://github.com/hubble459/manga_parser?branch=main#18522c2b0f48d3c85b4e4c1aed34345bca9fb08d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2743,7 +2734,7 @@ dependencies = [
  "http",
  "http-cache-reqwest",
  "include_dir",
- "itertools 0.15.0",
+ "itertools",
  "kuchiki",
  "lazy_static",
  "log",
@@ -3686,8 +3677,8 @@ version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6e4d69d0fa3e7f6f9cf6b53a0e83e4fc99ba3586f65ce166cff30bd13bb4ad2"
 dependencies = [
- "heck 0.5.0",
- "itertools 0.15.0",
+ "heck 0.4.1",
+ "itertools",
  "log",
  "multimap",
  "petgraph",
@@ -3708,7 +3699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad9c5423459fa2f729b8d9235fab810aa29628b171467744fc86d21460ad70d"
 dependencies = [
  "anyhow",
- "itertools 0.15.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4459,7 +4450,7 @@ dependencies = [
  "derive-where",
  "derive_more 2.1.1",
  "futures-util",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "mac_address",
  "ouroboros",
@@ -4521,7 +4512,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91fa8c81c20fc8cfe78d22d9a2721ca5ef151dc4a8a7b372de218aaba33733fa"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools",
  "pluralizer",
  "proc-macro2",
  "quote",
@@ -5342,7 +5333,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
