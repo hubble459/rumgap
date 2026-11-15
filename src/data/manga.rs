@@ -42,6 +42,7 @@ pub struct Full {
     // special
     // NOTE: count_chapters/last/next are computed from the selected source's chapters only.
     pub count_chapters: i64,
+    pub count_canonical_chapters: i64,
     pub next: Option<DateTimeWithTimeZone>,
     pub last: Option<DateTimeWithTimeZone>,
 }
@@ -90,6 +91,7 @@ impl Full {
             .into(),
             origin_set_by_hand: self.origin_set_by_hand,
             count_chapters: self.count_chapters,
+            count_canonical_chapters: self.count_canonical_chapters,
             reading_progress: self.progress,
             progress_ordinal: self.progress_ordinal.and_then(|o| o.to_string().parse().ok()),
             last: self.last.map(|date| date.timestamp_millis()),

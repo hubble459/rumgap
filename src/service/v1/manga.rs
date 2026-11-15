@@ -107,6 +107,10 @@ fn select_manga(
         .column_as(entity::chapter::Column::Id.count(), "count_chapters")
         .column_as(entity::chapter::Column::Posted.max(), "last")
         .column_as(Expr::cust(NEXT_UPDATE_QUERY), "next")
+        .column_as(
+            Expr::cust("(SELECT count(*) FROM canonical_chapter cc WHERE cc.manga_id = manga.id)"),
+            "count_canonical_chapters",
+        )
         .group_by(entity::manga::Column::Id)
         .group_by(Source::Id)
         .column_as(Expr::cust("null"), "progress")

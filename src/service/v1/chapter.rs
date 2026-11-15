@@ -48,20 +48,10 @@ fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
 }
 
-/// `Chapter.Index` with `canonical`: a page of the manga's canonical chapters, each with
-/// this source's chapter or a placeholder.
-async fn canonical_index(
-    db: &DatabaseConnection,
-    user_id: i32,
-    manga_source_id: i32,
-    reversed: bool,
-    page: u64,
-    per_page: u64,
-) -> Result<ChaptersReply, Status> {
-    let backend = db.get_database_backend();
+async fn canonical_count(db: &DatabaseConnection, manga_source_id: i32) -> Result<u64, Status> {
     let total: i64 = db
         .query_one_raw(Statement::from_sql_and_values(
-            backend,
+            db.get_database_backend(),
             "SELECT count(*) AS total FROM canonical_chapter \
              WHERE manga_id = (SELECT manga_id FROM manga_source WHERE id = $1)",
             [manga_source_id.into()],
@@ -72,13 +62,22 @@ async fn canonical_index(
         .transpose()
         .map_err(internal)?
         .unwrap_or(0);
-    let total = total as u64;
-    let max_page = total.div_ceil(per_page).saturating_sub(1);
-    let page = std::cmp::Ord::min(page, max_page + 1);
-    let order = if reversed { "ASC" } else { "DESC" };
+    Ok(total as u64)
+}
 
+/// The manga's canonical chapters in order (`ascending`: first chapter first), from
+/// `offset` on, each with this source's chapter or as a placeholder.
+async fn canonical_chapters(
+    db: &DatabaseConnection,
+    user_id: i32,
+    manga_source_id: i32,
+    ascending: bool,
+    limit: u64,
+    offset: u64,
+) -> Result<Vec<ChapterReply>, Status> {
+    let order = if ascending { "ASC" } else { "DESC" };
     let rows = data::chapter::Canonical::find_by_statement(Statement::from_sql_and_values(
-        backend,
+        db.get_database_backend(),
         format!(
             r#"SELECT cc.id AS canonical_chapter_id, cc.ordinal,
                    c.id, c.url, c.title, c.number, c.posted, c.created_at, c.updated_at,
@@ -105,14 +104,32 @@ async fn canonical_index(
         [
             manga_source_id.into(),
             user_id.into(),
-            (per_page as i64).into(),
-            ((page * per_page) as i64).into(),
+            (limit as i64).into(),
+            (offset as i64).into(),
         ],
     ))
     .all(db)
     .await
     .map_err(internal)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.into_chapter_reply(manga_source_id))
+        .collect())
+}
 
+/// `Chapter.Index` with `canonical`: a page of the manga's canonical chapters.
+async fn canonical_index(
+    db: &DatabaseConnection,
+    user_id: i32,
+    manga_source_id: i32,
+    reversed: bool,
+    page: u64,
+    per_page: u64,
+) -> Result<ChaptersReply, Status> {
+    let total = canonical_count(db, manga_source_id).await?;
+    let max_page = total.div_ceil(per_page).saturating_sub(1);
+    let page = std::cmp::Ord::min(page, max_page + 1);
+    let items = canonical_chapters(db, user_id, manga_source_id, reversed, per_page, page * per_page).await?;
     Ok(ChaptersReply {
         pagination: Some(PaginateReply {
             page,
@@ -120,10 +137,7 @@ async fn canonical_index(
             max_page,
             total,
         }),
-        items: rows
-            .into_iter()
-            .map(|row| row.into_chapter_reply(manga_source_id))
-            .collect(),
+        items,
     })
 }
 
@@ -185,6 +199,16 @@ impl Chapter for ChapterController {
         let user_id = request.authorize()?.id;
         let req = request.get_ref();
         let manga_source_id = req.manga_source_id;
+
+        if req.canonical.unwrap_or_default() {
+            let total = canonical_count(db, manga_source_id).await?;
+            let rank = (req.index.clamp(1, i32::MAX) as u64).clamp(1, Ord::max(total, 1));
+            return canonical_chapters(db, user_id, manga_source_id, true, 1, rank - 1)
+                .await?
+                .pop()
+                .map(Response::new)
+                .ok_or(Status::not_found("Chapter not found"));
+        }
 
         let total_chapters = entity::chapter::Entity::find()
             .filter(entity::chapter::Column::MangaSourceId.eq(manga_source_id))
