@@ -15,6 +15,9 @@ Covers both rumgap (this repo) and the [wuxia](https://github.com/hubble459/wuxi
 ## Wishlist
 - Social: custom avatar, ratings
 - MAL integration (AniList is done)
+- Canonical chapter view: page a source's chapters by the manga's canonical chapters and
+  show the ones this source lacks as disabled placeholders (tap: open it on a source that
+  has it). Lines the chapter selector up with progress, which counts canonical chapters.
 - Priority calculator for the background updater. Today it picks the manga with the most
   readers, then the longest-unrefreshed; a real one would weigh the expected next release,
   ongoing/finished and how often a manga updates.
