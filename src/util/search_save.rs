@@ -1,7 +1,8 @@
 //! Saves online search results as manga in the background, so the catalog (and with it
 //! the "for you" candidates) grows with every search. One worker drains a deduplicated
 //! queue, one manga at a time with a delay in between, to go easy on the scraped sites and
-//! the host. `create_manga` attaches a result to an existing manga when its titles match.
+//! the host. Results without chapters are skipped. `save_scraped_manga` attaches a result to
+//! an existing manga when its titles match.
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex as StdMutex;
@@ -12,7 +13,7 @@ use log::{info, warn};
 use manga_parser::Url;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 
-use crate::service::v1::manga::create_manga;
+use crate::service::v1::manga::{save_scraped_manga, scrape_manga};
 
 const MAX_QUEUED: usize = 500;
 
@@ -93,10 +94,17 @@ async fn work(db: DatabaseConnection) {
 
         let task = {
             let (db, url) = (db.clone(), url.clone());
-            tokio::spawn(async move { create_manga(&db, url).await })
+            tokio::spawn(async move {
+                let manga = scrape_manga(&db, &url).await?;
+                if manga.chapters.is_empty() {
+                    return Ok(None);
+                }
+                save_scraped_manga(&db, manga).await.map(Some)
+            })
         };
         match task.await {
-            Ok(Ok(manga_id)) => info!("[Search Save] Saved [{url}] as manga {manga_id}"),
+            Ok(Ok(Some(manga_id))) => info!("[Search Save] Saved [{url}] as manga {manga_id}"),
+            Ok(Ok(None)) => info!("[Search Save] Skipped [{url}]: no chapters"),
             Ok(Err(e)) => warn!("[Search Save] Couldn't save [{url}]: {}", e.message()),
             Err(e) => warn!("[Search Save] Saving [{url}] panicked: {e}"),
         }

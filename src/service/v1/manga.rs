@@ -792,11 +792,17 @@ pub async fn delete_source_covers(sources: &[entity::manga_source::Model]) {
 /// primary) source - or, when its titles match a manga the catalog already has
 /// (`title_match`), add it to that manga as a secondary source instead.
 pub async fn create_manga(db: &DatabaseConnection, url: Url) -> Result<i32, Status> {
+    let manga = scrape_manga(db, &url).await?;
+    save_scraped_manga(db, manga).await
+}
+
+pub async fn scrape_manga(db: &DatabaseConnection, url: &Url) -> Result<manga_parser::model::Manga, Status> {
     info!("Creating manga [{}]", url);
+    crate::util::scrape_log::record(db, "manga", url, None, None, MANGA_PARSER.manga(url)).await
+}
 
-    let manga: manga_parser::model::Manga =
-        crate::util::scrape_log::record(db, "manga", &url, None, None, MANGA_PARSER.manga(&url)).await?;
-
+/// The saving half of [`create_manga`], for a manga that's already been scraped.
+pub async fn save_scraped_manga(db: &DatabaseConnection, manga: manga_parser::model::Manga) -> Result<i32, Status> {
     if let Some(manga_id) = util::title_match::find_title_match(db, &manga).await? {
         insert_scraped_source(db, manga_id, &manga, false).await?;
         return Ok(manga_id);
