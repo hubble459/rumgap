@@ -423,7 +423,8 @@ impl Chapter for ChapterController {
             .map_err(internal)?
             .ok_or(Status::not_found("No equivalent chapter found on this source"))?;
 
-        Ok(Response::new(chapter.into_chapter_reply(0)))
+        let index = source_index(db, chapter.manga_source_id, chapter.id).await?;
+        Ok(Response::new(chapter.into_chapter_reply(index)))
     }
 }
 
@@ -441,7 +442,24 @@ async fn get_chapter_reply(
         .map_err(internal)?
         .ok_or(Status::not_found("Chapter not found"))?;
 
-    Ok(Response::new(chapter.into_chapter_reply(0)))
+    let index = source_index(db, chapter.manga_source_id, chapter.id).await?;
+    Ok(Response::new(chapter.into_chapter_reply(index)))
+}
+
+/// The chapter's position among its source's chapters (1-based), what `Chapter.Get` takes.
+async fn source_index(db: &DatabaseConnection, manga_source_id: i32, chapter_id: i32) -> Result<i64, Status> {
+    db.query_one_raw(Statement::from_sql_and_values(
+        db.get_database_backend(),
+        "SELECT count(*) AS index FROM chapter s, chapter c \
+         WHERE c.id = $2 AND s.manga_source_id = $1 AND (s.number, s.id) <= (c.number, c.id)",
+        [manga_source_id.into(), chapter_id.into()],
+    ))
+    .await
+    .map_err(internal)?
+    .map(|row| row.try_get("", "index"))
+    .transpose()
+    .map_err(internal)
+    .map(Option::unwrap_or_default)
 }
 
 crate::export_service!(ChapterServer, ChapterController, auth = UserPermissions::USER);
