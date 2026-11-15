@@ -55,7 +55,8 @@ pub async fn ensure_cover_downloaded(
 
     let mut active: entity::manga_source::ActiveModel = source.clone().into();
 
-    match download(&cover_url, &source.url).await {
+    let referer = crate::util::chapter_images::referer_for(&source.url, &cover_url);
+    match download(&cover_url, &referer).await {
         Ok((bytes, content_type)) => {
             let ext = ext_for_content_type(&content_type);
             let storage_key = format!("covers/source/{}.{}", source.id, ext);

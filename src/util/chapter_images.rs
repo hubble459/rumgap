@@ -36,6 +36,9 @@ use crate::{IMAGE_STORE, MANGA_PARSER};
 /// from wuxia's `lib/util/tools.dart` `getReferer()` (`mangaCoverReferer`).
 const SELF_REFERER_HOSTNAMES: &[&str] = &["manhuagui.com"];
 
+/// Sites whose image CDN only accepts the site's root (`https://host/`) as Referer.
+const ROOT_REFERER_HOSTNAMES: &[&str] = &["kakamanga.com"];
+
 /// How many attempt-sessions (each already internally retried/backed-off by
 /// `manga_parser::HTTP_CLIENT`'s own middleware) a page gets before it's
 /// considered durably failed until a manual `RefreshImages`.
@@ -231,15 +234,23 @@ pub async fn ensure_page_downloaded(
     active.update(db).await.map_err(|e| Status::internal(e.to_string()))
 }
 
-/// Build the Referer/Origin used for a page download, replicating wuxia's
-/// `getReferer()` special case: manhuagui.com's CDN rejects a Referer
-/// pointing at the chapter page, and instead wants the image's own URL.
-fn referer_for(chapter_url: &str, image_url: &str) -> String {
+/// Build the Referer/Origin used for an image download (a chapter page or a cover),
+/// replicating wuxia's `getReferer()` special case: manhuagui.com's CDN rejects a
+/// Referer pointing at the chapter page, and instead wants the image's own URL.
+/// Sites in `ROOT_REFERER_HOSTNAMES` get their root instead.
+pub fn referer_for(chapter_url: &str, image_url: &str) -> String {
     if SELF_REFERER_HOSTNAMES
         .iter()
         .any(|hostname| chapter_url.contains(hostname))
     {
         image_url.to_string()
+    } else if let Some(root) = ROOT_REFERER_HOSTNAMES
+        .iter()
+        .any(|hostname| chapter_url.contains(hostname))
+        .then(|| Url::parse(chapter_url).ok())
+        .flatten()
+    {
+        format!("{}/", root.origin().ascii_serialization())
     } else {
         chapter_url.to_string()
     }
@@ -368,6 +379,13 @@ mod tests {
         let chapter_url = "https://www.manhuagui.com/comic/1234/5678.html";
         let image_url = "https://i.hamreus.com/comic/1234/5678/001.jpg";
         assert_eq!(referer_for(chapter_url, image_url), image_url);
+    }
+
+    #[test]
+    fn kakamanga_uses_site_root_as_referer() {
+        let chapter_url = "https://www.kakamanga.com/manga/reincarnated-war-god/chapter-110";
+        let image_url = "https://imgs-2.2xstorage.com/reincarnated-war-god/110/0.webp";
+        assert_eq!(referer_for(chapter_url, image_url), "https://www.kakamanga.com/");
     }
 
     #[test]
