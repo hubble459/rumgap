@@ -90,16 +90,19 @@ async fn canonical_chapters(
                        SELECT DISTINCT o.manga_source_id FROM chapter o
                        WHERE o.canonical_chapter_id = cc.id ORDER BY o.manga_source_id
                    ) ELSE ARRAY[]::integer[] END AS available_source_ids
-               FROM canonical_chapter cc
+               FROM (
+                   SELECT id, ordinal FROM canonical_chapter
+                   WHERE manga_id = (SELECT manga_id FROM manga_source WHERE id = $1)
+                   ORDER BY ordinal {order}, id {order}
+                   LIMIT $3 OFFSET $4
+               ) cc
                LEFT JOIN LATERAL (
                    SELECT * FROM chapter
                    WHERE chapter.canonical_chapter_id = cc.id AND chapter.manga_source_id = $1
                    ORDER BY chapter.id LIMIT 1
                ) c ON true
                LEFT JOIN chapter_offset co ON co.chapter_id = c.id AND co.user_id = $2
-               WHERE cc.manga_id = (SELECT manga_id FROM manga_source WHERE id = $1)
-               ORDER BY cc.ordinal {order}, cc.id {order}
-               LIMIT $3 OFFSET $4"#
+               ORDER BY cc.ordinal {order}, cc.id {order}"#
         ),
         [
             manga_source_id.into(),
