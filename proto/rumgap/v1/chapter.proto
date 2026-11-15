@@ -34,6 +34,11 @@ message ChapterReply {
     // correctly tell whether this specific chapter has been read. NULL alongside
     // canonical_chapter_id being NULL (manually unlinked).
     optional double ordinal = 12;
+    // A canonical chapter this source doesn't have (see PaginateChapterQuery.canonical):
+    // only canonical_chapter_id, ordinal and number (the ordinal) are set.
+    bool missing = 13;
+    // For a missing chapter: the sources of this manga that do have it.
+    repeated int32 available_source_ids = 14;
 }
 
 message ChaptersReply {
@@ -56,6 +61,11 @@ message PaginateChapterQuery {
     int32 manga_source_id = 1;
     optional PaginateQuery paginate_query = 2;
     optional bool reversed = 3;
+    // Page through the manga's canonical chapters instead of this source's own: chapters
+    // this source doesn't have come back as `missing` placeholders, so pages line up with
+    // reading progress (which counts canonical chapters). Manually unlinked chapters are
+    // left out.
+    optional bool canonical = 4;
 }
 
 message LinkChapterRequest {

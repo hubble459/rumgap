@@ -2,8 +2,8 @@ use std::num::TryFromIntError;
 
 use migration::{Expr, ExprTrait, JoinType};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait, Select,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select, Statement,
 };
 use tonic::{Request, Response, Status};
 
@@ -46,6 +46,85 @@ fn image_pages(chapter_id: i32, rows: &[entity::chapter_image::Model]) -> Vec<Im
 
 fn internal<E: ToString>(e: E) -> Status {
     Status::internal(e.to_string())
+}
+
+/// `Chapter.Index` with `canonical`: a page of the manga's canonical chapters, each with
+/// this source's chapter or a placeholder.
+async fn canonical_index(
+    db: &DatabaseConnection,
+    user_id: i32,
+    manga_source_id: i32,
+    reversed: bool,
+    page: u64,
+    per_page: u64,
+) -> Result<ChaptersReply, Status> {
+    let backend = db.get_database_backend();
+    let total: i64 = db
+        .query_one_raw(Statement::from_sql_and_values(
+            backend,
+            "SELECT count(*) AS total FROM canonical_chapter \
+             WHERE manga_id = (SELECT manga_id FROM manga_source WHERE id = $1)",
+            [manga_source_id.into()],
+        ))
+        .await
+        .map_err(internal)?
+        .map(|row| row.try_get("", "total"))
+        .transpose()
+        .map_err(internal)?
+        .unwrap_or(0);
+    let total = total as u64;
+    let max_page = total.div_ceil(per_page).saturating_sub(1);
+    let page = std::cmp::Ord::min(page, max_page + 1);
+    let order = if reversed { "ASC" } else { "DESC" };
+
+    let rows = data::chapter::Canonical::find_by_statement(Statement::from_sql_and_values(
+        backend,
+        format!(
+            r#"SELECT cc.id AS canonical_chapter_id, cc.ordinal,
+                   c.id, c.url, c.title, c.number, c.posted, c.created_at, c.updated_at,
+                   CASE WHEN c.id IS NULL THEN NULL ELSE (
+                       SELECT count(*) FROM chapter s
+                       WHERE s.manga_source_id = $1 AND (s.number, s.id) <= (c.number, c.id)
+                   ) END AS source_index,
+                   co."offset", co.page, co.fraction,
+                   CASE WHEN c.id IS NULL THEN ARRAY(
+                       SELECT DISTINCT o.manga_source_id FROM chapter o
+                       WHERE o.canonical_chapter_id = cc.id ORDER BY o.manga_source_id
+                   ) ELSE ARRAY[]::integer[] END AS available_source_ids
+               FROM canonical_chapter cc
+               LEFT JOIN LATERAL (
+                   SELECT * FROM chapter
+                   WHERE chapter.canonical_chapter_id = cc.id AND chapter.manga_source_id = $1
+                   ORDER BY chapter.id LIMIT 1
+               ) c ON true
+               LEFT JOIN chapter_offset co ON co.chapter_id = c.id AND co.user_id = $2
+               WHERE cc.manga_id = (SELECT manga_id FROM manga_source WHERE id = $1)
+               ORDER BY cc.ordinal {order}, cc.id {order}
+               LIMIT $3 OFFSET $4"#
+        ),
+        [
+            manga_source_id.into(),
+            user_id.into(),
+            (per_page as i64).into(),
+            ((page * per_page) as i64).into(),
+        ],
+    ))
+    .all(db)
+    .await
+    .map_err(internal)?;
+
+    Ok(ChaptersReply {
+        pagination: Some(PaginateReply {
+            page,
+            per_page,
+            max_page,
+            total,
+        }),
+        items: rows
+            .into_iter()
+            .map(|row| row.into_chapter_reply(manga_source_id))
+            .collect(),
+    })
 }
 
 #[derive(Debug, Default)]
@@ -163,8 +242,15 @@ impl Chapter for ChapterController {
         } else {
             migration::Order::Desc
         };
+        let canonical = req.canonical.unwrap_or_default();
         let req = req.paginate_query.unwrap_or_default();
         let per_page = req.per_page.unwrap_or(10).clamp(1, 50);
+
+        if canonical {
+            return canonical_index(db, user_id, manga_source_id, reversed, req.page.unwrap_or(0), per_page)
+                .await
+                .map(Response::new);
+        }
 
         // Create paginate object
         let paginate = with_ordinal(entity::chapter::Entity::find())
