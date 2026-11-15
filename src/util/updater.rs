@@ -1,8 +1,9 @@
 use chrono::Utc;
 use fcm::message::{Message, Notification, Target, WebpushConfig};
+use fcm::response::FcmResponseError;
 use fcm::FcmClient;
 use migration::{Expr, JoinType};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use serde_json::json;
 use tokio::time::{self, Duration};
 
@@ -50,7 +51,7 @@ pub async fn watch_updates(db: &DatabaseConnection) {
 
                             info!("[Auto Update] Successfully updated {}", primary_source.url);
                             if !ids.is_empty() {
-                                send_notification(&manga, ids.as_slice()).await;
+                                send_notification(db, &manga, ids.as_slice()).await;
                             }
 
                             // Eager prefetch: this manga already has
@@ -156,7 +157,7 @@ async fn get_readers(db: &DatabaseConnection, manga_id: i32) -> Vec<entity::user
         .collect()
 }
 
-async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
+async fn send_notification(db: &DatabaseConnection, manga: &data::manga::Full, ids: &[String]) {
     // Must belong to the same Firebase project the apps register their tokens
     // with (wuxia-6a4d2), otherwise FCM rejects every send with SenderIdMismatch.
     let key_path = std::env::var("FCM_SERVICE_ACCOUNT_KEY").unwrap_or_else(|_| "firebase-service-account.json".to_string());
@@ -175,6 +176,7 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
         // FCM only accepts string values in `data`.
         let data = json!({ "manga_id": manga.id.to_string() });
 
+        let mut dead_tokens = vec![];
         for target in ids.iter().cloned() {
             let message = Message {
                 data: Some(data.clone()),
@@ -183,7 +185,7 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
                     body: manga.title.clone(),
                     image: None,
                 }),
-                target: Target::Token(target),
+                target: Target::Token(target.clone()),
                 android: None,
                 webpush: Some(WebpushConfig {
                     notification: Some(json!({ "icon": web_icon })),
@@ -195,10 +197,15 @@ async fn send_notification(manga: &data::manga::Full, ids: &[String]) {
 
             match client.send(message).await {
                 Ok(response) if response.error().is_none() => info!("Sent: {:?}", response),
+                // The app was uninstalled or the token was replaced; it will never work again.
+                Ok(response) if matches!(response.error(), Some(FcmResponseError::Unregistered)) => {
+                    dead_tokens.push(target)
+                }
                 Ok(response) => error!("FCM rejected a notification: {:?}", response),
                 Err(err) => error!("Failed to send notification: {:#?}", err),
             }
         }
+        remove_device_tokens(db, &dead_tokens).await;
     } else {
         info!("FCM Error: {:#?}", client.err().unwrap());
     }
@@ -252,5 +259,28 @@ pub async fn watch_source_details(db: DatabaseConnection) {
                 warn!("[Source Details] Failed to scrape source {}: {}", source_id, e.message());
             }
         }
+    }
+}
+
+/// Drops device tokens FCM reported as unregistered from every user that has them.
+async fn remove_device_tokens(db: &DatabaseConnection, tokens: &[String]) {
+    if tokens.is_empty() {
+        return;
+    }
+    let result = db
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            db.get_database_backend(),
+            r#"UPDATE "user" SET device_ids = ARRAY(SELECT token FROM unnest(device_ids) token WHERE token <> ALL($1::varchar[]))
+               WHERE device_ids && $1::varchar[]"#,
+            [tokens.to_vec().into()],
+        ))
+        .await;
+    match result {
+        Ok(result) => info!(
+            "Removed {} unregistered device token(s) from {} user(s)",
+            tokens.len(),
+            result.rows_affected()
+        ),
+        Err(e) => error!("Failed to remove unregistered device tokens: {e}"),
     }
 }
