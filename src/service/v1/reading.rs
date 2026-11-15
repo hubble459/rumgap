@@ -9,6 +9,7 @@ use tonic::{Request, Response, Status};
 use super::manga::get_manga_by_id;
 use crate::interceptor::auth::UserPermissions;
 use crate::proto::reading_server::{Reading, ReadingServer};
+use crate::proto::reading_patch_request::Position;
 use crate::proto::{
     CrossSourceOffsetReply, DeleteReadingRequest, Empty, GetCrossSourceOffsetRequest, MangaReply, ReadingPatchRequest,
     ReadingPostRequest, UpdateChapterOffsetRequest,
@@ -78,29 +79,34 @@ impl Reading for ReadingController {
             .map_err(internal)?
             .ok_or(Status::not_found("Reading not found"))?;
 
-        if let Some(chapter_id) = req.chapter_id {
-            // Derive progress/last_canonical_chapter_id from the chapter's canonical link,
-            // keeping the two in sync via the one shared function rather than setting
-            // `progress` directly here.
-            let chapter = entity::chapter::Entity::find_by_id(chapter_id)
-                .one(db)
-                .await
-                .map_err(internal)?
-                .ok_or(Status::not_found("Chapter not found"))?;
-
-            let canonical_chapter_id = chapter.canonical_chapter_id.ok_or(Status::failed_precondition(
-                "This chapter is not linked to a canonical chapter",
-            ))?;
-
-            sync_reading_progress(db, logged_in.id, req.manga_id, canonical_chapter_id).await?;
-        } else {
-            // Legacy path: a raw progress int with no chapter reference. last_canonical_chapter_id
-            // is left as-is here since there's no chapter to derive it from.
-            let mut reading = reading.into_active_model();
-            reading.progress = Set(req.progress);
-            reading.update(db).await.map_err(internal)?;
+        // Older clients leave a progress of 0 off the wire entirely (proto3 default).
+        let mut chapter_id = None;
+        match req.position.unwrap_or(Position::Progress(0)) {
+            Position::CanonicalChapterId(canonical_chapter_id) => {
+                sync_reading_progress(db, logged_in.id, req.manga_id, canonical_chapter_id).await?;
+            }
+            #[allow(deprecated)]
+            Position::ChapterId(id) => {
+                let chapter = entity::chapter::Entity::find_by_id(id)
+                    .one(db)
+                    .await
+                    .map_err(internal)?
+                    .ok_or(Status::not_found("Chapter not found"))?;
+                let canonical_chapter_id = chapter.canonical_chapter_id.ok_or(Status::failed_precondition(
+                    "This chapter is not linked to a canonical chapter",
+                ))?;
+                sync_reading_progress(db, logged_in.id, req.manga_id, canonical_chapter_id).await?;
+                chapter_id = Some(id);
+            }
+            // A raw rank leaves last_canonical_chapter_id as it is: there's no chapter to
+            // derive it from.
+            Position::Progress(progress) => {
+                let mut reading = reading.into_active_model();
+                reading.progress = Set(progress);
+                reading.update(db).await.map_err(internal)?;
+            }
         }
-        read_event::record_progress(db, logged_in.id, req.manga_id, req.chapter_id).await?;
+        read_event::record_progress(db, logged_in.id, req.manga_id, chapter_id).await?;
         anilist_sync::schedule(db.clone(), logged_in, req.manga_id);
 
         Ok(Response::new(get_manga_by_id(db, Some(logged_in), req.manga_id).await?))
@@ -231,3 +237,28 @@ impl Reading for ReadingController {
 }
 
 crate::export_service!(ReadingServer, ReadingController, auth = UserPermissions::USER);
+
+#[cfg(test)]
+mod tests {
+    use prost::Message;
+
+    use super::*;
+
+    #[test]
+    #[allow(deprecated)]
+    fn older_clients_still_decode() {
+        // An older client sends `progress` (field 2) and then `chapter_id` (field 3); the
+        // last oneof member on the wire wins, so the chapter is used, as it always was.
+        let both = [0x08, 0x01, 0x10, 0x05, 0x18, 0x07];
+        let request = ReadingPatchRequest::decode(&both[..]).unwrap();
+        assert_eq!(request.position, Some(Position::ChapterId(7)));
+
+        let progress_only = [0x08, 0x01, 0x10, 0x05];
+        let request = ReadingPatchRequest::decode(&progress_only[..]).unwrap();
+        assert_eq!(request.position, Some(Position::Progress(5)));
+
+        let progress_zero = [0x08, 0x01];
+        let request = ReadingPatchRequest::decode(&progress_zero[..]).unwrap();
+        assert_eq!(request.position, None);
+    }
+}

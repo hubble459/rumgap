@@ -7,10 +7,16 @@ message ReadingPostRequest {
 
 message ReadingPatchRequest {
     int32 manga_id = 1;
-    int32 progress = 2;
-    // If set, `progress`/`last_canonical_chapter_id` are derived from this chapter's
-    // canonical chapter instead of trusting the raw `progress` int directly.
-    optional int32 chapter_id = 3;
+    // Where the user is. Progress is a rank among the manga's canonical chapters.
+    oneof position {
+        // The canonical chapter read up to; progress becomes its rank.
+        int32 canonical_chapter_id = 4;
+        // A raw rank, for when no chapter is known.
+        int32 progress = 2;
+        // A chapter of one of the manga's sources, resolved to its canonical chapter.
+        // Kept for older clients; send `canonical_chapter_id` instead.
+        int32 chapter_id = 3 [deprecated = true];
+    }
 }
 
 message UpdateChapterOffsetRequest {
